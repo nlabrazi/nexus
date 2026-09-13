@@ -6,9 +6,11 @@ import { TelegramApprovals, TelegramPeer } from './approvals';
 import { ApprovalDecision, CodexApprovalRequest } from '../codex/types';
 import { formatTelegramStatus, NexusStatusSnapshot } from './status';
 
+export interface RemotePromptReply { text: string; fileSummary?: string }
+
 type RemotePromptHandler = (
   prompt: string
-) => Promise<string>;
+) => Promise<string | RemotePromptReply>;
 
 export type RemoteSessionAction = { type: 'new' } | { type: 'resume'; sessionId: string };
 
@@ -297,7 +299,10 @@ export class TelegramService {
       }
       const response = await this.onRemotePrompt!(prompt);
       if (!signal.aborted) {
-        await this.client.sendMessage(chatId, response, 'markdown');
+        await this.client.sendMessage(chatId, typeof response === 'string' ? response : response.text, 'markdown');
+        if (!signal.aborted && typeof response !== 'string' && response.fileSummary) {
+          await this.client.sendMessage(chatId, response.fileSummary, 'markdown');
+        }
       }
     } catch (error) {
       if (!signal.aborted) {

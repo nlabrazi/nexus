@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 
 import { TelegramClient } from './telegram/client';
-import { RemoteSessionAction, TelegramService } from './telegram/service';
+import { RemotePromptReply, RemoteSessionAction, TelegramService } from './telegram/service';
+import { formatFileSummary } from './telegram/file-summary';
 
 import { CodexClient } from './codex/client';
 import { CodexService } from './codex/service';
@@ -351,14 +352,17 @@ function startTelegramService(
 
 async function handleRemoteCodexPrompt(
   prompt: string
-): Promise<string> {
+): Promise<RemotePromptReply> {
   if (!codexService) {
     throw new Error(
       'Codex service unavailable.'
     );
   }
 
-  return await codexService.sendPrompt(prompt, workspaceGuard.targetPath());
+  const workspace = workspaceGuard.targetPath();
+  let files: readonly string[] = [];
+  const text = await codexService.sendPrompt(prompt, workspace, paths => { files = paths; });
+  return { text, fileSummary: formatFileSummary(files, codexService.getStatus().workspacePath ?? workspace) };
 }
 
 async function handleSessionAction(action: RemoteSessionAction): Promise<string> {

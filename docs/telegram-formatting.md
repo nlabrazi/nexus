@@ -61,3 +61,43 @@ Vérifier les styles, les espaces dans le code et l'absence d'aperçu du lien.
 Pour tester le découpage, demander ensuite une réponse de plus de 4 000
 caractères contenant un long bloc de code. Les morceaux doivent arriver dans
 l'ordre et garder leur présentation. Aucun bot réel n'est contacté par les tests.
+
+## Résumé des fichiers
+
+Après une réponse réussie, Nexus envoie un petit message séparé **📄 Fichiers
+signalés par Codex (N)** lorsqu’il a reçu des modifications confirmées. Le résumé
+reste lisible même si la réponse contient un bloc de code non fermé.
+
+Les chemins du projet sont relatifs ; les chemins extérieurs restent explicites.
+Un même chemin n’est affiché qu’une fois. La liste affiche au maximum dix fichiers,
+avec un compteur pour les suivants ; chaque chemin est limité à 160 caractères
+Unicode, suivi de « … » si nécessaire. Le résumé n’inclut pas de contenu de fichier
+ni de diff automatique.
+
+Le suivi utilise les éléments `fileChange` terminés avec le statut `completed`,
+conformément au [protocole officiel App Server](https://learn.chatgpt.com/docs/app-server).
+Les propositions, refus et échecs ne sont pas comptés comme des modifications
+réussies. Le suivi est remis à zéro à chaque turn. Il ne constitue pas un inventaire
+Git : les modifications réalisées par des commandes shell ou outils sans événement
+`fileChange` peuvent manquer. Une suppression ou une édition ensuite annulée reste
+un fichier touché par Codex, pas nécessairement un changement net sur disque.
+En cas d’échec du turn, le message d’erreur habituel reste affiché sans résumé de succès.
+
+### Tester ce lot
+
+1. Lancer `npm run test:unit`, puis `npm run compile`. Relancer l’extension avec **F5**.
+2. Dans l’Extension Development Host, ouvrir un dépôt de test à sa racine, sur une
+   branche autre que `main` et `master`, avec tous les fichiers sauvegardés.
+3. Envoyer `/codex Avec apply_patch, crée nexus-summary-test.txt contenant Bonjour. Réponds simplement Terminé.`
+   Attendu : réponse, puis résumé listant `nexus-summary-test.txt` une seule fois.
+4. Envoyer `/codex Sans utiliser d’outil ni modifier de fichier, réponds simplement OK.`
+   Attendu : réponse seule ; aucun ancien résumé ne réapparaît.
+5. Envoyer `/codex Avec apply_patch, crée 12 petits fichiers nommés nexus-summary-01.txt à nexus-summary-12.txt contenant chacun Test. Réponds simplement Terminé.`
+   Attendu : dix chemins dans le résumé, puis « et 2 autre(s) fichier(s) ».
+6. Pour vérifier le découpage existant : demander une réponse d’environ 6 000
+   caractères, avec titres, listes et un bloc de code. Attendu : plusieurs messages
+   lisibles, dans l’ordre, sans erreur de longueur Telegram.
+
+Les tests automatiques couvrent les doublons, les chemins spéciaux/emoji, les
+limites de taille, les événements d’un autre turn, les refus/échecs, les éléments
+terminaux, l’absence de report au prompt suivant et l’ordre d’envoi Telegram.

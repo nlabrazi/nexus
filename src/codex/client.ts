@@ -221,7 +221,7 @@ export class CodexClient {
     }
   }
 
-  async runTurn(threadId: string, prompt: string): Promise<string> {
+  async runTurn(threadId: string, prompt: string, onFilesChanged?: (paths: readonly string[]) => void): Promise<string> {
     if (!this.process) {
       throw processError(new Error('Codex is not running'));
     }
@@ -241,6 +241,7 @@ export class CodexClient {
     let timedOut = false;
     const earlyNotifications: RpcNotification[] = [];
     const messages = new Map<string, { streamed: string; completed?: string; phase?: string | null }>();
+    const changedFiles = new Map<string, string[]>();
 
     return await new Promise<string>((resolve, reject) => {
       let settled = false;
@@ -268,6 +269,11 @@ export class CodexClient {
         reject(error);
       };
       const rememberItem = (item: ItemCompletedNotification['item'], completed: boolean) => {
+        if (item.type === 'fileChange' && completed && typeof item.id === 'string') {
+          changedFiles.set(item.id, item.status === 'completed' && Array.isArray(item.changes)
+            ? item.changes.flatMap(change => typeof change?.path === 'string' && change.path.trim() ? [change.path] : [])
+            : []);
+        }
         if (item.type !== 'agentMessage') { return; }
         if (typeof item.id !== 'string' || typeof item.text !== 'string') {
           throw new Error('Invalid agent message');
@@ -304,6 +310,7 @@ export class CodexClient {
             'Codex a terminé sans réponse textuelle finale. Des actions ont pu être effectuées : vérifiez les fichiers avant de renvoyer une instruction.'));
           return;
         }
+        onFilesChanged?.([...new Set([...changedFiles.values()].flat())]);
         settled = true;
         cleanup();
         resolve(response);

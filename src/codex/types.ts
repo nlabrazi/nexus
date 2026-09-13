@@ -82,6 +82,8 @@ export interface CodexItem {
   type: string;
   text?: string;
   phase?: 'commentary' | 'final_answer' | null;
+  status?: string;
+  changes?: { path: string }[];
 }
 
 export interface TurnCompletedNotification {
