@@ -9,7 +9,7 @@ conversation privée appairée. Aucun argument n’est accepté.
 - Sans requête en cours : « ⚪ Aucune requête Codex en cours. » La session et son
   processus au repos sont conservés.
 - L’identifiant, le workspace et la branche de la session déjà sélectionnée restent
-  en mémoire. La prochaine instruction explicite tente de reprendre cette session,
+  sauvegardés dans le workspace. La prochaine instruction explicite tente de reprendre cette session,
   avec les contrôles workspace/Git habituels. Aucun prompt annulé n’est rejoué.
 - Une réponse tardive de la requête annulée ne remplace pas la réponse d’une nouvelle
   requête et ne libère pas son verrou.
@@ -22,8 +22,8 @@ processus. Un message dont l’envoi Telegram a déjà commencé ne peut pas êt
 rappelé par `/stop` ; son découpage déjà engagé peut encore terminer l’envoi.
 
 La commande fonctionne aussi pour une requête lancée depuis les commandes locales
-Nexus. Elle ne coupe pas le polling Telegram. L’association de session reste en
-mémoire uniquement : elle disparaît au rechargement de l’extension.
+Nexus. Elle ne coupe pas le polling Telegram. L’association de session est conservée après rechargement via
+[la persistance du workspace](session-persistence.md).
 
 ## Tester soi-même
 

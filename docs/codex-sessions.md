@@ -2,7 +2,8 @@
 
 Nexus sélectionne une conversation Codex à la fois dans sa fenêtre VS Code.
 L'« ID session » affiché par Nexus correspond au `thread.id` utilisé par les RPC
-Codex. La conversation sélectionnée et son workspace sont conservés en mémoire.
+Codex. La sélection, son workspace et sa branche sont sauvegardés dans le stockage
+du workspace VS Code ; l’historique de conversation reste géré par Codex.
 
 ## Commandes
 
@@ -43,10 +44,11 @@ Les mêmes actions sont disponibles dans la palette VS Code :
   est affichée comme indisponible ou à reprendre.
 - Après disparition du processus Codex, un prochain prompt tente de reprendre
   l'identifiant encore connu en mémoire.
-- Après fermeture/rechargement de l'extension, utiliser `/resume <id>` pour
-  reprendre manuellement. La sauvegarde automatique de l'association entre
-  workspace et session reste une étape ultérieure. Une conversation doit avoir été
-  enregistrée par Codex pour être reprise : tester avec au moins un prompt terminé.
+- Après fermeture/rechargement de l’extension, la sélection est restaurée inactive.
+  Le prochain prompt tente sa reprise ; `/resume <id>` reste disponible pour choisir
+  explicitement une autre conversation. Voir [la persistance](session-persistence.md).
+  Une conversation doit avoir été enregistrée par Codex pour être reprise : tester
+  avec au moins un prompt terminé.
 
 Les verrous concernent cette instance de Nexus, pas les autres fenêtres ou
 clients Codex. Une session signalée introuvable pendant un prompt est marquée
@@ -83,8 +85,8 @@ automatiquement. Le timeout et les erreurs sont décrits dans
    `/new` pendant l'exécution : la création est refusée. `/status` reste disponible.
 
 Pour tester la reprise après redémarrage : conserver A, arrêter puis relancer
-F5 dans le même workspace, envoyer `/resume ID_A` **avant tout nouveau prompt**,
-puis poser à nouveau la question du repère.
+la fenêtre de test dans le même workspace. `/status` doit retrouver A sans lancer
+Codex ; poser ensuite à nouveau la question du repère pour déclencher la reprise.
 
 ## Validation automatisée
 

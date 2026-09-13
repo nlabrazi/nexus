@@ -49,7 +49,7 @@ Une autre formulation reste une erreur RPC, sans création automatique de sessio
 
 Les contrôles Git sont décrits dans [le guide workspace](workspace-safety.md).
 La commande Telegram `/stop` est décrite dans [le guide d’annulation](telegram-stop.md).
-La sauvegarde après rechargement de VS Code reste une étape séparée.
+La sauvegarde après rechargement est décrite dans [le guide de persistance](session-persistence.md).
 
 ## Tester depuis Telegram
 

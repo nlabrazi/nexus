@@ -56,8 +56,8 @@ incertitude. Voir [la gestion des erreurs](codex-errors.md) et
 3. Envoyer `/status` : le nom et le chemin doivent correspondre au dossier ouvert.
    Vérifier que le titre et les intitulés Projet, Codex et Activité sont en gras,
    avec une ligne vide entre les blocs et sans astérisques affichés.
-   Au démarrage de l'extension, avant tout prompt ou démarrage manuel de session,
-   les lignes attendues sont :
+   Sur un workspace sans session mémorisée, avant tout prompt ou démarrage manuel
+   de session, les lignes attendues sont :
 
    ```text
    Processus Codex : arrêté
@@ -104,3 +104,6 @@ Les tests de statut couvrent l'absence de workspace/session, les snapshots du
 cycle de vie Codex, les approbations, la réponse pendant un prompt, le contrôle
 de l'utilisateur/chat, les workspaces distincts et l'indisponibilité du processus.
 Ils utilisent des transports simulés et ne contactent aucun bot réel.
+
+Après redémarrage, une sélection sauvegardée apparaît inactive avec son identifiant
+et sa branche. `/status` ne la reprend pas : voir [la persistance](session-persistence.md).

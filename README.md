@@ -4,6 +4,9 @@ This is the README for your extension "nexus". After writing up a brief descript
 
 ## Features
 
+La reprise après redémarrage et ses tests sont décrits dans
+[le guide de persistance des sessions](docs/session-persistence.md).
+
 Pour tester avec **F5**, voir [le lancement de développement prêt à l’emploi](docs/development.md).
 
 La commande `/stop` et ses consignes de test sont décrites dans

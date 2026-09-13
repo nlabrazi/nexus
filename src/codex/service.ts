@@ -3,6 +3,7 @@ import { CodexClient } from './client';
 import { CodexApprovalHandler, CodexServiceStatus, CodexThread } from './types';
 import { CodexError } from './errors';
 import { assertSameWorkspace, WorkspaceIdentity, WorkspaceValidator } from '../workspace/guard';
+import { SessionPersistence } from './persistence';
 
 type SessionAction = 'ensure' | 'new' | 'resume';
 
@@ -16,8 +17,15 @@ export class CodexService {
   private generation = 0;
   private sessionOperation?: { key: string; promise: Promise<string> };
 
-  constructor(approvalHandler?: CodexApprovalHandler, private readonly validateWorkspace?: WorkspaceValidator) {
+  constructor(approvalHandler?: CodexApprovalHandler, private readonly validateWorkspace?: WorkspaceValidator,
+    private readonly persistence?: SessionPersistence) {
     this.client = new CodexClient(approvalHandler);
+    const saved = persistence?.load();
+    if (saved) {
+      this.sessionId = saved.id;
+      this.workspacePath = saved.workspace.root;
+      this.workspaceIdentity = saved.workspace;
+    }
   }
 
   startSession(cwd: string): Promise<string> {
@@ -79,6 +87,7 @@ export class CodexService {
     if (targetId === this.sessionId && this.workspacePath === path && this.isSessionActive()) {
       // Explicit resume can deliberately bind the same conversation to a new branch.
       this.workspaceIdentity = workspace;
+      await this.persistSelection(generation);
       return targetId!;
     }
 
@@ -116,7 +125,19 @@ export class CodexService {
     this.workspacePath = path;
     this.workspaceIdentity = workspace;
     this.sessionConnection = connection;
+    await this.persistSelection(generation);
     return thread.id;
+  }
+
+  private async persistSelection(generation: number): Promise<void> {
+    if (!this.persistence || !this.sessionId || !this.workspaceIdentity) { return; }
+    try {
+      await this.persistence.save({ version: 1, id: this.sessionId, workspace: this.workspaceIdentity });
+    } catch (error) {
+      this.assertCurrent(generation);
+      throw new Error('La session est sélectionnée, mais sa sauvegarde a échoué. Aucun nouveau prompt n’a été lancé. Vérifiez le stockage de VS Code puis réessayez.', { cause: error });
+    }
+    this.assertCurrent(generation, this.sessionConnection);
   }
 
   private checkThread(thread: CodexThread, path: string, expectedId?: string): void {

@@ -31,4 +31,4 @@ Les tests automatisés créent et suppriment leurs propres dépôts temporaires.
 
 ## Limites
 
-Il s’agit de contrôles avant lancement, pas d’un verrou Git pendant toute l’exécution. Un changement manuel de branche après le lancement, ou une commande Git exécutée par Codex pendant le turn, n’est pas empêché par ces contrôles. Les fichiers non sauvegardés d’une autre fenêtre VS Code ne sont pas visibles. L’association session/branche reste en mémoire et disparaît au redémarrage de l’extension ; la persistance sera traitée séparément.
+Il s’agit de contrôles avant lancement, pas d’un verrou Git pendant toute l’exécution. Un changement manuel de branche après le lancement, ou une commande Git exécutée par Codex pendant le turn, n’est pas empêché par ces contrôles. Les fichiers non sauvegardés d’une autre fenêtre VS Code ne sont pas visibles. L’association session/branche est restaurée après redémarrage via [la persistance du workspace](session-persistence.md), puis vérifiée avant toute reprise.

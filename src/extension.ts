@@ -6,6 +6,7 @@ import { formatFileSummary } from './telegram/file-summary';
 
 import { CodexClient } from './codex/client';
 import { CodexService } from './codex/service';
+import { WorkspaceSessionPersistence } from './codex/persistence';
 import { DEFAULT_PROTECTED_BRANCHES, WorkspaceGuard } from './workspace/guard';
 
 let telegramService: TelegramService | undefined;
@@ -27,7 +28,7 @@ export async function activate(
 ) {
   codexService = new CodexService(async (request, signal) => {
     return await telegramService?.requestApproval(request, signal) ?? 'decline';
-  }, path => workspaceGuard.validate(path));
+  }, path => workspaceGuard.validate(path), new WorkspaceSessionPersistence(context.workspaceState));
 
   const statusCommand = vscode.commands.registerCommand(
     'nexus.status',
