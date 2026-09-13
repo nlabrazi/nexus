@@ -7,12 +7,34 @@ let telegramService: TelegramService | undefined;
 export async function activate(context: vscode.ExtensionContext) {
   const statusCommand = vscode.commands.registerCommand(
     'nexus.status',
-    () => {
+    async () => {
       const workspace = vscode.workspace.workspaceFolders?.[0];
       const workspaceName = workspace?.name ?? 'No workspace';
 
+      const telegramToken = await context.secrets.get(
+        'nexus.telegram.botToken'
+      );
+
+      const allowedUserId = context.globalState.get<number>(
+        'nexus.telegram.allowedUserId'
+      );
+
+      const allowedChatId = context.globalState.get<number>(
+        'nexus.telegram.allowedChatId'
+      );
+
+      const telegramConfigured = Boolean(telegramToken);
+      const telegramPaired = Boolean(
+        allowedUserId && allowedChatId
+      );
+
       vscode.window.showInformationMessage(
-        `Nexus active — Workspace: ${workspaceName}`
+        [
+          'Nexus: ON',
+          `Workspace: ${workspaceName}`,
+          `Telegram: ${telegramConfigured ? 'Configured' : 'Not configured'}`,
+          `Paired: ${telegramPaired ? 'Yes' : 'No'}`,
+        ].join(' | ')
       );
     }
   );
