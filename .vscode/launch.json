@@ -10,12 +10,15 @@
 			"type": "extensionHost",
 			"request": "launch",
 			"args": [
-				"--extensionDevelopmentPath=${workspaceFolder}"
+				"--extensionDevelopmentPath=${workspaceFolder}",
+				// Only this development window skips trust prompts for the generated test project.
+				"--disable-workspace-trust",
+				"${workspaceFolder}/.nexus-dev/project"
 			],
 			"outFiles": [
 				"${workspaceFolder}/dist/**/*.js"
 			],
-			"preLaunchTask": "${defaultBuildTask}"
+			"preLaunchTask": "Nexus: préparer le test"
 		}
 	]
 }

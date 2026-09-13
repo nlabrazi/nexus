@@ -4,6 +4,32 @@ This is the README for your extension "nexus". After writing up a brief descript
 
 ## Features
 
+La couverture des erreurs et les commandes de validation sont décrites dans
+[le guide des tests de régression](docs/regression-tests.md).
+
+La reprise après redémarrage et ses tests sont décrits dans
+[le guide de persistance des sessions](docs/session-persistence.md).
+
+Pour tester avec **F5**, voir [le lancement de développement prêt à l’emploi](docs/development.md).
+
+La commande `/stop` et ses consignes de test sont décrites dans
+[le guide d’annulation Telegram](docs/telegram-stop.md).
+
+Les contrôles workspace/Git et les consignes de test sont décrits dans
+[le guide de sécurité workspace](docs/workspace-safety.md).
+
+Les erreurs Codex, les timeouts et leurs scénarios de test sont décrits dans
+[le guide de gestion des erreurs](docs/codex-errors.md).
+
+La mise en forme des réponses Codex pour Telegram est décrite dans
+[le guide de présentation et de validation](docs/telegram-formatting.md).
+
+Les approbations Codex via Telegram sont décrites dans [le guide de fonctionnement et de validation](docs/telegram-approvals.md).
+
+La commande Telegram `/status` est décrite dans [le guide du statut et de ses tests](docs/telegram-status.md).
+
+La création et la reprise de sessions (`/new`, `/resume <id>`) sont décrites dans [le guide des sessions Codex](docs/codex-sessions.md).
+
 Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
 
 For example if there is an image subfolder under your extension project workspace:

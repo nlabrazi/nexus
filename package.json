@@ -3,23 +3,74 @@
   "displayName": "Nexus",
   "description": "Private remote bridge for vscode coding agents",
   "version": "0.0.1",
+  "publisher": "nabster",
+  "extensionKind": [
+    "workspace"
+  ],
   "engines": {
     "vscode": "^1.137.0"
   },
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
+    "configuration": {
+      "title": "Nexus",
+      "properties": {
+        "nexus.git.protectedBranches": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": ["main", "master"],
+          "scope": "window",
+          "description": "Branches sur lesquelles Nexus refuse de lancer Codex. Noms exacts, sensibles à la casse. Une liste vide désactive cette protection."
+        }
+      }
+    },
     "commands": [
       {
-        "command": "nexus.helloWorld",
-        "title": "Hello World"
+        "command": "nexus.status",
+        "title": "Nexus: Status"
+      },
+      {
+        "command": "nexus.configureTelegram",
+        "title": "Nexus: Configure Telegram"
+      },
+      {
+        "command": "nexus.testTelegram",
+        "title": "Nexus: Test Telegram Connection"
+      },
+      {
+        "command": "nexus.pairTelegram",
+        "title": "Nexus: Pair Telegram"
+      },
+      {
+        "command": "nexus.testCodex",
+        "title": "Nexus: Test Codex Connection"
+      },
+      {
+        "command": "nexus.startCodexSession",
+        "title": "Nexus: Start Codex Session"
+      },
+      {
+        "command": "nexus.newCodexSession",
+        "title": "Nexus: New Codex Session"
+      },
+      {
+        "command": "nexus.resumeCodexSession",
+        "title": "Nexus: Resume Codex Session"
+      },
+      {
+        "command": "nexus.testCodexPrompt",
+        "title": "Nexus: Test Codex Prompt"
       }
     ]
   },
   "scripts": {
+    "dev:prepare": "npm run compile && node scripts/prepare-dev.cjs",
     "vscode:prepublish": "npm run package",
     "compile": "npm run check-types && npm run lint && node esbuild.js",
     "watch": "npm-run-all -p watch:*",
@@ -31,7 +82,8 @@
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "test:unit": "npm run compile-tests && node --test --test-isolation=none out/test/unit/*.unit.js"
   },
   "devDependencies": {
     "@types/vscode": "^1.137.0",

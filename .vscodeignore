@@ -1,4 +1,6 @@
 .vscode/**
+.nexus-dev/**
+scripts/**
 .vscode-test/**
 out/**
 node_modules/**
