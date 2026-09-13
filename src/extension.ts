@@ -224,13 +224,49 @@ export async function activate(
       }
     );
 
+  const testCodexPromptCommand =
+    vscode.commands.registerCommand(
+      'nexus.testCodexPrompt',
+      async () => {
+        if (
+          !codexService ||
+          !codexService.isSessionActive()
+        ) {
+          vscode.window.showWarningMessage(
+            'Nexus: Start a Codex session first.'
+          );
+
+          return;
+        }
+
+        try {
+          const response =
+            await codexService.sendPrompt(
+              'Reply only with: Nexus connected'
+            );
+
+          vscode.window.showInformationMessage(
+            `Codex: ${response}`
+          );
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Nexus: Codex prompt failed: ${error instanceof Error
+              ? error.message
+              : String(error)
+            }`
+          );
+        }
+      }
+    );
+
   context.subscriptions.push(
     statusCommand,
     configureTelegramCommand,
     testTelegramCommand,
     pairTelegramCommand,
     testCodexCommand,
-    startCodexSessionCommand
+    startCodexSessionCommand,
+    testCodexPromptCommand
   );
 
   const statusBar =
@@ -277,10 +313,38 @@ function startTelegramService(
   telegramService =
     new TelegramService(
       context,
-      client
+      client,
+      handleRemoteCodexPrompt
     );
 
   void telegramService.start();
+}
+
+async function handleRemoteCodexPrompt(
+  prompt: string
+): Promise<string> {
+  if (!codexService) {
+    throw new Error(
+      'Codex service unavailable.'
+    );
+  }
+
+  const workspace =
+    vscode.workspace.workspaceFolders?.[0];
+
+  if (!workspace) {
+    throw new Error(
+      'No workspace is currently open in VS Code.'
+    );
+  }
+
+  if (!codexService.isSessionActive()) {
+    await codexService.startSession(
+      workspace.uri.fsPath
+    );
+  }
+
+  return await codexService.sendPrompt(prompt);
 }
 
 export function deactivate() {

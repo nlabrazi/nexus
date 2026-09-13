@@ -4,14 +4,23 @@ import {
 } from 'child_process';
 
 import {
-  RpcResponse,
-  ThreadStartResponse
+  AgentMessageDeltaNotification,
+  ItemCompletedNotification,
+  RpcMessage,
+  RpcNotification,
+  ThreadStartResponse,
+  TurnCompletedNotification,
+  TurnStartResponse,
 } from './types';
 
 export class CodexClient {
   private process?: ChildProcessWithoutNullStreams;
   private buffer = '';
   private requestId = 0;
+
+  private notificationListeners = new Set<
+    (notification: RpcNotification) => void
+  >();
 
   private pending = new Map<
     number,
@@ -101,6 +110,214 @@ export class CodexClient {
     );
   }
 
+  async runTurn(
+    threadId: string,
+    prompt: string
+  ): Promise<string> {
+    if (!this.process) {
+      throw new Error('Codex is not running');
+    }
+
+    const trimmedPrompt = prompt.trim();
+
+    if (!trimmedPrompt) {
+      throw new Error('Codex prompt cannot be empty');
+    }
+
+    const child = this.process;
+
+    let turnId: string | undefined;
+    let streamedText = '';
+    let completedText = '';
+    let earlyCompletion: TurnCompletedNotification | undefined;
+
+    return await new Promise<string>((resolve, reject) => {
+      let settled = false;
+      let timeout: ReturnType<typeof setTimeout>;
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        this.notificationListeners.delete(onNotification);
+        child.off('exit', onExit);
+      };
+
+      const fail = (error: Error) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        cleanup();
+        reject(error);
+      };
+
+      const complete = (
+        params: TurnCompletedNotification
+      ) => {
+        if (settled) {
+          return;
+        }
+
+        if (params.turn.status !== 'completed') {
+          fail(
+            new Error(
+              params.turn.error?.message ??
+              `Codex turn ${params.turn.status}`
+            )
+          );
+
+          return;
+        }
+
+        const response =
+          streamedText.trim() ||
+          completedText.trim();
+
+        if (!response) {
+          fail(
+            new Error(
+              'Codex completed without a text response'
+            )
+          );
+
+          return;
+        }
+
+        settled = true;
+        cleanup();
+        resolve(response);
+      };
+
+      const onNotification = (
+        notification: RpcNotification
+      ) => {
+        if (
+          notification.method ===
+          'item/agentMessage/delta'
+        ) {
+          const params =
+            notification.params as AgentMessageDeltaNotification;
+
+          if (params.threadId !== threadId) {
+            return;
+          }
+
+          if (
+            turnId &&
+            params.turnId !== turnId
+          ) {
+            return;
+          }
+
+          streamedText += params.delta;
+
+          return;
+        }
+
+        if (
+          notification.method ===
+          'item/completed'
+        ) {
+          const params =
+            notification.params as ItemCompletedNotification;
+
+          if (
+            params.threadId !== threadId ||
+            params.item.type !== 'agentMessage'
+          ) {
+            return;
+          }
+
+          if (
+            turnId &&
+            params.turnId !== turnId
+          ) {
+            return;
+          }
+
+          completedText =
+            params.item.text ?? '';
+
+          return;
+        }
+
+        if (
+          notification.method ===
+          'turn/completed'
+        ) {
+          const params =
+            notification.params as TurnCompletedNotification;
+
+          if (params.threadId !== threadId) {
+            return;
+          }
+
+          if (!turnId) {
+            earlyCompletion = params;
+            return;
+          }
+
+          if (params.turn.id !== turnId) {
+            return;
+          }
+
+          complete(params);
+        }
+      };
+
+      const onExit = (code: number | null) => {
+        fail(
+          new Error(
+            `Codex exited during turn with code ${code}`
+          )
+        );
+      };
+
+      timeout = setTimeout(() => {
+        fail(
+          new Error('Codex turn timeout after 120 seconds')
+        );
+      }, 120_000);
+
+      this.notificationListeners.add(onNotification);
+      child.once('exit', onExit);
+
+      void this.request(
+        'turn/start',
+        {
+          threadId,
+          input: [
+            {
+              type: 'text',
+              text: trimmedPrompt,
+              textElements: [],
+            },
+          ],
+        }
+      )
+        .then(result => {
+          const response =
+            result as TurnStartResponse;
+
+          turnId = response.turn.id;
+
+          if (
+            earlyCompletion &&
+            earlyCompletion.turn.id === turnId
+          ) {
+            complete(earlyCompletion);
+          }
+        })
+        .catch(error => {
+          fail(
+            error instanceof Error
+              ? error
+              : new Error(String(error))
+          );
+        });
+    });
+  }
+
   private request(
     method: string,
     params: unknown
@@ -178,10 +395,10 @@ export class CodexClient {
         continue;
       }
 
-      let message: RpcResponse;
+      let message: RpcMessage;
 
       try {
-        message = JSON.parse(line) as RpcResponse;
+        message = JSON.parse(line) as RpcMessage;
       } catch {
         console.error(
           '[Codex] Invalid JSON received:',
@@ -191,15 +408,52 @@ export class CodexClient {
         continue;
       }
 
+      // Notification Codex
+      if (
+        message.method &&
+        message.id === undefined
+      ) {
+        const notification: RpcNotification = {
+          method: message.method,
+          params: message.params,
+        };
+
+        for (
+          const listener
+          of this.notificationListeners
+        ) {
+          listener(notification);
+        }
+
+        continue;
+      }
+
+      // Requête envoyée PAR Codex vers Nexus.
+      // Exemple futur : approval.
+      if (
+        message.method &&
+        message.id !== undefined
+      ) {
+        console.warn(
+          `[Codex] Unsupported server request: ${message.method}`
+        );
+
+        continue;
+      }
+
+      // Réponse à une RPC Nexus → Codex
       if (message.id === undefined) {
         continue;
       }
 
-      const request = this.pending.get(message.id);
+      const request =
+        this.pending.get(message.id);
 
       if (!request) {
         continue;
       }
+
+      clearTimeout(request.timeout);
 
       this.pending.delete(message.id);
 
@@ -210,7 +464,6 @@ export class CodexClient {
 
         continue;
       }
-      clearTimeout(request.timeout);
 
       request.resolve(message.result);
     }

@@ -3,6 +3,10 @@ import { randomInt } from 'crypto';
 import { TelegramClient } from './client';
 import { TelegramUpdate } from './types';
 
+type RemotePromptHandler = (
+  prompt: string
+) => Promise<string>;
+
 export class TelegramService {
   private pairingCode?: string;
   private pairingExpiresAt = 0;
@@ -11,7 +15,8 @@ export class TelegramService {
 
   constructor(
     private readonly context: vscode.ExtensionContext,
-    private readonly client: TelegramClient
+    private readonly client: TelegramClient,
+    private readonly onRemotePrompt?: RemotePromptHandler
   ) { }
 
   createPairingCode(): string {
@@ -153,6 +158,62 @@ export class TelegramService {
     // Commands
     if (text === '/ping') {
       await this.client.sendMessage(chatId, 'pong');
+    }
+
+    if (text === '/codex') {
+      await this.client.sendMessage(
+        chatId,
+        'Usage: /codex <instruction>'
+      );
+
+      return;
+    }
+
+    if (text.startsWith('/codex ')) {
+      const prompt = text.slice('/codex '.length).trim();
+
+      if (!prompt) {
+        await this.client.sendMessage(
+          chatId,
+          'Usage: /codex <instruction>'
+        );
+
+        return;
+      }
+
+      if (!this.onRemotePrompt) {
+        await this.client.sendMessage(
+          chatId,
+          'Codex is unavailable.'
+        );
+
+        return;
+      }
+
+      await this.client.sendMessage(
+        chatId,
+        '⏳ Codex is working...'
+      );
+
+      try {
+        const response =
+          await this.onRemotePrompt(prompt);
+
+        await this.client.sendMessage(
+          chatId,
+          response
+        );
+      } catch (error) {
+        await this.client.sendMessage(
+          chatId,
+          `❌ ${error instanceof Error
+            ? error.message
+            : String(error)
+          }`
+        );
+      }
+
+      return;
     }
   }
 }

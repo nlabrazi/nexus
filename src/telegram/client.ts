@@ -43,24 +43,28 @@ export class TelegramClient {
     chatId: number,
     text: string
   ): Promise<void> {
-    const response = await fetch(
-      `https://api.telegram.org/bot${this.token}/sendMessage`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text,
-        }),
-      }
-    );
+    const chunks = text.match(/[\s\S]{1,4000}/g) ?? [];
 
-    if (!response.ok) {
-      throw new Error(
-        `Telegram sendMessage failed: ${response.status}`
+    for (const chunk of chunks) {
+      const response = await fetch(
+        `https://api.telegram.org/bot${this.token}/sendMessage`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: chunk,
+          }),
+        }
       );
+
+      if (!response.ok) {
+        throw new Error(
+          `Telegram sendMessage failed: ${response.status}`
+        );
+      }
     }
   }
 }

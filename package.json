@@ -38,6 +38,10 @@
       {
         "command": "nexus.startCodexSession",
         "title": "Nexus: Start Codex Session"
+      },
+      {
+        "command": "nexus.testCodexPrompt",
+        "title": "Nexus: Test Codex Prompt"
       }
     ]
   },
