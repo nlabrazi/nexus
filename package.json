@@ -14,8 +14,8 @@
   "contributes": {
     "commands": [
       {
-        "command": "nexus.helloWorld",
-        "title": "Hello World"
+        "command": "nexus.status",
+        "title": "Nexus: Status"
       }
     ]
   },
