@@ -344,7 +344,8 @@ function startTelegramService(
           codex: codexService?.getStatus(),
         };
       },
-      handleSessionAction
+      handleSessionAction,
+      () => codexService?.cancelCurrentWork() ?? false
     );
 
   void telegramService.start();

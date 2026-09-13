@@ -48,8 +48,8 @@ les messages connus de Codex (`thread/session not found`, `not loaded`,
 Une autre formulation reste une erreur RPC, sans création automatique de session.
 
 Les contrôles Git sont décrits dans [le guide workspace](workspace-safety.md).
-La sauvegarde après rechargement de VS Code et la commande
-Telegram `/stop` restent des étapes séparées.
+La commande Telegram `/stop` est décrite dans [le guide d’annulation](telegram-stop.md).
+La sauvegarde après rechargement de VS Code reste une étape séparée.
 
 ## Tester depuis Telegram
 

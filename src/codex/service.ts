@@ -204,6 +204,16 @@ export class CodexService {
     };
   }
 
+  cancelCurrentWork(): boolean {
+    if (!this.turnRunning && !this.sessionOperation) { return false; }
+    this.generation++;
+    this.sessionOperation = undefined;
+    this.client.stop();
+    this.sessionConnection = undefined;
+    this.turnRunning = false;
+    return true;
+  }
+
   stop(): void {
     this.generation++;
     this.sessionOperation = undefined;

@@ -21,6 +21,7 @@ export class TelegramService {
   private abortController?: AbortController;
   private remotePromptRunning = false;
   private remoteSessionRunning = false;
+  private operationGeneration = 0;
   private readonly approvals: TelegramApprovals;
 
   constructor(
@@ -28,7 +29,8 @@ export class TelegramService {
     private readonly client: TelegramClient,
     private readonly onRemotePrompt?: RemotePromptHandler,
     private readonly getStatus?: () => NexusStatusSnapshot,
-    private readonly onSessionAction?: (action: RemoteSessionAction) => Promise<string>
+    private readonly onSessionAction?: (action: RemoteSessionAction) => Promise<string>,
+    private readonly onStop?: () => boolean
   ) {
     this.approvals = new TelegramApprovals(client, () => this.getApprovalPeer());
   }
@@ -193,6 +195,31 @@ export class TelegramService {
 
     // Commands
     const command = text.trim();
+    if (/^\/stop(?:\s|$)/.test(command)) {
+      if (command !== '/stop') {
+        await this.client.sendMessage(chatId, 'Usage : /stop');
+        return;
+      }
+      if (!this.onStop) {
+        await this.client.sendMessage(chatId, 'L’arrêt de Codex est indisponible.');
+        return;
+      }
+      let cancelled: boolean;
+      try {
+        cancelled = this.onStop() || this.remotePromptRunning || this.remoteSessionRunning;
+      } catch {
+        await this.client.sendMessage(chatId, '❌ Impossible de demander l’arrêt de Codex. Vérifiez son état dans VS Code.');
+        return;
+      }
+      this.operationGeneration++;
+      this.remotePromptRunning = false;
+      this.remoteSessionRunning = false;
+      this.approvals.cancelAll();
+      await this.client.sendMessage(chatId, cancelled
+        ? '⏹ Requête annulée côté Nexus. Si Codex était lancé, la connexion a été fermée et son arrêt demandé.\nL’arrêt des commandes enfants n’est pas garanti : vérifiez les commandes et fichiers avant de continuer.\nL’identifiant de la session sélectionnée est conservé, s’il existe.'
+        : '⚪ Aucune requête Codex en cours.');
+      return;
+    }
     if (/^\/(new|resume)(?:\s|$)/.test(command)) {
       const [name, id, ...extra] = command.split(/\s+/);
       if ((name === '/new' && id !== undefined) ||
@@ -273,45 +300,45 @@ export class TelegramService {
     }
   }
 
-  private async runSessionCommand(chatId: number, action: RemoteSessionAction, signal: AbortSignal): Promise<void> {
+  private async runSessionCommand(chatId: number, action: RemoteSessionAction, signal: AbortSignal, generation = this.operationGeneration): Promise<void> {
     try {
       const id = await this.onSessionAction!(action);
-      if (!signal.aborted) {
+      if (!signal.aborted && generation === this.operationGeneration) {
         await this.client.sendMessage(chatId,
           `✅ Session Codex ${action.type === 'new' ? 'créée' : 'reprise'}.\nID session : ${id}`);
       }
     } catch (error) {
-      if (!signal.aborted) {
+      if (!signal.aborted && generation === this.operationGeneration) {
         await this.client.sendMessage(chatId,
           `❌ ${error instanceof Error ? error.message : String(error)}`
         ).catch(() => console.error('[Telegram] Session response delivery failed.'));
       }
     } finally {
-      this.remoteSessionRunning = false;
+      if (generation === this.operationGeneration) { this.remoteSessionRunning = false; }
     }
   }
 
-  private async runRemotePrompt(chatId: number, prompt: string, signal: AbortSignal): Promise<void> {
+  private async runRemotePrompt(chatId: number, prompt: string, signal: AbortSignal, generation = this.operationGeneration): Promise<void> {
     try {
       await this.client.sendMessage(chatId, '⏳ Codex is working...');
-      if (signal.aborted) {
+      if (signal.aborted || generation !== this.operationGeneration) {
         return;
       }
       const response = await this.onRemotePrompt!(prompt);
-      if (!signal.aborted) {
+      if (!signal.aborted && generation === this.operationGeneration) {
         await this.client.sendMessage(chatId, typeof response === 'string' ? response : response.text, 'markdown');
-        if (!signal.aborted && typeof response !== 'string' && response.fileSummary) {
+        if (!signal.aborted && generation === this.operationGeneration && typeof response !== 'string' && response.fileSummary) {
           await this.client.sendMessage(chatId, response.fileSummary, 'markdown');
         }
       }
     } catch (error) {
-      if (!signal.aborted) {
+      if (!signal.aborted && generation === this.operationGeneration) {
         await this.client.sendMessage(chatId,
           `❌ ${error instanceof Error ? error.message : String(error)}`
         ).catch(() => console.error('[Telegram] Codex response delivery failed.'));
       }
     } finally {
-      this.remotePromptRunning = false;
+      if (generation === this.operationGeneration) { this.remotePromptRunning = false; }
     }
   }
 }

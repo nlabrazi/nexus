@@ -4,6 +4,11 @@ This is the README for your extension "nexus". After writing up a brief descript
 
 ## Features
 
+Pour tester avec **F5**, voir [le lancement de développement prêt à l’emploi](docs/development.md).
+
+La commande `/stop` et ses consignes de test sont décrites dans
+[le guide d’annulation Telegram](docs/telegram-stop.md).
+
 Les contrôles workspace/Git et les consignes de test sont décrits dans
 [le guide de sécurité workspace](docs/workspace-safety.md).
 

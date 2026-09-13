@@ -53,7 +53,7 @@ clients Codex. Une session signalée introuvable pendant un prompt est marquée
 inactive, avec son identifiant conservé. Un prochain prompt doit la reprendre
 avant de pouvoir démarrer un turn ; aucune session de remplacement n'est créée
 automatiquement. Le timeout et les erreurs sont décrits dans
-[le guide dédié](codex-errors.md). La commande Telegram `/stop` reste à ajouter.
+[le guide dédié](codex-errors.md). La commande Telegram `/stop` est décrite dans [le guide d’annulation](telegram-stop.md).
 
 ## Test manuel simple
 
