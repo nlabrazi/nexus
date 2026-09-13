@@ -16,6 +16,10 @@
       {
         "command": "nexus.status",
         "title": "Nexus: Status"
+      },
+      {
+        "command": "nexus.configureTelegram",
+        "title": "Nexus: Configure Telegram"
       }
     ]
   },
