@@ -23,7 +23,7 @@ export function formatTelegramStatus(
     lines.push(`Chemin : ${literal(workspace.path)}`);
   }
   if (workspaceCount > 1) {
-    lines.push(`Dossiers ouverts : ${workspaceCount} (le premier est ciblé)`);
+    lines.push(`Dossiers ouverts : ${workspaceCount} (actions Codex bloquées : cible ambiguë)`);
   }
   lines.push('', '🤖 **Codex**');
 
@@ -42,6 +42,9 @@ export function formatTelegramStatus(
     lines.push(`${indicator} Session Codex : ${active ? 'active' : codex.processRunning
       ? 'à reprendre' : 'indisponible (processus arrêté)'}`);
     lines.push(`ID session : ${literal(codex.sessionId)}`);
+    if (codex.sessionBranch) {
+      lines.push(`🌿 Branche de la session : ${literal(codex.sessionBranch)}`);
+    }
   } else {
     lines.push('⚪ Session Codex : aucune');
   }

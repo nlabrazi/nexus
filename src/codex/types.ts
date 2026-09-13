@@ -31,6 +31,7 @@ export interface CodexClientStatus {
 export interface CodexServiceStatus extends CodexClientStatus {
   sessionId?: string;
   workspacePath?: string;
+  sessionBranch?: string;
   sessionActive?: boolean;
   sessionChanging?: boolean;
 }

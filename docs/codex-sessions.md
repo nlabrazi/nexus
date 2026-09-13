@@ -99,3 +99,10 @@ d'une session, les réponses tardives après arrêt et les commandes Telegram.
 Ils ne contactent aucun bot et ne lancent aucun prompt Codex réel.
 
 Protocole : [Codex App Server — Lifecycle overview](https://learn.chatgpt.com/docs/app-server#lifecycle-overview).
+
+## Contrôles workspace et branche
+
+Les sessions sont associées à la racine canonique du projet et à la branche Git.
+Un changement de branche exige de revenir au contexte précédent, ou de choisir
+explicitement `/new` ou `/resume <id>`. Les branches `main` et `master` sont
+protégées par défaut. Voir [les règles et consignes de test](workspace-safety.md).

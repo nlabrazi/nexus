@@ -15,13 +15,14 @@ reprise nécessaire ou une approbation attendue, 🔴 pour une indisponibilité 
 Les informations et les alertes existantes sont conservées ; les noms de
 workspaces, chemins et identifiants contenant du Markdown restent littéraux.
 
-- **Workspace ciblé** : nom et chemin du premier dossier ouvert dans la fenêtre
+- **Workspace ciblé** : nom et chemin du seul dossier ouvert dans la fenêtre
   VS Code de Nexus. Si plusieurs dossiers sont ouverts, le statut précise leur
-  nombre et que le premier est ciblé, conformément au comportement actuel.
+  nombre et signale que les actions Codex sont bloquées car la cible est ambiguë.
 - **Telegram** : connexion et appairage ; présence d'une requête `/codex` en cours
   de traitement, y compris son démarrage ou l'envoi de sa réponse.
 - **Processus Codex** : lancé ou arrêté.
-- **Session Codex** : état, identifiant et workspace associé. Une session connue
+- **Session Codex** : état, identifiant, workspace associé et branche mémorisée à la sélection
+  de la session (sans nouvelle lecture de Git). Une session connue
   dont le processus s'est arrêté est indiquée comme indisponible. Si le processus
   a redémarré sans avoir pu recharger la session, elle est indiquée « à reprendre ».
   Une création ou reprise explicite affiche aussi « Gestion de session : en cours ».
@@ -89,7 +90,7 @@ incertitude. Voir [la gestion des erreurs](codex-errors.md) et
    revient à zéro. Codex peut encore terminer sa réponse avant la fin du turn.
 
 Optionnel : tester sans dossier ouvert pour voir `Workspace ciblé : aucun`, ou
-avec plusieurs dossiers pour voir lequel est ciblé. `/status` fonctionne sans
+avec plusieurs dossiers pour voir le blocage des actions Codex. `/status` fonctionne sans
 avoir lancé de session Codex.
 
 ## Tests automatisés

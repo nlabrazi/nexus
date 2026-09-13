@@ -14,6 +14,18 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "configuration": {
+      "title": "Nexus",
+      "properties": {
+        "nexus.git.protectedBranches": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": ["main", "master"],
+          "scope": "window",
+          "description": "Branches sur lesquelles Nexus refuse de lancer Codex. Noms exacts, sensibles à la casse. Une liste vide désactive cette protection."
+        }
+      }
+    },
     "commands": [
       {
         "command": "nexus.status",

@@ -33,13 +33,14 @@ suite('Telegram /status', () => {
 
     snapshot = {
       workspace: { name: 'Nexus', path: '/project' }, workspaceCount: 1,
-      codex: { processRunning: true, sessionId: 'thread', workspacePath: '/project', pendingApprovals: 0 },
+      codex: { processRunning: true, sessionId: 'thread', workspacePath: '/project', sessionBranch: 'feature/test', pendingApprovals: 0 },
     };
     client.push(message(2, ' /status '));
     await flush();
     assert.match(client.messages[1], /Workspace ciblé : Nexus\nChemin : \/project/);
     assert.match(client.messages[1], /Session Codex : active\nID session : thread/);
     assert.match(client.messages[1], /Workspace de la session : \/project/);
+    assert.match(client.messages[1], /🌿 Branche de la session : feature\/test/);
     assert.match(client.messages[1], /Turn : aucun en cours/);
     assert.equal(promptCalls, 0);
   });
@@ -117,7 +118,7 @@ suite('Telegram /status', () => {
     client.push(message(1));
     await flush();
     const status = client.messages[0];
-    assert.match(status, /Dossiers ouverts : 2 \(le premier est ciblé\)/);
+    assert.match(status, /Dossiers ouverts : 2 \(actions Codex bloquées : cible ambiguë\)/);
     assert.match(status, /Session Codex : indisponible \(processus arrêté\)/);
     assert.match(status, /ID session : thread/);
     assert.match(status, /diffère du workspace ciblé/);

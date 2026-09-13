@@ -16,6 +16,7 @@ import {
 } from './types';
 import { CodexApprovals } from './approvals';
 import { CodexError, processError, rpcError, turnTimeoutError } from './errors';
+import { workspaceEnvironment } from '../workspace/environment';
 
 export class CodexClient {
   private process?: ChildProcessWithoutNullStreams;
@@ -85,6 +86,7 @@ export class CodexClient {
         ['app-server', '--stdio'],
         {
           stdio: ['pipe', 'pipe', 'pipe'],
+          env: workspaceEnvironment(),
         }
       );
     } catch (error) {

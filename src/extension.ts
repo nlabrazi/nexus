@@ -5,16 +5,28 @@ import { RemoteSessionAction, TelegramService } from './telegram/service';
 
 import { CodexClient } from './codex/client';
 import { CodexService } from './codex/service';
+import { DEFAULT_PROTECTED_BRANCHES, WorkspaceGuard } from './workspace/guard';
 
 let telegramService: TelegramService | undefined;
 let codexService: CodexService | undefined;
+
+const workspaceGuard = new WorkspaceGuard(() => ({
+  trusted: vscode.workspace.isTrusted,
+  folders: (vscode.workspace.workspaceFolders ?? []).map(folder => ({
+    scheme: folder.uri.scheme, path: folder.uri.fsPath,
+  })),
+  dirtyDocuments: [...vscode.workspace.textDocuments, ...vscode.workspace.notebookDocuments]
+    .filter(document => document.isDirty)
+    .map(document => ({ scheme: document.uri.scheme, path: document.uri.fsPath })),
+  protectedBranches: vscode.workspace.getConfiguration('nexus').get<string[]>('git.protectedBranches', DEFAULT_PROTECTED_BRANCHES),
+}));
 
 export async function activate(
   context: vscode.ExtensionContext
 ) {
   codexService = new CodexService(async (request, signal) => {
     return await telegramService?.requestApproval(request, signal) ?? 'decline';
-  });
+  }, path => workspaceGuard.validate(path));
 
   const statusCommand = vscode.commands.registerCommand(
     'nexus.status',
@@ -187,17 +199,6 @@ export async function activate(
     vscode.commands.registerCommand(
       'nexus.startCodexSession',
       async () => {
-        const workspace =
-          vscode.workspace.workspaceFolders?.[0];
-
-        if (!workspace) {
-          vscode.window.showWarningMessage(
-            'Nexus: No workspace opened.'
-          );
-
-          return;
-        }
-
         if (!codexService) {
           vscode.window.showErrorMessage(
             'Nexus: Codex service unavailable.'
@@ -209,7 +210,7 @@ export async function activate(
         try {
           const sessionId =
             await codexService.startSession(
-              workspace.uri.fsPath
+              workspaceGuard.targetPath()
             );
 
           vscode.window.showInformationMessage(
@@ -335,7 +336,7 @@ function startTelegramService(
       handleRemoteCodexPrompt,
       () => {
         const folders = vscode.workspace.workspaceFolders ?? [];
-        const workspace = folders[0];
+        const workspace = folders.length === 1 ? folders[0] : undefined;
         return {
           workspace: workspace ? { name: workspace.name, path: workspace.uri.fsPath } : undefined,
           workspaceCount: folders.length,
@@ -357,29 +358,17 @@ async function handleRemoteCodexPrompt(
     );
   }
 
-  const workspace =
-    vscode.workspace.workspaceFolders?.[0];
-
-  if (!workspace) {
-    throw new Error(
-      'No workspace is currently open in VS Code.'
-    );
-  }
-
-  return await codexService.sendPrompt(prompt, workspace.uri.fsPath);
+  return await codexService.sendPrompt(prompt, workspaceGuard.targetPath());
 }
 
 async function handleSessionAction(action: RemoteSessionAction): Promise<string> {
   if (!codexService) {
     throw new Error('Codex service unavailable.');
   }
-  const workspace = vscode.workspace.workspaceFolders?.[0];
-  if (!workspace) {
-    throw new Error('No workspace is currently open in VS Code.');
-  }
+  const path = workspaceGuard.targetPath();
   return action.type === 'new'
-    ? await codexService.newSession(workspace.uri.fsPath)
-    : await codexService.resumeSession(workspace.uri.fsPath, action.sessionId);
+    ? await codexService.newSession(path)
+    : await codexService.resumeSession(path, action.sessionId);
 }
 
 async function runLocalSessionAction(action: RemoteSessionAction): Promise<void> {

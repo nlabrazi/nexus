@@ -2,6 +2,7 @@ import { isAbsolute, resolve } from 'path';
 import { CodexClient } from './client';
 import { CodexApprovalHandler, CodexServiceStatus, CodexThread } from './types';
 import { CodexError } from './errors';
+import { assertSameWorkspace, WorkspaceIdentity, WorkspaceValidator } from '../workspace/guard';
 
 type SessionAction = 'ensure' | 'new' | 'resume';
 
@@ -9,12 +10,13 @@ export class CodexService {
   private readonly client: CodexClient;
   private sessionId?: string;
   private workspacePath?: string;
+  private workspaceIdentity?: WorkspaceIdentity;
   private sessionConnection?: number;
   private turnRunning = false;
   private generation = 0;
   private sessionOperation?: { key: string; promise: Promise<string> };
 
-  constructor(approvalHandler?: CodexApprovalHandler) {
+  constructor(approvalHandler?: CodexApprovalHandler, private readonly validateWorkspace?: WorkspaceValidator) {
     this.client = new CodexClient(approvalHandler);
   }
 
@@ -64,11 +66,19 @@ export class CodexService {
 
   private async selectSession(action: SessionAction, path: string, generation: number, id?: string): Promise<string> {
     this.assertCurrent(generation);
+    const workspace = this.validateWorkspace ? await this.validateWorkspace(path) : undefined;
+    this.assertCurrent(generation);
+    path = workspace?.root ?? path;
     if (action === 'ensure' && this.sessionId && this.workspacePath !== path) {
       throw new Error('La session appartient à un autre workspace. Utilisez /new ou /resume <id> explicitement.');
     }
+    if (action === 'ensure' && this.sessionId) {
+      assertSameWorkspace(this.workspaceIdentity, workspace);
+    }
     const targetId = action === 'resume' ? id : action === 'ensure' ? this.sessionId : undefined;
     if (targetId === this.sessionId && this.workspacePath === path && this.isSessionActive()) {
+      // Explicit resume can deliberately bind the same conversation to a new branch.
+      this.workspaceIdentity = workspace;
       return targetId!;
     }
 
@@ -97,9 +107,14 @@ export class CodexService {
     }
     this.assertCurrent(generation, connection);
     this.checkThread(thread, path, targetId);
+    if (this.validateWorkspace) {
+      assertSameWorkspace(workspace, await this.validateWorkspace(path));
+      this.assertCurrent(generation, connection);
+    }
     // Commit the selection only after success; a failed resume keeps the old one.
     this.sessionId = thread.id;
     this.workspacePath = path;
+    this.workspaceIdentity = workspace;
     this.sessionConnection = connection;
     return thread.id;
   }
@@ -148,6 +163,10 @@ export class CodexService {
     try {
       const id = await this.selectSession('ensure', path, generation);
       this.assertCurrent(generation);
+      if (this.validateWorkspace) {
+        assertSameWorkspace(this.workspaceIdentity, await this.validateWorkspace(path));
+        this.assertCurrent(generation);
+      }
       return await this.client.runTurn(id, prompt);
     } catch (error) {
       if (this.generation === generation && error instanceof CodexError && error.code === 'session_lost') {
@@ -179,6 +198,7 @@ export class CodexService {
       ...this.client.getStatus(),
       sessionId: this.sessionId,
       workspacePath: this.workspacePath,
+      ...(this.workspaceIdentity?.git ? { sessionBranch: this.workspaceIdentity.git.branch } : {}),
       sessionActive: this.isSessionActive(),
       sessionChanging: this.sessionOperation !== undefined,
     };
@@ -190,6 +210,7 @@ export class CodexService {
     this.client.stop();
     this.sessionId = undefined;
     this.workspacePath = undefined;
+    this.workspaceIdentity = undefined;
     this.sessionConnection = undefined;
     this.turnRunning = false;
   }

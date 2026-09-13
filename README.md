@@ -4,6 +4,9 @@ This is the README for your extension "nexus". After writing up a brief descript
 
 ## Features
 
+Les contrôles workspace/Git et les consignes de test sont décrits dans
+[le guide de sécurité workspace](docs/workspace-safety.md).
+
 Les erreurs Codex, les timeouts et leurs scénarios de test sont décrits dans
 [le guide de gestion des erreurs](docs/codex-errors.md).
 

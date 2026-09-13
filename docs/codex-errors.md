@@ -47,7 +47,8 @@ les messages connus de Codex (`thread/session not found`, `not loaded`,
 `no rollout found`, etc.). Le protocole ne fournit pas de code dédié stable.
 Une autre formulation reste une erreur RPC, sans création automatique de session.
 
-La sauvegarde après rechargement de VS Code, les contrôles Git et la commande
+Les contrôles Git sont décrits dans [le guide workspace](workspace-safety.md).
+La sauvegarde après rechargement de VS Code et la commande
 Telegram `/stop` restent des étapes séparées.
 
 ## Tester depuis Telegram
