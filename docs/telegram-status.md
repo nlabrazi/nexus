@@ -13,7 +13,9 @@ Codex, ni session, ni turn, et ne demande aucune approbation.
   de traitement, y compris son démarrage ou l'envoi de sa réponse.
 - **Processus Codex** : lancé ou arrêté.
 - **Session Codex** : état, identifiant et workspace associé. Une session connue
-  dont le processus s'est arrêté est indiquée comme indisponible.
+  dont le processus s'est arrêté est indiquée comme indisponible. Si le processus
+  a redémarré sans avoir pu recharger la session, elle est indiquée « à reprendre ».
+  Une création ou reprise explicite affiche aussi « Gestion de session : en cours ».
 - **Turn** : démarrage, exécution ou attente d'approbation, identifiant dès qu'il
   est reçu, et durée écoulée en secondes depuis l'envoi de `turn/start`.
 - **Approbations en attente** : nombre de demandes encore ouvertes côté Nexus.
@@ -28,8 +30,8 @@ Le statut est recalculé à chaque commande. Un message déjà envoyé ne se met
 Ce statut décrit le suivi local de Nexus, sans interroger Codex pour confirmer
 l'état distant. Après le timeout de turn existant de 120 secondes, Nexus ne suit
 plus ce turn ; cela ne confirme pas l'arrêt de son exécution côté Codex. La
-récupération des sessions et la gestion complète des erreurs restent les étapes
-suivantes du projet.
+gestion complète des erreurs reste une étape suivante du projet. La reprise
+explicite est décrite dans [le guide des sessions](codex-sessions.md).
 
 ## Tester simplement
 

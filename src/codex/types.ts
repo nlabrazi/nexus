@@ -14,6 +14,8 @@ export interface RpcMessage {
 
 export interface CodexThread {
   id: string;
+  cwd?: string;
+  status?: { type: string };
 }
 
 export interface CodexClientStatus {
@@ -28,6 +30,8 @@ export interface CodexClientStatus {
 export interface CodexServiceStatus extends CodexClientStatus {
   sessionId?: string;
   workspacePath?: string;
+  sessionActive?: boolean;
+  sessionChanging?: boolean;
 }
 
 export type CodexTurnStatus =

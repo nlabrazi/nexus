@@ -40,6 +40,14 @@
         "title": "Nexus: Start Codex Session"
       },
       {
+        "command": "nexus.newCodexSession",
+        "title": "Nexus: New Codex Session"
+      },
+      {
+        "command": "nexus.resumeCodexSession",
+        "title": "Nexus: Resume Codex Session"
+      },
+      {
         "command": "nexus.testCodexPrompt",
         "title": "Nexus: Test Codex Prompt"
       }

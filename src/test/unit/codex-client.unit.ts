@@ -1,51 +1,11 @@
 import * as assert from 'node:assert/strict';
-import { EventEmitter } from 'node:events';
-import { PassThrough } from 'node:stream';
 import { suite, test } from 'node:test';
 import childProcess = require('child_process');
 import { CodexClient } from '../../codex/client';
 import { CodexService } from '../../codex/service';
-import { ApprovalDecision, RpcMessage } from '../../codex/types';
+import { ApprovalDecision } from '../../codex/types';
 import { deferred, flush } from './helpers';
-
-class FakeProcess extends EventEmitter {
-  stdin = new PassThrough();
-  stdout = new PassThrough();
-  stderr = new PassThrough();
-  written: RpcMessage[] = [];
-
-  constructor() {
-    super();
-    this.stdin.on('data', chunk => {
-      const message = JSON.parse(chunk.toString()) as RpcMessage;
-      this.written.push(message);
-      if (message.method === 'initialize') {
-        this.receive({ id: message.id, result: {} });
-      } else if (message.method === 'thread/start') {
-        this.receive({ id: message.id, result: { thread: { id: 'thread' } } });
-      } else if (message.method === 'turn/start') {
-        this.receive({ id: message.id, result: { turn: { id: 'turn' } } });
-      }
-    });
-  }
-
-  receive(message: RpcMessage): void {
-    this.stdout.write(`${JSON.stringify(message)}\n`);
-  }
-
-  approve(id: string): void {
-    this.receive({ id, method: 'item/commandExecution/requestApproval', params: {
-      threadId: 'thread', turnId: 'turn', itemId: 'item', command: 'npm test',
-    } });
-  }
-
-  complete(): void {
-    this.receive({ method: 'item/agentMessage/delta', params: { threadId: 'thread', turnId: 'turn', delta: 'Done' } });
-    this.receive({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'turn', status: 'completed' } } });
-  }
-
-  kill(): boolean { return true; }
-}
+import { FakeProcess } from './codex-process';
 
 suite('Codex process approval lifecycle', () => {
   test('routes a server request and writes an accept-once RPC response', async t => {
@@ -148,9 +108,13 @@ suite('Codex status snapshots', () => {
     assert.equal(idle.workspacePath, '/project');
     assert.equal(idle.turn, undefined);
 
+    child.blockedMethods.add('turn/start');
     const turn = service.sendPrompt('Run tests');
+    await flush();
     const starting = service.getStatus();
     assert.deepEqual(starting.turn, { startedAt: 1000 });
+    child.receive({ id: child.written.find(message => message.method === 'turn/start')!.id,
+      result: { turn: { id: 'turn' } } });
     await flush();
     const running = service.getStatus();
     assert.equal(running.turn?.id, 'turn');

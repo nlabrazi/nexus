@@ -8,6 +8,8 @@ Les approbations Codex via Telegram sont décrites dans [le guide de fonctionnem
 
 La commande Telegram `/status` est décrite dans [le guide du statut et de ses tests](docs/telegram-status.md).
 
+La création et la reprise de sessions (`/new`, `/resume <id>`) sont décrites dans [le guide des sessions Codex](docs/codex-sessions.md).
+
 Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
 
 For example if there is an image subfolder under your extension project workspace:

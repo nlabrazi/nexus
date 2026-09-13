@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
 import { TelegramClient } from './telegram/client';
-import { TelegramService } from './telegram/service';
+import { RemoteSessionAction, TelegramService } from './telegram/service';
 
 import { CodexClient } from './codex/client';
 import { CodexService } from './codex/service';
@@ -261,6 +261,20 @@ export async function activate(
       }
     );
 
+  const newCodexSessionCommand = vscode.commands.registerCommand('nexus.newCodexSession', async () => {
+    await runLocalSessionAction({ type: 'new' });
+  });
+
+  const resumeCodexSessionCommand = vscode.commands.registerCommand('nexus.resumeCodexSession', async () => {
+    const id = await vscode.window.showInputBox({
+      prompt: 'Identifiant de la session Codex à reprendre dans le workspace courant',
+      ignoreFocusOut: true,
+    });
+    if (id?.trim()) {
+      await runLocalSessionAction({ type: 'resume', sessionId: id.trim() });
+    }
+  });
+
   context.subscriptions.push(
     statusCommand,
     configureTelegramCommand,
@@ -268,7 +282,9 @@ export async function activate(
     pairTelegramCommand,
     testCodexCommand,
     startCodexSessionCommand,
-    testCodexPromptCommand
+    testCodexPromptCommand,
+    newCodexSessionCommand,
+    resumeCodexSessionCommand
   );
 
   const statusBar =
@@ -325,7 +341,8 @@ function startTelegramService(
           workspaceCount: folders.length,
           codex: codexService?.getStatus(),
         };
-      }
+      },
+      handleSessionAction
     );
 
   void telegramService.start();
@@ -349,13 +366,29 @@ async function handleRemoteCodexPrompt(
     );
   }
 
-  if (!codexService.isSessionActive()) {
-    await codexService.startSession(
-      workspace.uri.fsPath
-    );
-  }
+  return await codexService.sendPrompt(prompt, workspace.uri.fsPath);
+}
 
-  return await codexService.sendPrompt(prompt);
+async function handleSessionAction(action: RemoteSessionAction): Promise<string> {
+  if (!codexService) {
+    throw new Error('Codex service unavailable.');
+  }
+  const workspace = vscode.workspace.workspaceFolders?.[0];
+  if (!workspace) {
+    throw new Error('No workspace is currently open in VS Code.');
+  }
+  return action.type === 'new'
+    ? await codexService.newSession(workspace.uri.fsPath)
+    : await codexService.resumeSession(workspace.uri.fsPath, action.sessionId);
+}
+
+async function runLocalSessionAction(action: RemoteSessionAction): Promise<void> {
+  try {
+    const id = await handleSessionAction(action);
+    vscode.window.showInformationMessage(`Nexus : session ${action.type === 'new' ? 'créée' : 'reprise'} — ${id}`);
+  } catch (error) {
+    vscode.window.showErrorMessage(`Nexus : ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 export function deactivate() {

@@ -10,19 +10,23 @@ type RemotePromptHandler = (
   prompt: string
 ) => Promise<string>;
 
+export type RemoteSessionAction = { type: 'new' } | { type: 'resume'; sessionId: string };
+
 export class TelegramService {
   private pairingCode?: string;
   private pairingExpiresAt = 0;
   private running = false;
   private abortController?: AbortController;
   private remotePromptRunning = false;
+  private remoteSessionRunning = false;
   private readonly approvals: TelegramApprovals;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly client: TelegramClient,
     private readonly onRemotePrompt?: RemotePromptHandler,
-    private readonly getStatus?: () => NexusStatusSnapshot
+    private readonly getStatus?: () => NexusStatusSnapshot,
+    private readonly onSessionAction?: (action: RemoteSessionAction) => Promise<string>
   ) {
     this.approvals = new TelegramApprovals(client, () => this.getApprovalPeer());
   }
@@ -186,6 +190,28 @@ export class TelegramService {
     }
 
     // Commands
+    const command = text.trim();
+    if (/^\/(new|resume)(?:\s|$)/.test(command)) {
+      const [name, id, ...extra] = command.split(/\s+/);
+      if ((name === '/new' && id !== undefined) ||
+        (name === '/resume' && (!id || extra.length > 0))) {
+        await this.client.sendMessage(chatId, name === '/new' ? 'Usage : /new' : 'Usage : /resume <id>');
+        return;
+      }
+      if (!this.onSessionAction) {
+        await this.client.sendMessage(chatId, 'La gestion des sessions Codex est indisponible.');
+        return;
+      }
+      if (this.remotePromptRunning || this.remoteSessionRunning) {
+        await this.client.sendMessage(chatId, 'Une requête Codex est déjà en cours. Attendez sa fin.');
+        return;
+      }
+      this.remoteSessionRunning = true;
+      const action: RemoteSessionAction = name === '/new' ? { type: 'new' } : { type: 'resume', sessionId: id };
+      void this.runSessionCommand(chatId, action, this.abortController!.signal);
+      return;
+    }
+
     if (text.trim() === '/status') {
       let status: string;
       try {
@@ -233,7 +259,7 @@ export class TelegramService {
         return;
       }
 
-      if (this.remotePromptRunning) {
+      if (this.remotePromptRunning || this.remoteSessionRunning) {
         await this.client.sendMessage(chatId, 'A Codex turn is already running.');
         return;
       }
@@ -242,6 +268,24 @@ export class TelegramService {
       this.remotePromptRunning = true;
       void this.runRemotePrompt(chatId, prompt, this.abortController!.signal);
       return;
+    }
+  }
+
+  private async runSessionCommand(chatId: number, action: RemoteSessionAction, signal: AbortSignal): Promise<void> {
+    try {
+      const id = await this.onSessionAction!(action);
+      if (!signal.aborted) {
+        await this.client.sendMessage(chatId,
+          `✅ Session Codex ${action.type === 'new' ? 'créée' : 'reprise'}.\nID session : ${id}`);
+      }
+    } catch (error) {
+      if (!signal.aborted) {
+        await this.client.sendMessage(chatId,
+          `❌ ${error instanceof Error ? error.message : String(error)}`
+        ).catch(() => console.error('[Telegram] Session response delivery failed.'));
+      }
+    } finally {
+      this.remoteSessionRunning = false;
     }
   }
 

@@ -22,6 +22,8 @@ export class CodexClient {
   private requestId = 0;
   private readonly approvals: CodexApprovals;
   private currentTurn?: CodexClientStatus['turn'];
+  private starting?: Promise<void>;
+  private connectionId = 0;
 
   constructor(approvalHandler?: CodexApprovalHandler) {
     this.approvals = new CodexApprovals(
@@ -51,11 +53,29 @@ export class CodexClient {
     }
   >();
 
-  async start(): Promise<void> {
-    if (this.process) {
-      return;
-    }
+  getConnectionId(): number | undefined {
+    return this.process ? this.connectionId : undefined;
+  }
 
+  start(): Promise<void> {
+    if (this.starting) {
+      return this.starting;
+    }
+    if (this.process) {
+      return Promise.resolve();
+    }
+    const starting = this.startProcess();
+    this.starting = starting;
+    const clear = () => {
+      if (this.starting === starting) {
+        this.starting = undefined;
+      }
+    };
+    void starting.then(clear, clear);
+    return starting;
+  }
+
+  private async startProcess(): Promise<void> {
     this.process = spawn(
       'codex',
       ['app-server', '--stdio'],
@@ -64,6 +84,7 @@ export class CodexClient {
       }
     );
     const child = this.process;
+    this.connectionId++;
     this.buffer = '';
 
     this.process.stdout.setEncoding('utf8');
@@ -106,18 +127,28 @@ export class CodexClient {
       this.process = undefined;
     });
 
-    await this.request('initialize', {
-      clientInfo: {
-        name: 'nexus',
-        title: 'Nexus',
-        version: '0.0.1',
-      },
-      capabilities: {
-        experimentalApi: false,
-      },
-    });
+    try {
+      await this.request('initialize', {
+        clientInfo: {
+          name: 'nexus',
+          title: 'Nexus',
+          version: '0.0.1',
+        },
+        capabilities: {
+          experimentalApi: false,
+        },
+      });
 
-    this.notify('initialized', {});
+      if (this.process !== child) {
+        throw new Error('Codex initialization cancelled');
+      }
+      this.notify('initialized', {});
+    } catch (error) {
+      if (this.process === child) {
+        this.stop();
+      }
+      throw error;
+    }
   }
 
   async startSession(
@@ -135,7 +166,25 @@ export class CodexClient {
     ) as ThreadStartResponse;
   }
 
+  async readSession(threadId: string): Promise<ThreadStartResponse> {
+    return await this.request('thread/read', {
+      threadId,
+      includeTurns: false,
+    }) as ThreadStartResponse;
+  }
+
+  async resumeSession(threadId: string, cwd: string): Promise<ThreadStartResponse> {
+    return await this.request('thread/resume', {
+      threadId,
+      cwd,
+      approvalPolicy: 'on-request',
+      approvalsReviewer: 'user',
+      sandbox: 'workspace-write',
+    }) as ThreadStartResponse;
+  }
+
   stop(): void {
+    this.starting = undefined;
     this.approvals.endTurn();
     this.currentTurn = undefined;
     this.process?.kill();

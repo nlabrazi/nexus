@@ -30,8 +30,13 @@ export function formatTelegramStatus(
     return lines.join('\n');
   }
   lines.push(`Processus Codex : ${codex.processRunning ? 'lancé' : 'arrêté'}`);
+  if (codex.sessionChanging) {
+    lines.push('Gestion de session : en cours');
+  }
   if (codex.sessionId) {
-    lines.push(`Session Codex : ${codex.processRunning ? 'active' : 'indisponible (processus arrêté)'}`);
+    const active = codex.sessionActive ?? codex.processRunning;
+    lines.push(`Session Codex : ${active ? 'active' : codex.processRunning
+      ? 'à reprendre' : 'indisponible (processus arrêté)'}`);
     lines.push(`ID session : ${codex.sessionId}`);
   } else {
     lines.push('Session Codex : aucune');
