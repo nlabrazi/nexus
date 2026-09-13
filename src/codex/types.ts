@@ -1,5 +1,8 @@
+export type RpcRequestId = number | string;
+
 export interface RpcMessage {
-  id?: number;
+  jsonrpc?: '2.0';
+  id?: RpcRequestId;
   method?: string;
   params?: unknown;
   result?: unknown;
@@ -60,3 +63,25 @@ export interface TurnCompletedNotification {
   threadId: string;
   turn: CodexTurn;
 }
+
+export interface RpcServerRequest {
+  id: RpcRequestId;
+  method: string;
+  params?: unknown;
+}
+
+export type ApprovalDecision = 'accept' | 'decline';
+
+export interface CodexApprovalRequest {
+  kind: 'command' | 'fileChange';
+  threadId: string;
+  turnId: string;
+  itemId: string;
+  details: string;
+  expiresAt: number;
+}
+
+export type CodexApprovalHandler = (
+  request: CodexApprovalRequest,
+  signal: AbortSignal
+) => Promise<ApprovalDecision>;

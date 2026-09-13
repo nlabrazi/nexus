@@ -11,12 +11,22 @@ import {
   ThreadStartResponse,
   TurnCompletedNotification,
   TurnStartResponse,
+  CodexApprovalHandler
 } from './types';
+import { CodexApprovals } from './approvals';
 
 export class CodexClient {
   private process?: ChildProcessWithoutNullStreams;
   private buffer = '';
   private requestId = 0;
+  private readonly approvals: CodexApprovals;
+
+  constructor(approvalHandler?: CodexApprovalHandler) {
+    this.approvals = new CodexApprovals(
+      message => this.write(message),
+      approvalHandler
+    );
+  }
 
   private notificationListeners = new Set<
     (notification: RpcNotification) => void
@@ -43,12 +53,16 @@ export class CodexClient {
         stdio: ['pipe', 'pipe', 'pipe'],
       }
     );
+    const child = this.process;
+    this.buffer = '';
 
     this.process.stdout.setEncoding('utf8');
     this.process.stderr.setEncoding('utf8');
 
     this.process.stdout.on('data', chunk => {
-      this.handleStdout(chunk);
+      if (this.process === child) {
+        this.handleStdout(chunk);
+      }
     });
 
     this.process.stderr.on('data', chunk => {
@@ -60,11 +74,19 @@ export class CodexClient {
     });
 
     this.process.on('error', error => {
+      if (this.process !== child) {
+        return;
+      }
+      this.approvals.endTurn(false);
       this.rejectPending(error);
       this.process = undefined;
     });
 
     this.process.on('exit', code => {
+      if (this.process !== child) {
+        return;
+      }
+      this.approvals.endTurn(false);
       this.rejectPending(
         new Error(`Codex process exited with code ${code}`)
       );
@@ -102,6 +124,7 @@ export class CodexClient {
   }
 
   stop(): void {
+    this.approvals.endTurn();
     this.process?.kill();
     this.process = undefined;
 
@@ -125,6 +148,7 @@ export class CodexClient {
     }
 
     const child = this.process;
+    this.approvals.beginTurn(threadId);
 
     let turnId: string | undefined;
     let streamedText = '';
@@ -136,6 +160,9 @@ export class CodexClient {
       let timeout: ReturnType<typeof setTimeout>;
 
       const cleanup = () => {
+        if (this.process === child) {
+          this.approvals.endTurn();
+        }
         clearTimeout(timeout);
         this.notificationListeners.delete(onNotification);
         child.off('exit', onExit);
@@ -300,6 +327,9 @@ export class CodexClient {
             result as TurnStartResponse;
 
           turnId = response.turn.id;
+          if (!settled) {
+            this.approvals.setTurnId(turnId);
+          }
 
           if (
             earlyCompletion &&
@@ -417,6 +447,7 @@ export class CodexClient {
           method: message.method,
           params: message.params,
         };
+        this.approvals.handleNotification(notification);
 
         for (
           const listener
@@ -429,20 +460,21 @@ export class CodexClient {
       }
 
       // Requête envoyée PAR Codex vers Nexus.
-      // Exemple futur : approval.
       if (
         message.method &&
         message.id !== undefined
       ) {
-        console.warn(
-          `[Codex] Unsupported server request: ${message.method}`
-        );
+        this.approvals.handleRequest({
+          id: message.id,
+          method: message.method,
+          params: message.params,
+        });
 
         continue;
       }
 
       // Réponse à une RPC Nexus → Codex
-      if (message.id === undefined) {
+      if (typeof message.id !== 'number') {
         continue;
       }
 
@@ -477,4 +509,5 @@ export class CodexClient {
 
     this.pending.clear();
   }
+
 }

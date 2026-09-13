@@ -12,7 +12,9 @@ let codexService: CodexService | undefined;
 export async function activate(
   context: vscode.ExtensionContext
 ) {
-  codexService = new CodexService();
+  codexService = new CodexService(async (request, signal) => {
+    return await telegramService?.requestApproval(request, signal) ?? 'decline';
+  });
 
   const statusCommand = vscode.commands.registerCommand(
     'nexus.status',

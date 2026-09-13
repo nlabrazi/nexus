@@ -1,7 +1,9 @@
-import * as vscode from 'vscode';
+import type * as vscode from 'vscode';
 import { randomInt } from 'crypto';
 import { TelegramClient } from './client';
 import { TelegramUpdate } from './types';
+import { TelegramApprovals, TelegramPeer } from './approvals';
+import { ApprovalDecision, CodexApprovalRequest } from '../codex/types';
 
 type RemotePromptHandler = (
   prompt: string
@@ -12,12 +14,27 @@ export class TelegramService {
   private pairingExpiresAt = 0;
   private running = false;
   private abortController?: AbortController;
+  private remotePromptRunning = false;
+  private readonly approvals: TelegramApprovals;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly client: TelegramClient,
     private readonly onRemotePrompt?: RemotePromptHandler
-  ) { }
+  ) {
+    this.approvals = new TelegramApprovals(client, () => this.getApprovalPeer());
+  }
+
+  requestApproval(request: CodexApprovalRequest, signal: AbortSignal): Promise<ApprovalDecision> {
+    return this.approvals.request(request, signal);
+  }
+
+  private getApprovalPeer(): TelegramPeer | undefined {
+    const userId = this.context.globalState.get<number>('nexus.telegram.allowedUserId');
+    const chatId = this.context.globalState.get<number>('nexus.telegram.allowedChatId');
+    return this.running && userId !== undefined && chatId !== undefined
+      ? { userId, chatId } : undefined;
+  }
 
   createPairingCode(): string {
     this.pairingCode = randomInt(100000, 1000000).toString();
@@ -42,7 +59,7 @@ export class TelegramService {
     );
 
     try {
-      while (this.running) {
+      while (!controller.signal.aborted) {
         try {
           const data = await this.client.getUpdates(
             offset,
@@ -50,6 +67,9 @@ export class TelegramService {
           );
 
           for (const update of data.result) {
+            if (controller.signal.aborted) {
+              break;
+            }
             offset = update.update_id + 1;
 
             await this.context.globalState.update(
@@ -57,18 +77,17 @@ export class TelegramService {
               offset
             );
 
-            await this.handleUpdate(update);
+            if (!controller.signal.aborted) {
+              await this.handleUpdate(update);
+            }
           }
         } catch (error) {
-          if (
-            !this.running &&
-            error instanceof Error &&
-            error.name === 'AbortError'
-          ) {
+          if (controller.signal.aborted) {
             break;
           }
 
-          console.error('Telegram polling error:', error);
+          this.approvals.cancelAll();
+          console.error('Telegram polling failed.');
 
           await new Promise(resolve =>
             setTimeout(resolve, 3000)
@@ -78,6 +97,8 @@ export class TelegramService {
     } finally {
       if (this.abortController === controller) {
         this.abortController = undefined;
+        this.running = false;
+        this.approvals.cancelAll();
       }
     }
   }
@@ -85,9 +106,14 @@ export class TelegramService {
   stop(): void {
     this.running = false;
     this.abortController?.abort();
+    this.approvals.cancelAll();
   }
 
   private async handleUpdate(update: TelegramUpdate): Promise<void> {
+    if (update.callback_query) {
+      await this.approvals.handleCallback(update.callback_query);
+      return;
+    }
     const text = update.message?.text;
     const userId = update.message?.from?.id;
     const chatId = update.message?.chat.id;
@@ -114,6 +140,8 @@ export class TelegramService {
       if (!isValid) {
         return;
       }
+
+      this.approvals.cancelAll();
 
       await this.context.globalState.update(
         'nexus.telegram.allowedUserId',
@@ -190,30 +218,36 @@ export class TelegramService {
         return;
       }
 
-      await this.client.sendMessage(
-        chatId,
-        '⏳ Codex is working...'
-      );
-
-      try {
-        const response =
-          await this.onRemotePrompt(prompt);
-
-        await this.client.sendMessage(
-          chatId,
-          response
-        );
-      } catch (error) {
-        await this.client.sendMessage(
-          chatId,
-          `❌ ${error instanceof Error
-            ? error.message
-            : String(error)
-          }`
-        );
+      if (this.remotePromptRunning) {
+        await this.client.sendMessage(chatId, 'A Codex turn is already running.');
+        return;
       }
 
+      // Polling must continue while Codex waits for an approval callback.
+      this.remotePromptRunning = true;
+      void this.runRemotePrompt(chatId, prompt, this.abortController!.signal);
       return;
+    }
+  }
+
+  private async runRemotePrompt(chatId: number, prompt: string, signal: AbortSignal): Promise<void> {
+    try {
+      await this.client.sendMessage(chatId, '⏳ Codex is working...');
+      if (signal.aborted) {
+        return;
+      }
+      const response = await this.onRemotePrompt!(prompt);
+      if (!signal.aborted) {
+        await this.client.sendMessage(chatId, response);
+      }
+    } catch (error) {
+      if (!signal.aborted) {
+        await this.client.sendMessage(chatId,
+          `❌ ${error instanceof Error ? error.message : String(error)}`
+        ).catch(() => console.error('[Telegram] Codex response delivery failed.'));
+      }
+    } finally {
+      this.remotePromptRunning = false;
     }
   }
 }

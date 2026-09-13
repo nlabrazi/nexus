@@ -4,6 +4,8 @@ This is the README for your extension "nexus". After writing up a brief descript
 
 ## Features
 
+Les approbations Codex via Telegram sont décrites dans [le guide de fonctionnement et de validation](docs/telegram-approvals.md).
+
 Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
 
 For example if there is an image subfolder under your extension project workspace:

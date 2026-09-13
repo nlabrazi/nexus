@@ -1,11 +1,16 @@
 import { CodexClient } from './client';
+import { CodexApprovalHandler } from './types';
 
 export class CodexService {
-  private readonly client = new CodexClient();
+  private readonly client: CodexClient;
 
   private sessionId?: string;
   private workspacePath?: string;
   private turnRunning = false;
+
+  constructor(approvalHandler?: CodexApprovalHandler) {
+    this.client = new CodexClient(approvalHandler);
+  }
 
   async startSession(
     cwd: string
