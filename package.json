@@ -9,7 +9,7 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": ["onStartupFinished"],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -20,6 +20,14 @@
       {
         "command": "nexus.configureTelegram",
         "title": "Nexus: Configure Telegram"
+      },
+      {
+        "command": "nexus.testTelegram",
+        "title": "Nexus: Test Telegram Connection"
+      },
+      {
+        "command": "nexus.pairTelegram",
+        "title": "Nexus: Pair Telegram"
       }
     ]
   },
