@@ -24,6 +24,27 @@ function click(client: FakeTelegram, index = 0): TelegramUpdate {
 }
 
 suite('Telegram polling with approvals', () => {
+  test('formats only the Codex response and keeps error messages literal', async t => {
+    const client = new FakeTelegram();
+    const send = t.mock.method(client, 'sendMessage');
+    let fail = false;
+    const service = new TelegramService(context(), client, async () => {
+      if (fail) { throw new Error('Erreur **brute**'); }
+      return '**Terminé**';
+    });
+    const polling = service.start();
+    t.after(async () => { service.stop(); await polling; });
+    client.push(message(1, '/codex premier'));
+    await flush();
+    assert.deepEqual(send.mock.calls.map(call => call.arguments), [
+      [20, '⏳ Codex is working...'], [20, '**Terminé**', 'markdown'],
+    ]);
+    fail = true;
+    client.push(message(2, '/codex deuxième'));
+    await flush();
+    assert.deepEqual(send.mock.calls.at(-1)?.arguments, [20, '❌ Erreur **brute**']);
+  });
+
   test('keeps polling during /codex and rejects a second prompt before starting another session', async t => {
     const client = new FakeTelegram();
     const finished = deferred<string>();

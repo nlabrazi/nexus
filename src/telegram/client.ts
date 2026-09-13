@@ -4,6 +4,7 @@ import {
   TelegramSentMessage,
   TelegramUpdatesResponse,
 } from './types';
+import { formatTelegramResponse, splitTelegramMessage } from './formatting';
 
 export class TelegramClient {
   constructor(private readonly token: string) { }
@@ -55,12 +56,18 @@ export class TelegramClient {
 
   async sendMessage(
     chatId: number,
-    text: string
+    text: string,
+    format: 'plain' | 'markdown' = 'plain'
   ): Promise<void> {
-    const chunks = text.match(/[\s\S]{1,4000}/g) ?? [];
+    const chunks = format === 'markdown' ? formatTelegramResponse(text) : splitTelegramMessage(text);
 
     for (const chunk of chunks) {
-      await this.call('sendMessage', { chat_id: chatId, text: chunk });
+      await this.call('sendMessage', {
+        chat_id: chatId,
+        text: chunk.text,
+        ...(chunk.entities.length > 0 ? { entities: chunk.entities } : {}),
+        link_preview_options: { is_disabled: true },
+      });
     }
   }
 

@@ -6,6 +6,15 @@ Codex, ni session, ni turn, et ne demande aucune approbation.
 
 ## Informations affichées
 
+Le message présente un titre en gras, puis trois blocs espacés : **Projet**,
+**Codex** et **Activité**. La connexion Telegram reste visible en tête.
+Les sections sont repérées par 📁, 🤖 et ⚡. Les états utilisent 🟢 pour une
+connexion/session active, ⚪ pour l'absence de session ou de turn, 🟠 pour une
+reprise nécessaire ou une approbation attendue, 🔴 pour une indisponibilité et
+⏳ pour une opération en cours.
+Les informations et les alertes existantes sont conservées ; les noms de
+workspaces, chemins et identifiants contenant du Markdown restent littéraux.
+
 - **Workspace ciblé** : nom et chemin du premier dossier ouvert dans la fenêtre
   VS Code de Nexus. Si plusieurs dossiers sont ouverts, le statut précise leur
   nombre et que le premier est ciblé, conformément au comportement actuel.
@@ -40,6 +49,8 @@ explicite est décrite dans [le guide des sessions](codex-sessions.md).
    **F5**. Garder un dossier de test ouvert dans l'Extension Development Host.
    L'appairage Telegram existant est conservé.
 3. Envoyer `/status` : le nom et le chemin doivent correspondre au dossier ouvert.
+   Vérifier que le titre et les intitulés Projet, Codex et Activité sont en gras,
+   avec une ligne vide entre les blocs et sans astérisques affichés.
    Au démarrage de l'extension, avant tout prompt ou démarrage manuel de session,
    les lignes attendues sont :
 

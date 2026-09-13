@@ -4,6 +4,9 @@ This is the README for your extension "nexus". After writing up a brief descript
 
 ## Features
 
+La mise en forme des réponses Codex pour Telegram est décrite dans
+[le guide de présentation et de validation](docs/telegram-formatting.md).
+
 Les approbations Codex via Telegram sont décrites dans [le guide de fonctionnement et de validation](docs/telegram-approvals.md).
 
 La commande Telegram `/status` est décrite dans [le guide du statut et de ses tests](docs/telegram-status.md).

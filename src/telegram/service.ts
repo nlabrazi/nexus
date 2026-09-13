@@ -221,7 +221,7 @@ export class TelegramService {
       } catch {
         status = 'Impossible de lire le statut de Nexus.';
       }
-      await this.client.sendMessage(chatId, status);
+      await this.client.sendMessage(chatId, status, 'markdown');
       return;
     }
 
@@ -297,7 +297,7 @@ export class TelegramService {
       }
       const response = await this.onRemotePrompt!(prompt);
       if (!signal.aborted) {
-        await this.client.sendMessage(chatId, response);
+        await this.client.sendMessage(chatId, response, 'markdown');
       }
     } catch (error) {
       if (!signal.aborted) {
