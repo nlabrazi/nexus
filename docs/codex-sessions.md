@@ -45,13 +45,15 @@ Les mêmes actions sont disponibles dans la palette VS Code :
   l'identifiant encore connu en mémoire.
 - Après fermeture/rechargement de l'extension, utiliser `/resume <id>` pour
   reprendre manuellement. La sauvegarde automatique de l'association entre
-  workspace et session est prévue à l'étape 8. Une conversation doit avoir été
+  workspace et session reste une étape ultérieure. Une conversation doit avoir été
   enregistrée par Codex pour être reprise : tester avec au moins un prompt terminé.
 
 Les verrous concernent cette instance de Nexus, pas les autres fenêtres ou
-clients Codex. Le timeout de turn et le suivi de l'exécution distante conservent
-les limites décrites dans [le guide du statut](telegram-status.md). La gestion
-complète des erreurs et de l'interruption vient à l'étape 4.
+clients Codex. Une session signalée introuvable pendant un prompt est marquée
+inactive, avec son identifiant conservé. Un prochain prompt doit la reprendre
+avant de pouvoir démarrer un turn ; aucune session de remplacement n'est créée
+automatiquement. Le timeout et les erreurs sont décrits dans
+[le guide dédié](codex-errors.md). La commande Telegram `/stop` reste à ajouter.
 
 ## Test manuel simple
 

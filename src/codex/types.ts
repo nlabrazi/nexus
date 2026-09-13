@@ -23,6 +23,7 @@ export interface CodexClientStatus {
   turn?: {
     id?: string;
     startedAt: number;
+    interrupting?: boolean;
   };
   pendingApprovals: number;
 }
@@ -43,6 +44,7 @@ export type CodexTurnStatus =
 export interface CodexTurn {
   id: string;
   status: CodexTurnStatus;
+  items?: CodexItem[];
   error?: {
     message: string;
   } | null;
@@ -71,10 +73,14 @@ export interface AgentMessageDeltaNotification {
 export interface ItemCompletedNotification {
   threadId: string;
   turnId: string;
-  item: {
-    type: string;
-    text?: string;
-  };
+  item: CodexItem;
+}
+
+export interface CodexItem {
+  id: string;
+  type: string;
+  text?: string;
+  phase?: 'commentary' | 'final_answer' | null;
 }
 
 export interface TurnCompletedNotification {

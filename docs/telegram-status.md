@@ -27,6 +27,8 @@ workspaces, chemins et identifiants contenant du Markdown restent littéraux.
   Une création ou reprise explicite affiche aussi « Gestion de session : en cours ».
 - **Turn** : démarrage, exécution ou attente d'approbation, identifiant dès qu'il
   est reçu, et durée écoulée en secondes depuis l'envoi de `turn/start`.
+  Après le délai de 120 secondes, affiche « interruption en cours » pendant
+  l'attente de confirmation, au maximum cinq secondes supplémentaires.
 - **Approbations en attente** : nombre de demandes encore ouvertes côté Nexus.
 
 Le workspace de la session est affiché séparément du workspace ciblé. Un message
@@ -36,11 +38,13 @@ bloque pas les prompts.
 Le statut est recalculé à chaque commande. Un message déjà envoyé ne se met pas
 à jour automatiquement. La durée du turn inclut l'attente d'une approbation.
 
-Ce statut décrit le suivi local de Nexus, sans interroger Codex pour confirmer
-l'état distant. Après le timeout de turn existant de 120 secondes, Nexus ne suit
-plus ce turn ; cela ne confirme pas l'arrêt de son exécution côté Codex. La
-gestion complète des erreurs reste une étape suivante du projet. La reprise
-explicite est décrite dans [le guide des sessions](codex-sessions.md).
+Ce statut décrit le suivi local de Nexus. Au timeout, Nexus demande l'interruption
+et attend la notification de fin avant de libérer le turn. Sans confirmation sous
+cinq secondes, il ferme la connexion et demande l'arrêt du processus. Un processus
+affiché arrêté correspond alors à une connexion fermée : cela ne garantit pas
+l'arrêt de toutes les commandes enfants. Le message d'erreur précise cette
+incertitude. Voir [la gestion des erreurs](codex-errors.md) et
+[la reprise de session](codex-sessions.md).
 
 ## Tester simplement
 

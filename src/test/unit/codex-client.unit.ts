@@ -38,7 +38,7 @@ suite('Codex process approval lifecycle', () => {
     t.after(() => client.stop());
     await client.start();
     const firstTurn = client.runTurn('thread', 'First');
-    const firstFailure = assert.rejects(firstTurn, /exited/);
+    const firstFailure = assert.rejects(firstTurn, { code: 'process_failed' });
     await flush();
     first.approve('old');
     await flush();
@@ -71,7 +71,7 @@ suite('Codex process approval lifecycle', () => {
     t.after(() => client.stop());
     await client.start();
     const turn = client.runTurn('thread', 'Run tests');
-    const failure = assert.rejects(turn, /turn timeout/);
+    const failure = assert.rejects(turn, { code: 'turn_timeout' });
     await flush();
     t.mock.timers.tick(100_000);
     child.approve('late-approval');
@@ -141,7 +141,7 @@ suite('Codex status snapshots', () => {
     t.after(() => service.stop());
     await service.startSession('/project');
     const turn = service.sendPrompt('Run tests');
-    const failure = assert.rejects(turn, /exited/);
+    const failure = assert.rejects(turn, { code: 'process_failed' });
     await flush();
     child.emit('exit', 1);
     await failure;

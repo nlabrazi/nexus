@@ -156,11 +156,11 @@ suite('Codex session selection', () => {
     child.emit('exit', 1);
     const next = new FakeProcess();
     spawn.mock.mockImplementation(() => next);
-    await assert.rejects(service.startSession('/project'), /not found/);
+    await assert.rejects(service.startSession('/project'), { code: 'session_lost' });
     assert.equal(service.getStatus().processRunning, true);
     assert.equal(service.getStatus().sessionActive, false);
     assert.equal(service.getCurrentSessionId(), 'thread');
-    await assert.rejects(service.sendPrompt('hello', '/project'), /not found/);
+    await assert.rejects(service.sendPrompt('hello', '/project'), { code: 'session_lost' });
     assert.equal(next.written.filter(message => message.method === 'thread/start').length, 0);
   });
 
@@ -168,7 +168,7 @@ suite('Codex session selection', () => {
     const { service, child, calls } = setup(t);
     child.blockedMethods.add('thread/start');
     const pending = service.newSession('/project');
-    const failure = assert.rejects(pending, /stopped/);
+    const failure = assert.rejects(pending, { code: 'stopped' });
     await flush();
     service.stop();
     child.receive({ id: calls('thread/start')[0].id, result: { thread: { id: 'late', cwd: '/project' } } });

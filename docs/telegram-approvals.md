@@ -66,7 +66,10 @@ aucun bot et ne lancent aucun véritable prompt Codex.
 
 Le timeout de turn existant reste fixé à 120 secondes, temps d'approbation
 compris. Si ce délai est atteint avant les 60 secondes de l'approval,
-la demande est annulée dès la fin du turn.
+la demande est annulée dès le timeout, avant l'attente de confirmation de
+l'interruption. Cette attente dure au maximum cinq secondes ; les boutons ne
+peuvent plus autoriser une action pendant ce délai. Voir
+[la gestion des erreurs Codex](codex-errors.md).
 
 ## Références du protocole
 

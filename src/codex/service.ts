@@ -1,6 +1,7 @@
 import { isAbsolute, resolve } from 'path';
 import { CodexClient } from './client';
 import { CodexApprovalHandler, CodexServiceStatus, CodexThread } from './types';
+import { CodexError } from './errors';
 
 type SessionAction = 'ensure' | 'new' | 'resume';
 
@@ -80,10 +81,17 @@ export class CodexService {
     let thread: CodexThread;
     if (targetId) {
       // Inspect the saved workspace before applying any resume overrides.
-      const metadata = await this.client.readSession(targetId);
-      this.assertCurrent(generation, connection);
-      this.checkThread(metadata.thread, path, targetId);
-      thread = (await this.client.resumeSession(targetId, path)).thread;
+      try {
+        const metadata = await this.client.readSession(targetId);
+        this.assertCurrent(generation, connection);
+        this.checkThread(metadata.thread, path, targetId);
+        thread = (await this.client.resumeSession(targetId, path)).thread;
+      } catch (error) {
+        if (targetId === this.sessionId && error instanceof CodexError && error.code === 'session_lost') {
+          this.sessionConnection = undefined;
+        }
+        throw error;
+      }
     } else {
       thread = (await this.client.startSession(path)).thread;
     }
@@ -141,6 +149,11 @@ export class CodexService {
       const id = await this.selectSession('ensure', path, generation);
       this.assertCurrent(generation);
       return await this.client.runTurn(id, prompt);
+    } catch (error) {
+      if (this.generation === generation && error instanceof CodexError && error.code === 'session_lost') {
+        this.sessionConnection = undefined;
+      }
+      throw error;
     } finally {
       if (this.generation === generation) {
         this.turnRunning = false;

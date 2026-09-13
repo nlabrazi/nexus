@@ -4,6 +4,9 @@ This is the README for your extension "nexus". After writing up a brief descript
 
 ## Features
 
+Les erreurs Codex, les timeouts et leurs scénarios de test sont décrits dans
+[le guide de gestion des erreurs](docs/codex-errors.md).
+
 La mise en forme des réponses Codex pour Telegram est décrite dans
 [le guide de présentation et de validation](docs/telegram-formatting.md).
 

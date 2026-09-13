@@ -15,6 +15,7 @@ import {
   CodexClientStatus
 } from './types';
 import { CodexApprovals } from './approvals';
+import { CodexError, processError, rpcError, turnTimeoutError } from './errors';
 
 export class CodexClient {
   private process?: ChildProcessWithoutNullStreams;
@@ -24,6 +25,7 @@ export class CodexClient {
   private currentTurn?: CodexClientStatus['turn'];
   private starting?: Promise<void>;
   private connectionId = 0;
+  private turnFailure?: (error: Error) => void;
 
   constructor(approvalHandler?: CodexApprovalHandler) {
     this.approvals = new CodexApprovals(
@@ -47,6 +49,7 @@ export class CodexClient {
   private pending = new Map<
     number,
     {
+      method: string;
       resolve: (value: unknown) => void;
       reject: (error: Error) => void;
       timeout: ReturnType<typeof setTimeout>;
@@ -76,13 +79,17 @@ export class CodexClient {
   }
 
   private async startProcess(): Promise<void> {
-    this.process = spawn(
-      'codex',
-      ['app-server', '--stdio'],
-      {
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }
-    );
+    try {
+      this.process = spawn(
+        'codex',
+        ['app-server', '--stdio'],
+        {
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }
+      );
+    } catch (error) {
+      throw processError(error);
+    }
     const child = this.process;
     this.connectionId++;
     this.buffer = '';
@@ -92,7 +99,13 @@ export class CodexClient {
 
     this.process.stdout.on('data', chunk => {
       if (this.process === child) {
-        this.handleStdout(chunk);
+        try {
+          this.handleStdout(chunk);
+        } catch (error) {
+          this.disconnect(child, new CodexError('protocol_error',
+            'Codex a envoyé une réponse invalide. La connexion a été fermée. Vérifiez les modifications éventuelles avant de réessayer.',
+            { cause: error }));
+        }
       }
     });
 
@@ -104,28 +117,13 @@ export class CodexClient {
       }
     });
 
-    this.process.on('error', error => {
-      if (this.process !== child) {
-        return;
-      }
-      this.approvals.endTurn(false);
-      this.currentTurn = undefined;
-      this.rejectPending(error);
-      this.process = undefined;
-    });
-
-    this.process.on('exit', code => {
-      if (this.process !== child) {
-        return;
-      }
-      this.approvals.endTurn(false);
-      this.currentTurn = undefined;
-      this.rejectPending(
-        new Error(`Codex process exited with code ${code}`)
-      );
-
-      this.process = undefined;
-    });
+    child.on('error', error => this.disconnect(child, processError(error)));
+    child.on('exit', (code, signal) => this.disconnect(child,
+      processError(new Error(`Codex exited: code=${code}, signal=${signal}`)), false));
+    for (const stream of [child.stdin, child.stdout, child.stderr]) {
+      stream.on('error', error => this.disconnect(child, processError(error)));
+    }
+    child.stdout.on('end', () => this.disconnect(child, processError(new Error('Codex stdout closed'))));
 
     try {
       await this.request('initialize', {
@@ -154,7 +152,7 @@ export class CodexClient {
   async startSession(
     cwd: string
   ): Promise<ThreadStartResponse> {
-    return await this.request(
+    return await this.sessionRequest(
       'thread/start',
       {
         cwd,
@@ -163,48 +161,72 @@ export class CodexClient {
         sandbox: 'workspace-write',
         serviceName: 'nexus',
       }
-    ) as ThreadStartResponse;
+    );
   }
 
   async readSession(threadId: string): Promise<ThreadStartResponse> {
-    return await this.request('thread/read', {
+    return await this.sessionRequest('thread/read', {
       threadId,
       includeTurns: false,
-    }) as ThreadStartResponse;
+    });
   }
 
   async resumeSession(threadId: string, cwd: string): Promise<ThreadStartResponse> {
-    return await this.request('thread/resume', {
+    return await this.sessionRequest('thread/resume', {
       threadId,
       cwd,
       approvalPolicy: 'on-request',
       approvalsReviewer: 'user',
       sandbox: 'workspace-write',
-    }) as ThreadStartResponse;
+    });
+  }
+
+  private async sessionRequest(method: string, params: unknown): Promise<ThreadStartResponse> {
+    const child = this.process;
+    try {
+      const result = await this.request(method, params) as ThreadStartResponse;
+      if (!result?.thread || typeof result.thread.id !== 'string' || !result.thread.id.trim()) {
+        throw new CodexError('protocol_error', 'Codex a renvoyé une session invalide.');
+      }
+      return result;
+    } catch (error) {
+      if (child && error instanceof CodexError && ['rpc_timeout', 'protocol_error'].includes(error.code)) {
+        this.disconnect(child, error);
+      }
+      throw error;
+    }
   }
 
   stop(): void {
-    this.starting = undefined;
-    this.approvals.endTurn();
-    this.currentTurn = undefined;
-    this.process?.kill();
-    this.process = undefined;
-
-    this.rejectPending(
-      new Error('Codex stopped')
-    );
+    if (this.process) {
+      this.disconnect(this.process, new CodexError('stopped', 'Le processus Codex a été arrêté.'));
+    }
   }
 
-  async runTurn(
-    threadId: string,
-    prompt: string
-  ): Promise<string> {
-    if (!this.process) {
-      throw new Error('Codex is not running');
+  private disconnect(child: ChildProcessWithoutNullStreams, error: Error, kill = true): void {
+    if (this.process !== child) {
+      return;
     }
+    this.process = undefined;
+    this.starting = undefined;
+    this.buffer = '';
+    this.approvals.endTurn(false);
+    this.turnFailure?.(error);
+    this.currentTurn = undefined;
+    this.rejectPending(error);
+    if (kill) {
+      try { child.kill(); } catch { /* The transport may already be gone. */ }
+    }
+  }
 
+  async runTurn(threadId: string, prompt: string): Promise<string> {
+    if (!this.process) {
+      throw processError(new Error('Codex is not running'));
+    }
+    if (this.currentTurn) {
+      throw new Error('Un turn Codex est déjà en cours.');
+    }
     const trimmedPrompt = prompt.trim();
-
     if (!trimmedPrompt) {
       throw new Error('Codex prompt cannot be empty');
     }
@@ -213,212 +235,156 @@ export class CodexClient {
     this.approvals.beginTurn(threadId);
     const currentTurn: NonNullable<CodexClientStatus['turn']> = { startedAt: Date.now() };
     this.currentTurn = currentTurn;
-
     let turnId: string | undefined;
-    let streamedText = '';
-    let completedText = '';
-    let earlyCompletion: TurnCompletedNotification | undefined;
+    let timedOut = false;
+    const earlyNotifications: RpcNotification[] = [];
+    const messages = new Map<string, { streamed: string; completed?: string; phase?: string | null }>();
 
     return await new Promise<string>((resolve, reject) => {
       let settled = false;
       let timeout: ReturnType<typeof setTimeout>;
+      let interruptTimeout: ReturnType<typeof setTimeout> | undefined;
 
       const cleanup = () => {
         if (this.currentTurn === currentTurn) {
           this.currentTurn = undefined;
         }
+        if (this.turnFailure === fail) {
+          this.turnFailure = undefined;
+        }
         if (this.process === child) {
           this.approvals.endTurn();
         }
         clearTimeout(timeout);
+        clearTimeout(interruptTimeout);
         this.notificationListeners.delete(onNotification);
-        child.off('exit', onExit);
       };
-
       const fail = (error: Error) => {
-        if (settled) {
-          return;
-        }
-
+        if (settled) { return; }
         settled = true;
         cleanup();
         reject(error);
       };
-
-      const complete = (
-        params: TurnCompletedNotification
-      ) => {
-        if (settled) {
+      const rememberItem = (item: ItemCompletedNotification['item'], completed: boolean) => {
+        if (item.type !== 'agentMessage') { return; }
+        if (typeof item.id !== 'string' || typeof item.text !== 'string') {
+          throw new Error('Invalid agent message');
+        }
+        const message = messages.get(item.id) ?? { streamed: '' };
+        if (completed) { message.completed = item.text; }
+        if (item.phase !== undefined) { message.phase = item.phase; }
+        messages.set(item.id, message);
+      };
+      const complete = (params: TurnCompletedNotification) => {
+        if (!['completed', 'interrupted', 'failed'].includes(params.turn.status)) {
+          throw new Error('Invalid terminal turn status');
+        }
+        if (timedOut) {
+          fail(turnTimeoutError(true));
           return;
         }
-
         if (params.turn.status !== 'completed') {
-          fail(
-            new Error(
-              params.turn.error?.message ??
-              `Codex turn ${params.turn.status}`
-            )
-          );
-
+          fail(new CodexError(params.turn.status === 'interrupted' ? 'interrupted' : 'turn_failed',
+            params.turn.status === 'interrupted'
+              ? 'Le turn Codex a été interrompu. Vérifiez les modifications éventuelles avant de continuer.'
+              : `Le turn Codex a échoué : ${params.turn.error?.message ?? 'raison non précisée'}. Vérifiez les modifications éventuelles avant de continuer.`));
           return;
         }
-
-        const response =
-          streamedText.trim() ||
-          completedText.trim();
-
+        for (const item of params.turn.items ?? []) { rememberItem(item, true); }
+        const values = [...messages.values()];
+        const final = values.filter(message => message.phase === 'final_answer');
+        const candidates = final.length ? final : values.filter(message => message.phase !== 'commentary');
+        // Completed items are authoritative, even if their text is empty.
+        const response = candidates.map(message => (message.completed ?? message.streamed).trim())
+          .filter(Boolean).join('\n\n');
         if (!response) {
-          fail(
-            new Error(
-              'Codex completed without a text response'
-            )
-          );
-
+          fail(new CodexError('empty_response',
+            'Codex a terminé sans réponse textuelle finale. Des actions ont pu être effectuées : vérifiez les fichiers avant de renvoyer une instruction.'));
           return;
         }
-
         settled = true;
         cleanup();
         resolve(response);
       };
-
-      const onNotification = (
-        notification: RpcNotification
-      ) => {
-        if (
-          notification.method ===
-          'item/agentMessage/delta'
-        ) {
-          const params =
-            notification.params as AgentMessageDeltaNotification;
-
-          if (params.threadId !== threadId) {
-            return;
-          }
-
-          if (
-            turnId &&
-            params.turnId !== turnId
-          ) {
-            return;
-          }
-
-          streamedText += params.delta;
-
+      const onNotification = (notification: RpcNotification) => {
+        if (settled || this.process !== child || ![
+          'item/agentMessage/delta', 'item/started', 'item/completed', 'turn/completed',
+        ].includes(notification.method)) { return; }
+        const params = notification.params as AgentMessageDeltaNotification &
+          ItemCompletedNotification & TurnCompletedNotification;
+        if (!params || params.threadId !== threadId) { return; }
+        if (!turnId) {
+          // An old turn's late events must not become the next turn's response.
+          earlyNotifications.push(notification);
           return;
         }
-
-        if (
-          notification.method ===
-          'item/completed'
-        ) {
-          const params =
-            notification.params as ItemCompletedNotification;
-
-          if (
-            params.threadId !== threadId ||
-            params.item.type !== 'agentMessage'
-          ) {
-            return;
-          }
-
-          if (
-            turnId &&
-            params.turnId !== turnId
-          ) {
-            return;
-          }
-
-          completedText =
-            params.item.text ?? '';
-
-          return;
-        }
-
-        if (
-          notification.method ===
-          'turn/completed'
-        ) {
-          const params =
-            notification.params as TurnCompletedNotification;
-
-          if (params.threadId !== threadId) {
-            return;
-          }
-
-          if (!turnId) {
-            earlyCompletion = params;
-            return;
-          }
-
-          if (params.turn.id !== turnId) {
-            return;
-          }
-
+        const eventTurnId = notification.method === 'turn/completed' ? params.turn?.id : params.turnId;
+        if (eventTurnId !== turnId) { return; }
+        if (notification.method === 'turn/completed') {
           complete(params);
+        } else if (notification.method === 'item/agentMessage/delta') {
+          if (typeof params.itemId !== 'string' || typeof params.delta !== 'string') {
+            throw new Error('Invalid agent message delta');
+          }
+          const message = messages.get(params.itemId) ?? { streamed: '' };
+          message.streamed += params.delta;
+          messages.set(params.itemId, message);
+        } else {
+          rememberItem(params.item, notification.method === 'item/completed');
         }
-      };
-
-      const onExit = (code: number | null) => {
-        fail(
-          new Error(
-            `Codex exited during turn with code ${code}`
-          )
-        );
       };
 
       timeout = setTimeout(() => {
-        fail(
-          new Error('Codex turn timeout after 120 seconds')
-        );
-      }, 120_000);
-
-      this.notificationListeners.add(onNotification);
-      child.once('exit', onExit);
-
-      void this.request(
-        'turn/start',
-        {
-          threadId,
-          input: [
-            {
-              type: 'text',
-              text: trimmedPrompt,
-              textElements: [],
-            },
-          ],
+        timedOut = true;
+        currentTurn.interrupting = true;
+        // Invalidate approval buttons immediately, but keep the turn lock until termination.
+        this.approvals.endTurn();
+        if (settled) { return; }
+        if (!turnId) {
+          this.disconnect(child, turnTimeoutError(false));
+          return;
         }
-      )
-        .then(result => {
-          const response =
-            result as TurnStartResponse;
-
-          turnId = response.turn.id;
-          if (!settled) {
-            this.approvals.setTurnId(turnId);
-            currentTurn.id = turnId;
-          }
-
-          if (
-            earlyCompletion &&
-            earlyCompletion.turn.id === turnId
-          ) {
-            complete(earlyCompletion);
-          }
-        })
-        .catch(error => {
-          fail(
-            error instanceof Error
-              ? error
-              : new Error(String(error))
-          );
+        interruptTimeout = setTimeout(() => {
+          this.disconnect(child, turnTimeoutError(false));
+        }, 5000);
+        // An RPC acknowledgement alone does not confirm that the turn has ended.
+        void this.request('turn/interrupt', { threadId, turnId }, 5000).catch(() => {
+          if (!settled) { this.disconnect(child, turnTimeoutError(false)); }
         });
+      }, 120_000);
+      this.turnFailure = fail;
+      this.notificationListeners.add(onNotification);
+      void this.request('turn/start', {
+        threadId,
+        input: [{ type: 'text', text: trimmedPrompt, textElements: [] }],
+      }).then(result => {
+        if (settled) { return; }
+        const response = result as TurnStartResponse;
+        if (!response?.turn || typeof response.turn.id !== 'string' || !response.turn.id.trim()) {
+          throw new CodexError('protocol_error', 'Codex a renvoyé un turn invalide.');
+        }
+        turnId = response.turn.id;
+        currentTurn.id = turnId;
+        this.approvals.setTurnId(turnId);
+        for (const notification of earlyNotifications) { onNotification(notification); }
+        earlyNotifications.length = 0;
+      }).catch(error => {
+        if (settled) { return; }
+        if (error instanceof CodexError && ['rpc_failed', 'session_lost'].includes(error.code)) {
+          fail(error);
+        } else {
+          // A missing/malformed start acknowledgement leaves execution uncertain.
+          this.disconnect(child, error instanceof CodexError ? error :
+            new CodexError('protocol_error', 'Réponse Codex invalide. La connexion a été fermée.', { cause: error }));
+        }
+      });
     });
   }
 
   private request(
     method: string,
-    params: unknown
+    params: unknown,
+    timeoutMs = 15_000
   ): Promise<unknown> {
     const id = ++this.requestId;
 
@@ -431,11 +397,13 @@ export class CodexClient {
         this.pending.delete(id);
 
         reject(
-          new Error(`Codex RPC timeout: ${method}`)
+          new CodexError('rpc_timeout',
+            `Codex n’a pas répondu à ${method} sous ${timeoutMs / 1000} s. Vérifiez son état avant de réessayer ; la requête n’a pas été rejouée.`)
         );
-      }, 15_000);
+      }, timeoutMs);
 
       this.pending.set(id, {
+        method,
         resolve,
         reject,
         timeout,
@@ -473,37 +441,38 @@ export class CodexClient {
   }
 
   private write(message: unknown): void {
-    if (!this.process) {
-      throw new Error('Codex is not running');
+    const child = this.process;
+    if (!child) {
+      throw processError(new Error('Codex is not running'));
     }
 
-    this.process.stdin.write(
-      `${JSON.stringify(message)}\n`
-    );
+    try {
+      child.stdin.write(`${JSON.stringify(message)}\n`, error => {
+        if (error) { this.disconnect(child, processError(error)); }
+      });
+    } catch (error) {
+      const failure = processError(error);
+      this.disconnect(child, failure);
+      throw failure;
+    }
   }
 
   private handleStdout(chunk: string): void {
+    const child = this.process;
     this.buffer += chunk;
 
     const lines = this.buffer.split('\n');
     this.buffer = lines.pop() ?? '';
 
     for (const line of lines) {
+      if (this.process !== child) { return; }
       if (!line.trim()) {
         continue;
       }
 
-      let message: RpcMessage;
-
-      try {
-        message = JSON.parse(line) as RpcMessage;
-      } catch {
-        console.error(
-          '[Codex] Invalid JSON received:',
-          line
-        );
-
-        continue;
+      const message = JSON.parse(line) as RpcMessage;
+      if (!message || typeof message !== 'object' || Array.isArray(message)) {
+        throw new Error('Invalid RPC message');
       }
 
       // Notification Codex
@@ -559,7 +528,7 @@ export class CodexClient {
 
       if (message.error) {
         request.reject(
-          new Error(message.error.message)
+          rpcError(request.method, message.error.code, message.error.message)
         );
 
         continue;

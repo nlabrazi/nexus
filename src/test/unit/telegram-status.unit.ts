@@ -72,10 +72,15 @@ suite('Telegram /status', () => {
     await flush();
     assert.match(client.messages[2], /Turn : en cours \(12 s\)/);
     assert.match(client.messages[2], /Approbations en attente : 0/);
+    snapshot.codex!.turn!.interrupting = true;
+    client.push(message(4));
+    await flush();
+    assert.match(client.messages[3], /Turn : interruption en cours \(12 s\)/);
+    assert.match(client.messages[3], /Requête Telegram : en cours/);
     finished.resolve('Done');
     snapshot.codex!.turn = undefined;
     await flush();
-    client.push(message(4));
+    client.push(message(5));
     await flush();
     assert.match(client.messages.at(-1)!, /Requête Telegram : aucune/);
     assert.match(client.messages.at(-1)!, /Turn : aucun en cours/);

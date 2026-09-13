@@ -9,6 +9,7 @@ export class FakeProcess extends EventEmitter {
   written: RpcMessage[] = [];
   blockedMethods = new Set<string>();
   threads = new Map<string, CodexThread>();
+  kills = 0;
   private threadCount = 0;
 
   constructor() {
@@ -32,6 +33,12 @@ export class FakeProcess extends EventEmitter {
           : { id: message.id, error: { code: -32000, message: 'Session not found' } });
       } else if (message.method === 'turn/start') {
         this.receive({ id: message.id, result: { turn: { id: 'turn' } } });
+      } else if (message.method === 'turn/interrupt') {
+        const params = message.params as { threadId: string; turnId: string };
+        this.receive({ id: message.id, result: {} });
+        this.receive({ method: 'turn/completed', params: {
+          threadId: params.threadId, turn: { id: params.turnId, status: 'interrupted' },
+        } });
       }
     });
   }
@@ -47,9 +54,9 @@ export class FakeProcess extends EventEmitter {
   }
 
   complete(): void {
-    this.receive({ method: 'item/agentMessage/delta', params: { threadId: 'thread', turnId: 'turn', delta: 'Done' } });
+    this.receive({ method: 'item/agentMessage/delta', params: { threadId: 'thread', turnId: 'turn', itemId: 'answer', delta: 'Done' } });
     this.receive({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'turn', status: 'completed' } } });
   }
 
-  kill(): boolean { return true; }
+  kill(): boolean { this.kills++; return true; }
 }

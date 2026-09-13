@@ -56,7 +56,8 @@ export function formatTelegramStatus(
   lines.push(`Requête Telegram : ${remotePromptRunning ? 'en cours' : 'aucune'}`);
   if (codex.turn) {
     const elapsed = Math.max(0, Math.floor((now - codex.turn.startedAt) / 1000));
-    const activity = codex.pendingApprovals > 0 ? 'en attente d’approbation'
+    const activity = codex.turn.interrupting ? 'interruption en cours'
+      : codex.pendingApprovals > 0 ? 'en attente d’approbation'
       : codex.turn.id ? 'en cours' : 'démarrage';
     lines.push(`${codex.pendingApprovals > 0 ? '🟠' : '⏳'} Turn : ${activity} (${elapsed} s)`);
     if (codex.turn.id) {
