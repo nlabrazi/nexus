@@ -4,6 +4,9 @@ This is the README for your extension "nexus". After writing up a brief descript
 
 ## Features
 
+La couverture des erreurs et les commandes de validation sont décrites dans
+[le guide des tests de régression](docs/regression-tests.md).
+
 La reprise après redémarrage et ses tests sont décrits dans
 [le guide de persistance des sessions](docs/session-persistence.md).
 

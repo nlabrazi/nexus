@@ -80,6 +80,11 @@ export class TelegramService {
             if (controller.signal.aborted) {
               break;
             }
+            // A stale batch or repeated update must never replay a Codex action
+            // or move the persisted offset backwards after a restart.
+            if (update.update_id < offset) {
+              continue;
+            }
             offset = update.update_id + 1;
 
             await this.context.globalState.update(
