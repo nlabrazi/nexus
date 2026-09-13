@@ -18,6 +18,7 @@ export class CodexClient {
     {
       resolve: (value: unknown) => void;
       reject: (error: Error) => void;
+      timeout: ReturnType<typeof setTimeout>;
     }
   >();
 
@@ -107,17 +108,41 @@ export class CodexClient {
     const id = ++this.requestId;
 
     return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        if (!this.pending.has(id)) {
+          return;
+        }
+
+        this.pending.delete(id);
+
+        reject(
+          new Error(`Codex RPC timeout: ${method}`)
+        );
+      }, 15_000);
+
       this.pending.set(id, {
         resolve,
         reject,
+        timeout,
       });
 
-      this.write({
-        jsonrpc: '2.0',
-        id,
-        method,
-        params,
-      });
+      try {
+        this.write({
+          jsonrpc: '2.0',
+          id,
+          method,
+          params,
+        });
+      } catch (error) {
+        clearTimeout(timeout);
+        this.pending.delete(id);
+
+        reject(
+          error instanceof Error
+            ? error
+            : new Error(String(error))
+        );
+      }
     });
   }
 
@@ -185,6 +210,7 @@ export class CodexClient {
 
         continue;
       }
+      clearTimeout(request.timeout);
 
       request.resolve(message.result);
     }
@@ -192,6 +218,7 @@ export class CodexClient {
 
   private rejectPending(error: Error): void {
     for (const request of this.pending.values()) {
+      clearTimeout(request.timeout);
       request.reject(error);
     }
 

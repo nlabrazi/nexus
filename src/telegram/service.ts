@@ -7,6 +7,7 @@ export class TelegramService {
   private pairingCode?: string;
   private pairingExpiresAt = 0;
   private running = false;
+  private abortController?: AbortController;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -27,35 +28,58 @@ export class TelegramService {
 
     this.running = true;
 
+    const controller = new AbortController();
+    this.abortController = controller;
+
     let offset = this.context.globalState.get<number>(
       'nexus.telegram.updateOffset',
       0
     );
 
-    while (this.running) {
-      try {
-        const data = await this.client.getUpdates(offset);
-
-        for (const update of data.result) {
-          offset = update.update_id + 1;
-
-          await this.context.globalState.update(
-            'nexus.telegram.updateOffset',
-            offset
+    try {
+      while (this.running) {
+        try {
+          const data = await this.client.getUpdates(
+            offset,
+            controller.signal
           );
 
-          await this.handleUpdate(update);
-        }
-      } catch (error) {
-        console.error('Telegram polling error:', error);
+          for (const update of data.result) {
+            offset = update.update_id + 1;
 
-        await new Promise(resolve => setTimeout(resolve, 3000));
+            await this.context.globalState.update(
+              'nexus.telegram.updateOffset',
+              offset
+            );
+
+            await this.handleUpdate(update);
+          }
+        } catch (error) {
+          if (
+            !this.running &&
+            error instanceof Error &&
+            error.name === 'AbortError'
+          ) {
+            break;
+          }
+
+          console.error('Telegram polling error:', error);
+
+          await new Promise(resolve =>
+            setTimeout(resolve, 3000)
+          );
+        }
+      }
+    } finally {
+      if (this.abortController === controller) {
+        this.abortController = undefined;
       }
     }
   }
 
   stop(): void {
     this.running = false;
+    this.abortController?.abort();
   }
 
   private async handleUpdate(update: TelegramUpdate): Promise<void> {

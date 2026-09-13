@@ -22,10 +22,12 @@ export class TelegramClient {
   }
 
   async getUpdates(
-    offset: number
+    offset: number,
+    signal?: AbortSignal
   ): Promise<TelegramUpdatesResponse> {
     const response = await fetch(
-      `https://api.telegram.org/bot${this.token}/getUpdates?offset=${offset}&timeout=20`
+      `https://api.telegram.org/bot${this.token}/getUpdates?offset=${offset}&timeout=20`,
+      { signal }
     );
 
     if (!response.ok) {
