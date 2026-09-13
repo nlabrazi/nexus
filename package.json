@@ -9,7 +9,9 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -28,6 +30,14 @@
       {
         "command": "nexus.pairTelegram",
         "title": "Nexus: Pair Telegram"
+      },
+      {
+        "command": "nexus.testCodex",
+        "title": "Nexus: Test Codex Connection"
+      },
+      {
+        "command": "nexus.startCodexSession",
+        "title": "Nexus: Start Codex Session"
       }
     ]
   },
