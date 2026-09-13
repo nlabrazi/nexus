@@ -1,5 +1,5 @@
 import { CodexClient } from './client';
-import { CodexApprovalHandler } from './types';
+import { CodexApprovalHandler, CodexServiceStatus } from './types';
 
 export class CodexService {
   private readonly client: CodexClient;
@@ -79,6 +79,14 @@ export class CodexService {
 
   isTurnRunning(): boolean {
     return this.turnRunning;
+  }
+
+  getStatus(): CodexServiceStatus {
+    return {
+      ...this.client.getStatus(),
+      sessionId: this.sessionId,
+      workspacePath: this.workspacePath,
+    };
   }
 
   stop(): void {

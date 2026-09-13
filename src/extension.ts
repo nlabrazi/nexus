@@ -316,7 +316,16 @@ function startTelegramService(
     new TelegramService(
       context,
       client,
-      handleRemoteCodexPrompt
+      handleRemoteCodexPrompt,
+      () => {
+        const folders = vscode.workspace.workspaceFolders ?? [];
+        const workspace = folders[0];
+        return {
+          workspace: workspace ? { name: workspace.name, path: workspace.uri.fsPath } : undefined,
+          workspaceCount: folders.length,
+          codex: codexService?.getStatus(),
+        };
+      }
     );
 
   void telegramService.start();

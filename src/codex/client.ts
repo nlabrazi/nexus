@@ -11,7 +11,8 @@ import {
   ThreadStartResponse,
   TurnCompletedNotification,
   TurnStartResponse,
-  CodexApprovalHandler
+  CodexApprovalHandler,
+  CodexClientStatus
 } from './types';
 import { CodexApprovals } from './approvals';
 
@@ -20,12 +21,21 @@ export class CodexClient {
   private buffer = '';
   private requestId = 0;
   private readonly approvals: CodexApprovals;
+  private currentTurn?: CodexClientStatus['turn'];
 
   constructor(approvalHandler?: CodexApprovalHandler) {
     this.approvals = new CodexApprovals(
       message => this.write(message),
       approvalHandler
     );
+  }
+
+  getStatus(): CodexClientStatus {
+    return {
+      processRunning: this.process !== undefined,
+      turn: this.currentTurn ? { ...this.currentTurn } : undefined,
+      pendingApprovals: this.approvals.getPendingCount(),
+    };
   }
 
   private notificationListeners = new Set<
@@ -78,6 +88,7 @@ export class CodexClient {
         return;
       }
       this.approvals.endTurn(false);
+      this.currentTurn = undefined;
       this.rejectPending(error);
       this.process = undefined;
     });
@@ -87,6 +98,7 @@ export class CodexClient {
         return;
       }
       this.approvals.endTurn(false);
+      this.currentTurn = undefined;
       this.rejectPending(
         new Error(`Codex process exited with code ${code}`)
       );
@@ -125,6 +137,7 @@ export class CodexClient {
 
   stop(): void {
     this.approvals.endTurn();
+    this.currentTurn = undefined;
     this.process?.kill();
     this.process = undefined;
 
@@ -149,6 +162,8 @@ export class CodexClient {
 
     const child = this.process;
     this.approvals.beginTurn(threadId);
+    const currentTurn: NonNullable<CodexClientStatus['turn']> = { startedAt: Date.now() };
+    this.currentTurn = currentTurn;
 
     let turnId: string | undefined;
     let streamedText = '';
@@ -160,6 +175,9 @@ export class CodexClient {
       let timeout: ReturnType<typeof setTimeout>;
 
       const cleanup = () => {
+        if (this.currentTurn === currentTurn) {
+          this.currentTurn = undefined;
+        }
         if (this.process === child) {
           this.approvals.endTurn();
         }
@@ -329,6 +347,7 @@ export class CodexClient {
           turnId = response.turn.id;
           if (!settled) {
             this.approvals.setTurnId(turnId);
+            currentTurn.id = turnId;
           }
 
           if (

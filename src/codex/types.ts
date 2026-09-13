@@ -16,6 +16,20 @@ export interface CodexThread {
   id: string;
 }
 
+export interface CodexClientStatus {
+  processRunning: boolean;
+  turn?: {
+    id?: string;
+    startedAt: number;
+  };
+  pendingApprovals: number;
+}
+
+export interface CodexServiceStatus extends CodexClientStatus {
+  sessionId?: string;
+  workspacePath?: string;
+}
+
 export type CodexTurnStatus =
   | 'completed'
   | 'interrupted'

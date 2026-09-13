@@ -4,6 +4,7 @@ import { TelegramClient } from './client';
 import { TelegramUpdate } from './types';
 import { TelegramApprovals, TelegramPeer } from './approvals';
 import { ApprovalDecision, CodexApprovalRequest } from '../codex/types';
+import { formatTelegramStatus, NexusStatusSnapshot } from './status';
 
 type RemotePromptHandler = (
   prompt: string
@@ -20,7 +21,8 @@ export class TelegramService {
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly client: TelegramClient,
-    private readonly onRemotePrompt?: RemotePromptHandler
+    private readonly onRemotePrompt?: RemotePromptHandler,
+    private readonly getStatus?: () => NexusStatusSnapshot
   ) {
     this.approvals = new TelegramApprovals(client, () => this.getApprovalPeer());
   }
@@ -184,6 +186,19 @@ export class TelegramService {
     }
 
     // Commands
+    if (text.trim() === '/status') {
+      let status: string;
+      try {
+        status = this.getStatus
+          ? formatTelegramStatus(this.getStatus(), this.remotePromptRunning)
+          : 'Statut indisponible.';
+      } catch {
+        status = 'Impossible de lire le statut de Nexus.';
+      }
+      await this.client.sendMessage(chatId, status);
+      return;
+    }
+
     if (text === '/ping') {
       await this.client.sendMessage(chatId, 'pong');
     }

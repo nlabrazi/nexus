@@ -4,6 +4,7 @@ import { PassThrough } from 'node:stream';
 import { suite, test } from 'node:test';
 import childProcess = require('child_process');
 import { CodexClient } from '../../codex/client';
+import { CodexService } from '../../codex/service';
 import { ApprovalDecision, RpcMessage } from '../../codex/types';
 import { deferred, flush } from './helpers';
 
@@ -20,6 +21,8 @@ class FakeProcess extends EventEmitter {
       this.written.push(message);
       if (message.method === 'initialize') {
         this.receive({ id: message.id, result: {} });
+      } else if (message.method === 'thread/start') {
+        this.receive({ id: message.id, result: { thread: { id: 'thread' } } });
       } else if (message.method === 'turn/start') {
         this.receive({ id: message.id, result: { turn: { id: 'turn' } } });
       }
@@ -119,5 +122,70 @@ suite('Codex process approval lifecycle', () => {
     decision.resolve('accept');
     await flush();
     assert.deepEqual(child.written.filter(message => message.id === 'late-approval').map(message => message.result), [{ decision: 'decline' }]);
+  });
+});
+
+suite('Codex status snapshots', () => {
+  test('reading status is passive and follows session, turn and approval lifecycle', async t => {
+    t.mock.timers.enable({ apis: ['Date'], now: 1000 });
+    const child = new FakeProcess();
+    const spawn = t.mock.method(childProcess, 'spawn', () => child);
+    const decision = deferred<ApprovalDecision>();
+    const service = new CodexService(async () => decision.promise);
+    t.after(() => service.stop());
+
+    const initial = service.getStatus();
+    assert.equal(initial.processRunning, false);
+    assert.equal(initial.sessionId, undefined);
+    assert.equal(initial.turn, undefined);
+    assert.equal(initial.pendingApprovals, 0);
+    assert.equal(spawn.mock.callCount(), 0);
+
+    await service.startSession('/project');
+    const idle = service.getStatus();
+    assert.equal(idle.processRunning, true);
+    assert.equal(idle.sessionId, 'thread');
+    assert.equal(idle.workspacePath, '/project');
+    assert.equal(idle.turn, undefined);
+
+    const turn = service.sendPrompt('Run tests');
+    const starting = service.getStatus();
+    assert.deepEqual(starting.turn, { startedAt: 1000 });
+    await flush();
+    const running = service.getStatus();
+    assert.equal(running.turn?.id, 'turn');
+    assert.equal(starting.turn?.id, undefined, 'snapshots must not change retrospectively');
+    child.approve('approval');
+    await flush();
+    assert.equal(service.getStatus().pendingApprovals, 1);
+    decision.resolve('decline');
+    await flush();
+    assert.equal(service.getStatus().pendingApprovals, 0);
+    assert.equal(service.getStatus().turn?.id, 'turn');
+    child.complete();
+    await turn;
+    assert.equal(service.getStatus().turn, undefined);
+    assert.equal(service.getStatus().sessionId, 'thread');
+    service.stop();
+    assert.deepEqual(service.getStatus(), initial);
+  });
+
+  test('a process exit removes live activity but preserves the known session in the status', async t => {
+    const child = new FakeProcess();
+    t.mock.method(childProcess, 'spawn', () => child);
+    const service = new CodexService();
+    t.after(() => service.stop());
+    await service.startSession('/project');
+    const turn = service.sendPrompt('Run tests');
+    const failure = assert.rejects(turn, /exited/);
+    await flush();
+    child.emit('exit', 1);
+    await failure;
+    const status = service.getStatus();
+    assert.equal(status.processRunning, false);
+    assert.equal(status.turn, undefined);
+    assert.equal(status.pendingApprovals, 0);
+    assert.equal(status.sessionId, 'thread');
+    assert.equal(status.workspacePath, '/project');
   });
 });

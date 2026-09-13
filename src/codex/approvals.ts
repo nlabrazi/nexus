@@ -33,6 +33,10 @@ export class CodexApprovals {
     private readonly timeoutMs = APPROVAL_TIMEOUT_MS
   ) { }
 
+  getPendingCount(): number {
+    return this.pending.size;
+  }
+
   beginTurn(threadId: string): void {
     this.endTurn();
     this.activeTurn = { threadId };
