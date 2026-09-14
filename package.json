@@ -4,6 +4,7 @@
   "description": "Private remote bridge for vscode coding agents",
   "version": "0.0.1",
   "publisher": "nabster",
+  "icon": "assets/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/nlabrazi/nexus.git"

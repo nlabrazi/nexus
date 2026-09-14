@@ -622,9 +622,8 @@ npx @vscode/vsce ls
 
 # 📄 License
 
-Private project for now.
-
-Add a `LICENSE` file before public distribution if Nexus is released publicly.
+Nexus is proprietary software. All rights reserved.
+See [LICENSE](LICENSE) for the terms.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -642,4 +641,4 @@ Add a `LICENSE` file before public distribution if Nexus is released publicly.
 [node-url]: https://nodejs.org/
 
 [license-shield]: https://img.shields.io/badge/license-private-lightgrey?style=for-the-badge
-[license-url]: #
+[license-url]: LICENSE
