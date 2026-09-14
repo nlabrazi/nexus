@@ -55,6 +55,10 @@ export class AntigravityService {
     return this.changeSession('resume', cwd, sessionId);
   }
 
+  async refreshStatus(): Promise<void> {
+    // Antigravity telemetry updates are pushed via NDJSON events on stdout
+  }
+
   async withWorkspaceOperation<T>(operation: () => Promise<T>): Promise<T> {
     if (this.workspaceOperation || this.turnRunning || this.sessionOperation || this.modelChanging) {
       throw new Error(

@@ -20,6 +20,7 @@ import {
 
 export interface AntigravityClientOptions {
   binaryPath?: string;
+  executablePath?: string;
   sandbox?: boolean;
   dangerouslySkipPermissions?: boolean;
   model?: string;
@@ -38,7 +39,19 @@ export class AntigravityClient {
   private readonly binaryPath: string;
 
   constructor(private readonly options: AntigravityClientOptions = {}) {
-    this.binaryPath = options.binaryPath ?? 'agy';
+    this.binaryPath = options.executablePath ?? options.binaryPath ?? 'agy';
+  }
+
+  async checkInstalled(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      execFile(this.binaryPath, ['--version'], (error, stdout) => {
+        if (error) {
+          reject(processError(error));
+          return;
+        }
+        resolve(stdout.trim());
+      });
+    });
   }
 
   getStatus(): AntigravityClientStatus {
