@@ -22,8 +22,18 @@ export class TelegramModels {
   private generation = 0;
   private opening = false;
 
-  constructor(private readonly client: TelegramClient, private readonly peer: () => TelegramPeer | undefined,
-    private readonly controls?: ModelControls, private readonly isBusy: () => boolean = () => false) { }
+  constructor(
+    private readonly client: TelegramClient,
+    private readonly peer: () => TelegramPeer | undefined,
+    private readonly controls?: ModelControls,
+    private readonly isBusy: () => boolean = () => false,
+    private readonly agentName: string = 'Codex',
+    private readonly promptCommand: string = 'codex'
+  ) { }
+
+  hasActiveMenu(): boolean {
+    return this.menu !== undefined;
+  }
 
   async open(): Promise<void> {
     const peer = this.peer();
@@ -40,7 +50,7 @@ export class TelegramModels {
       if (!this.controls) { throw new Error('La sélection des modèles est indisponible.'); }
       const data = await this.controls.list();
       if (generation !== this.generation || !this.samePeer(peer)) { return; }
-      if (!data.models.length) { throw new Error('Codex ne propose aucun modèle disponible.'); }
+      if (!data.models.length) { throw new Error(`${this.agentName} ne propose aucun modèle disponible.`); }
       const menu: Menu = { token: randomBytes(16).toString('hex'), peer, data, page: 0, expiresAt: Date.now() + 120_000, busy: false };
       this.menu = menu;
       menu.timer = setTimeout(() => { if (this.menu === menu) { this.cancel('⌛ Choix expiré. Rouvrez /model.'); } }, 120_000);
@@ -85,12 +95,12 @@ export class TelegramModels {
       if (action === 'effort') {
         const option = menu.model?.supportedReasoningEfforts[index];
         if (!menu.model || !option) { throw new Error('Effort invalide. Rouvrez /model.'); }
-        if (this.isBusy()) { throw new Error('Une requête Codex ou Git est en cours. Attendez sa fin puis rouvrez /model.'); }
+        if (this.isBusy()) { throw new Error(`Une requête ${this.agentName} ou Git est en cours. Attendez sa fin puis rouvrez /model.`); }
         // Consume the menu before the first asynchronous mutation: first click wins.
         this.menu = undefined;
         clearTimeout(menu.timer);
         await this.controls!.select({ model: menu.model.model, effort: option.reasoningEffort }, menu.data.context);
-        this.close(menu, `✅ Modèle choisi : ${menu.model.displayName}\nRaisonnement : ${option.reasoningEffort}\nAppliqué à la prochaine demande /codex.`);
+        this.close(menu, `✅ Modèle choisi : ${menu.model.displayName}\nRaisonnement : ${option.reasoningEffort}\nAppliqué à la prochaine demande /${this.promptCommand}.`);
         return;
       }
       if (action === 'pick') {
@@ -128,23 +138,34 @@ export class TelegramModels {
     const button = (text: string, action: string, index = 0) => ({ text: text.slice(0, 100), callback_data: `model:${menu.token}:${action}:${index}` });
     if (menu.model) {
       const model = menu.model;
-      return { text: `🧠 ${model.displayName.slice(0, 200)} — raisonnement\n\n${model.description.slice(0, 600)}\n\nChoisissez l’effort pour la prochaine demande.`,
-        keyboard: { inline_keyboard: [
-          ...model.supportedReasoningEfforts.map((option, index) => [button(
-            `${option.reasoningEffort}${option.reasoningEffort === model.defaultReasoningEffort ? ' · par défaut' : ''}`, 'effort', index)]),
-          [button('‹ Modèles', 'back'), button('Annuler', 'cancel')],
-        ] } };
+      return {
+        text: `🧠 ${model.displayName.slice(0, 200)} — raisonnement\n\n${model.description.slice(0, 600)}\n\nChoisissez l’effort pour la prochaine demande.`,
+        keyboard: {
+          inline_keyboard: [
+            ...model.supportedReasoningEfforts.map((option, index) => [button(
+              `${option.reasoningEffort}${option.reasoningEffort === model.defaultReasoningEffort ? ' · par défaut' : ''}`, 'effort', index)]),
+            [button('‹ Modèles', 'back'), button('Annuler', 'cancel')],
+          ]
+        }
+      };
     }
     const pages = Math.ceil(menu.data.models.length / PAGE_SIZE);
     const navigation = [];
     if (menu.page > 0) { navigation.push(button('‹ Précédents', 'page', menu.page - 1)); }
     if (menu.page + 1 < pages) { navigation.push(button('Suivants ›', 'page', menu.page + 1)); }
-    return { text: `🤖 Nexus — modèles (${menu.page + 1}/${pages})\n\nChoisissez un modèle, puis son effort de raisonnement.\n✓ Modèle sélectionné · ☆ Modèle par défaut\nCe choix sera conservé pour ce workspace.\nLe menu expire après 2 minutes.`,
-      keyboard: { inline_keyboard: [
-        ...menu.data.models.slice(menu.page * PAGE_SIZE, (menu.page + 1) * PAGE_SIZE).map((model, index) => [button(
-          `${model.model === menu.data.selected?.model ? '✓ ' : ''}${model.isDefault ? '☆ ' : ''}${model.displayName}`, 'pick', menu.page * PAGE_SIZE + index)]),
-        ...(navigation.length ? [navigation] : []), [button('Annuler', 'cancel')],
-      ] } };
+    const title = this.agentName === 'Antigravity'
+      ? `✨ Nexus — modèles Antigravity (${menu.page + 1}/${pages})`
+      : `🤖 Nexus — modèles (${menu.page + 1}/${pages})`;
+    return {
+      text: `${title}\n\nChoisissez un modèle, puis son effort de raisonnement.\n✓ Modèle sélectionné · ☆ Modèle par défaut\nCe choix sera conservé pour ce workspace.\nLe menu expire après 2 minutes.`,
+      keyboard: {
+        inline_keyboard: [
+          ...menu.data.models.slice(menu.page * PAGE_SIZE, (menu.page + 1) * PAGE_SIZE).map((model, index) => [button(
+            `${model.model === menu.data.selected?.model ? '✓ ' : ''}${model.isDefault ? '☆ ' : ''}${model.displayName}`, 'pick', menu.page * PAGE_SIZE + index)]),
+          ...(navigation.length ? [navigation] : []), [button('Annuler', 'cancel')],
+        ]
+      }
+    };
   }
 
   private close(menu: Menu, text: string): void {

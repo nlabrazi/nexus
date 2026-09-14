@@ -31,7 +31,32 @@
           "items": { "type": "string", "minLength": 1 },
           "default": ["main", "master"],
           "scope": "window",
-          "description": "Branches sur lesquelles Nexus refuse de lancer Codex. Noms exacts, sensibles à la casse. Une liste vide désactive cette protection."
+          "description": "Branches sur lesquelles Nexus refuse de lancer Codex ou Antigravity. Noms exacts, sensibles à la casse. Une liste vide désactive cette protection."
+        },
+        "nexus.defaultBackend": {
+          "type": "string",
+          "enum": ["codex", "antigravity"],
+          "default": "codex",
+          "scope": "window",
+          "description": "Backend agent par défaut pour les commandes Telegram (/new, /resume, /model)."
+        },
+        "nexus.antigravity.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Chemin explicite vers l'exécutable de Gemini Antigravity (agy). Laisser vide pour utiliser agy depuis le PATH."
+        },
+        "nexus.antigravity.sandbox": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Active le mode sandbox pour Gemini Antigravity (--sandbox)."
+        },
+        "nexus.antigravity.dangerouslySkipPermissions": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "description": "Autorise Antigravity à exécuter sans invite d'approbation (--dangerously-skip-permissions). Déconseillé."
         }
       }
     },
@@ -43,6 +68,10 @@
       {
         "command": "nexus.status",
         "title": "Nexus: Status"
+      },
+      {
+        "command": "nexus.selectBackend",
+        "title": "Nexus: Select Active Backend"
       },
       {
         "command": "nexus.configureTelegram",
@@ -75,6 +104,26 @@
       {
         "command": "nexus.testCodexPrompt",
         "title": "Nexus: Test Codex Prompt"
+      },
+      {
+        "command": "nexus.testAntigravity",
+        "title": "Nexus: Test Antigravity Connection"
+      },
+      {
+        "command": "nexus.startAntigravitySession",
+        "title": "Nexus: Start Antigravity Session"
+      },
+      {
+        "command": "nexus.newAntigravitySession",
+        "title": "Nexus: New Antigravity Session"
+      },
+      {
+        "command": "nexus.resumeAntigravitySession",
+        "title": "Nexus: Resume Antigravity Session"
+      },
+      {
+        "command": "nexus.testAntigravityPrompt",
+        "title": "Nexus: Test Antigravity Prompt"
       }
     ]
   },

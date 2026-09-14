@@ -60,29 +60,29 @@
 
 ### ℹ️ Description
 
-**Nexus** is a private VS Code extension that turns Telegram into a remote control for local coding agents.
+**Nexus** is a private VS Code extension that turns Telegram into a remote control for local coding agents (**OpenAI Codex** and **Gemini Antigravity**).
 
 The goal is simple: keep the real development environment on the workstation while allowing safe remote interaction from a smartphone.
 
-Nexus runs inside the VS Code workspace, listens to a private Telegram bot, and forwards authorized instructions to local agent backends such as Codex.
+Nexus runs inside the VS Code workspace, listens to a private Telegram bot, and forwards authorized instructions to local agent backends such as Codex or Gemini Antigravity (`agy`).
 
 Typical use case:
 
 ```text
 📱 Telegram
     ↓
-🧩 Nexus VS Code Extension
+🧩 Nexus VS Code Extension (Multi-Backend: Codex / Antigravity)
     ↓
-🤖 Codex App Server
+🤖 Codex App Server  OR  ✨ Gemini Antigravity CLI
     ↓
 📁 Current VS Code Workspace
     ↓
-🤖 Response
+🤖 / ✨ Agent Response
     ↓
 📱 Telegram
 ```
 
-Nexus is not intended to replace VS Code, Git, Codex, or other coding agents. It acts as a secure bridge between them.
+Nexus is not intended to replace VS Code, Git, Codex, or Antigravity. It acts as a secure bridge between them.
 
 ---
 
@@ -90,8 +90,13 @@ Nexus is not intended to replace VS Code, Git, Codex, or other coding agents. It
 
 - 📱 **Telegram Remote Control**
   - Send instructions from a smartphone.
-  - Receive Codex responses directly in Telegram.
+  - Receive Codex and Gemini Antigravity responses directly in Telegram.
   - Long-polling transport: no inbound port needs to be exposed.
+
+- 🔀 **Dual-Backend Support (Codex & Antigravity)**
+  - Seamlessly switch between OpenAI Codex and Google Gemini Antigravity (`/backend [codex|antigravity]`).
+  - Direct execution aliases: `/codex <prompt>`, `/antigravity <prompt>`, `/agy <prompt>`, `/gemini <prompt>`.
+  - Symmetric session management, model selection, and token telemetry across both backends.
 
 - 🔐 **Secure Telegram Pairing**
   - Pairing code generated from VS Code.
@@ -106,6 +111,12 @@ Nexus is not intended to replace VS Code, Git, Codex, or other coding agents. It
   - Streams agent responses.
   - Handles RPC and turn timeouts.
 
+- ✨ **Gemini Antigravity Integration**
+  - Headless persistent process execution via `agy` CLI with NDJSON streaming (`stream-json`).
+  - Automated session tracking, workspace binding, and Git branch synchronization.
+  - Full telemetry: token consumption (input, cached, output, thinking), reasoning effort, and turn monitoring.
+  - Sandboxed execution (`--sandbox`) by default with fail-closed safety.
+
 - ✅ **Remote Approvals**
   - Codex approval requests can be surfaced through Telegram.
   - Unknown or expired approvals fail closed.
@@ -116,15 +127,15 @@ Nexus is not intended to replace VS Code, Git, Codex, or other coding agents. It
   - Workspace and Git safety checks protect against accidental operations in the wrong project.
 
 - 💬 **Telegram UX**
-  - `/status` reports Nexus activity, the session model, token usage, context usage and Codex account quotas.
-  - `/model` opens a paginated model picker with reasoning-effort selection; the choice is saved per workspace.
-  - `/stop` stops the current Codex turn.
-  - Session commands allow creating or resuming Codex sessions.
-  - Long Codex responses are formatted and split safely for Telegram.
+  - `/status` reports Nexus activity, active backend, sessions, models, token usage, context usage, and quotas.
+  - `/model` opens an interactive paginated model picker with reasoning-effort selection for the active backend.
+  - `/stop` cancels the currently running agent turn (Codex or Antigravity).
+  - Session commands (`/new`, `/resume <id>`) allow creating or resuming conversations in the active backend.
+  - Long responses are formatted and split safely for Telegram with code fence preservation.
 
 - 💾 **Session Persistence**
-  - Nexus can restore persisted Codex session information after restart.
-  - Session lifecycle is explicitly managed to avoid duplicate threads.
+  - Nexus restores persisted session information (Codex and Antigravity) after reload or restart.
+  - Session lifecycle is isolated per workspace to prevent cross-project contamination.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -138,10 +149,22 @@ src/
 ├── telegram/
 │   ├── client.ts
 │   ├── service.ts
+│   ├── models.ts
+│   ├── status.ts
 │   └── types.ts
-└── codex/
+├── codex/
+│   ├── client.ts
+│   ├── service.ts
+│   ├── persistence.ts
+│   ├── model-preferences.ts
+│   └── types.ts
+└── antigravity/
     ├── client.ts
     ├── service.ts
+    ├── persistence.ts
+    ├── model-preferences.ts
+    ├── telemetry.ts
+    ├── errors.ts
     └── types.ts
 ```
 
@@ -149,39 +172,42 @@ Responsibilities:
 
 ```text
 extension.ts
-└── VS Code lifecycle, commands, status bar, service wiring
+└── VS Code lifecycle, commands, status bar, backend service wiring
 
 TelegramService
-└── polling, pairing, authorization, Telegram command routing
+└── polling, pairing, authorization, multi-backend routing (/backend, /codex, /antigravity)
 
 TelegramClient
 └── Telegram Bot API transport
 
-CodexService
-└── Codex session and turn lifecycle
+CodexService / AntigravityService
+└── Agent session, turn lifecycle, workspace isolation, model preferences
 
 CodexClient
 └── Codex App Server process + JSON-RPC transport
+
+AntigravityClient
+└── Headless persistent agy process + NDJSON stream transport
 ```
 
 ### Runtime Flow
 
 ```text
-Telegram message
+Telegram message (/codex, /antigravity, /new, /resume, /model, /backend)
       ↓
 TelegramService
       ↓
-authorization checks
+authorization checks & active backend routing
       ↓
-CodexService
+CodexService  OR  AntigravityService
       ↓
-CodexClient
+CodexClient (JSON-RPC)  OR  AntigravityClient (NDJSON stream)
       ↓
-codex app-server
+codex app-server  OR  agy CLI
       ↓
 workspace files / tools
       ↓
-Codex response
+Formatted response + file summary
       ↓
 Telegram
 ```
@@ -193,7 +219,8 @@ Telegram
 - [![VS Code][vscode-shield]][vscode-url]
 - [![TypeScript][typescript-shield]][typescript-url]
 - [![Node.js][node-shield]][node-url]
-- Codex CLI / App Server
+- OpenAI Codex CLI / App Server
+- Google Gemini Antigravity CLI (`agy`)
 - Telegram Bot API
 - esbuild
 
@@ -311,7 +338,29 @@ Nexus communicates with Codex through:
 codex app-server --stdio
 ```
 
-The VS Code extension remains the user-facing controller; Codex App Server is used only as the programmable backend for remote sessions.
+For more details, see [Codex setup](docs/codex-sessions.md).
+
+---
+
+## ✨ Gemini Antigravity Setup
+
+Install the Google Gemini Antigravity CLI (`agy`) and ensure your Google Cloud or Gemini API access is configured.
+
+Example checks:
+
+```bash
+agy --version
+which agy
+agy models
+```
+
+Nexus executes Antigravity in headless streaming mode:
+
+```bash
+agy -p "" --input-format stream-json --output-format stream-json --sandbox --add-dir <workspace>
+```
+
+For detailed configuration (custom paths, sandbox flags), see [Antigravity setup](docs/antigravity-setup.md).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -347,48 +396,67 @@ Example:
 
 ## 🧩 VS Code Commands
 
-Depending on the current version, Nexus exposes commands such as:
+Nexus exposes commands through the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`):
 
 ```text
 Nexus: Status
+Nexus: Select Active Backend
 Nexus: Configure Telegram
 Nexus: Test Telegram Connection
 Nexus: Pair Telegram
+Nexus: Switch Branch
+
+# Codex commands
 Nexus: Test Codex Connection
 Nexus: Start Codex Session
-Nexus: Switch Branch
+Nexus: New Codex Session
+Nexus: Resume Codex Session
+Nexus: Test Codex Prompt
+
+# Gemini Antigravity commands
+Nexus: Test Antigravity Connection
+Nexus: Start Antigravity Session
+Nexus: New Antigravity Session
+Nexus: Resume Antigravity Session
+Nexus: Test Antigravity Prompt
 ```
 
 ---
 
 ## 📲 Telegram Commands
 
-The current V1 includes remote commands such as:
+Nexus provides a rich set of Telegram commands:
 
 ```text
-/help
-/status
-/model
-/codex <instruction>
-/stop
-/new
-/resume <session-id>
-/branches
-/switch <branch>
+/help                        # Formatted command reference in French
+/status                      # Full status report (project, backend, sessions, models, tokens, quotas)
+/backend [codex|antigravity] # Query or toggle the active agent backend
+/model                       # Interactive model and reasoning effort picker for the active backend
+/codex <instruction>         # Send instruction directly to OpenAI Codex
+/antigravity <instruction>   # Send instruction directly to Gemini Antigravity (aliases: /agy, /gemini)
+/stop                        # Stop the current running turn (Codex or Antigravity)
+/new                         # Create a new session in the active backend
+/resume <session-id>         # Resume an existing session in the active backend
+/branches                    # List Git branches and identify the current branch
+/switch <branch>             # Safely switch Git branch (with tracking support)
 ```
 
-Send `/help` for a formatted command reference in French, grouped by usage with examples. Help remains available while Codex is working and is restricted to the paired private chat.
+Send `/help` for a formatted command reference in French, grouped by usage with examples. Help remains available while agents are working and is restricted to the paired private chat.
 
-Send `/model`, tap a model, then choose its reasoning effort. The catalog comes from the installed Codex app server. The choice applies to the next explicit prompt and survives extension reloads for that workspace; it does not modify the global Codex configuration. Model changes are refused during Codex work or a Nexus branch change. Menus expire after two minutes and include pagination and cancellation.
+Send `/model`, tap a model, then choose its reasoning effort. The catalog comes from the active backend (`codex` or `antigravity`). The choice applies to the next explicit prompt and survives extension reloads for that workspace.
 
-`/status` displays the configuration acknowledged by Codex separately from the model selected for the next prompt. Token totals come from session usage events (including cached input and reasoning output); context occupancy is the last reported measurement. Account quotas are refreshed when the Codex process is connected, with reset times displayed in Europe/Paris. Missing data is shown as unavailable, not zero. The command does not start a process, session or prompt, and Telegram remains responsive while quotas are being fetched.
-
-These values describe the session controlled by Nexus. They do not mirror an unrelated Codex CLI conversation. After an extension reload, token measurements are unavailable until Codex reports them again.
+`/status` displays the active backend, current sessions, acknowledged configuration, token consumption, context usage, and account quotas.
 
 Examples:
 
 ```text
 /status
+```
+
+```text
+/backend antigravity
+/model
+/antigravity Analyse l'architecture du projet et propose une refactorisation modulaire.
 ```
 
 ```text
@@ -408,6 +476,11 @@ Detailed documentation:
 - [Telegram approvals](docs/telegram-approvals.md)
 - [Telegram formatting](docs/telegram-formatting.md)
 - [Codex sessions](docs/codex-sessions.md)
+- [Codex errors & recovery](docs/codex-errors.md)
+- [Gemini Antigravity setup](docs/antigravity-setup.md)
+- [Gemini Antigravity sessions](docs/antigravity-sessions.md)
+- [Gemini Antigravity models](docs/antigravity-models.md)
+- [Gemini Antigravity errors](docs/antigravity-errors.md)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -538,24 +611,29 @@ Current validation areas include:
 - Telegram polling restart
 - Telegram pairing and authorization
 - Telegram 409 conflict prevention
-- Codex process startup
-- Codex RPC timeout
-- Codex turn timeout
-- Workspace-bound session reuse
+- Codex process startup, RPC timeout, turn timeout, and crash recovery
+- Antigravity headless process execution and NDJSON streaming
+- Antigravity stream timeouts, turn timeouts, and crash recovery
+- Workspace-bound session reuse (Codex & Antigravity)
 - Remote approvals
 - Approval expiration
-- Codex process crash
 - Workspace/Git safety
-- Session persistence
-- Telegram `/stop`
-- Interactive model selection, workspace model preferences and usage telemetry
-- Response formatting
+- Session persistence (Codex & Antigravity)
+- Telegram `/stop` (cancelling Codex and Antigravity)
+- Interactive model selection, workspace model preferences, and usage telemetry
+- Multi-backend Telegram command routing (`/backend`, `/codex`, `/antigravity`, `/agy`, `/gemini`)
+- Response formatting and file summary presentation
 
 Detailed test documentation:
 
 - [Regression tests](docs/regression-tests.md)
 - [Session persistence](docs/session-persistence.md)
+- [Codex sessions](docs/codex-sessions.md)
 - [Codex errors](docs/codex-errors.md)
+- [Gemini Antigravity setup](docs/antigravity-setup.md)
+- [Gemini Antigravity sessions](docs/antigravity-sessions.md)
+- [Gemini Antigravity models](docs/antigravity-models.md)
+- [Gemini Antigravity errors](docs/antigravity-errors.md)
 - [Workspace safety](docs/workspace-safety.md)
 - [Telegram approvals](docs/telegram-approvals.md)
 
@@ -574,6 +652,9 @@ npm run lint
 
 # Production build
 npm run package
+
+# Unit tests
+npm run test:unit
 
 # Development watch mode
 npm run watch
@@ -600,17 +681,19 @@ npx @vscode/vsce ls
 - [x] Telegram secure pairing
 - [x] Telegram long polling
 - [x] Codex App Server integration
-- [x] Workspace-bound Codex sessions
-- [x] Telegram → Codex → Telegram
+- [x] Gemini Antigravity CLI streaming integration
+- [x] Dual-backend routing (`/backend`, `/codex`, `/antigravity`)
+- [x] Workspace-bound sessions (Codex & Antigravity)
+- [x] Telegram ↔ Agent communication (streaming, formatted markdown, file summaries)
 - [x] Remote approvals
-- [x] Session management
+- [x] Session management (`/new`, `/resume`, `/status`, `/stop`)
+- [x] Model discovery and reasoning effort selection (`/model`)
 - [x] Workspace/Git safety
-- [x] Error handling and timeouts
+- [x] Comprehensive error handling and timeouts
 - [x] Private VSIX packaging
 
 ### Later
 
-- [ ] Antigravity backend integration
 - [ ] Multi-workspace / project selection
 - [ ] Better multi-instance coordination
 - [ ] Optional standalone Nexus daemon

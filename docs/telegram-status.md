@@ -9,7 +9,8 @@ demande aucune approbation. Le polling continue pendant cette actualisation.
 ## Informations affichées
 
 Le message présente un titre en gras, puis des blocs espacés : **Projet**,
-**Codex**, **Modèle et configuration**, **Tokens de la session**,
+le **Backend actif** (`🤖 Codex` ou `✨ Gemini Antigravity`), puis les sections dédiées :
+**Codex** et/ou **Gemini Antigravity**, **Modèle et configuration**, **Tokens de la session**,
 **Quotas du compte Codex** et **Activité**. La connexion Telegram reste visible en tête.
 Les sections sont repérées par des icônes. Les états utilisent 🟢 pour une
 connexion/session active, ⚪ pour l'absence de session ou de turn, 🟠 pour une
@@ -18,10 +19,11 @@ reprise nécessaire ou une approbation attendue, 🔴 pour une indisponibilité 
 Les informations et les alertes existantes sont conservées ; les noms de
 workspaces, chemins et identifiants contenant du Markdown restent littéraux.
 
+- **Backend actif** : indique si les commandes génériques (`/new`, `/resume`, `/model`) s'adressent à Codex ou à Gemini Antigravity. Configurable via `/backend [codex|antigravity]`.
 - **Workspace ciblé** : nom et chemin du seul dossier ouvert dans la fenêtre
   VS Code de Nexus. Si plusieurs dossiers sont ouverts, le statut précise leur
-  nombre et signale que les actions Codex sont bloquées car la cible est ambiguë.
-- **Telegram** : connexion et appairage ; présence d'une requête `/codex` en cours
+  nombre et signale que les actions agents sont bloquées car la cible est ambiguë.
+- **Telegram** : connexion et appairage ; présence d'une requête `/codex` ou `/antigravity` en cours
   de traitement, y compris son démarrage ou l'envoi de sa réponse.
 - **Processus Codex** : lancé ou arrêté.
 - **Session Codex** : état, identifiant, workspace associé et branche mémorisée à la sélection
