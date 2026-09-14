@@ -365,6 +365,7 @@ Nexus: Switch Branch
 The current V1 includes remote commands such as:
 
 ```text
+/help
 /status
 /codex <instruction>
 /stop
@@ -373,6 +374,8 @@ The current V1 includes remote commands such as:
 /branches
 /switch <branch>
 ```
+
+Send `/help` for a formatted command reference in French, grouped by usage with examples. Help remains available while Codex is working and is restricted to the paired private chat.
 
 Examples:
 

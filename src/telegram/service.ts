@@ -5,6 +5,7 @@ import { TelegramUpdate } from './types';
 import { TelegramApprovals, TelegramPeer } from './approvals';
 import { ApprovalDecision, CodexApprovalRequest } from '../codex/types';
 import { formatTelegramStatus, NexusStatusSnapshot } from './status';
+import { TELEGRAM_HELP } from './help';
 
 export interface RemotePromptReply { text: string; fileSummary?: string }
 
@@ -203,6 +204,10 @@ export class TelegramService {
 
     // Commands
     const command = text.trim();
+    if (/^\/help(?:\s|$)/.test(command)) {
+      await this.client.sendMessage(chatId, command === '/help' ? TELEGRAM_HELP : 'Usage : /help', 'markdown');
+      return;
+    }
     if (/^\/(branches|switch)(?:\s|$)/.test(command)) {
       const [name, branch, ...extra] = command.split(/\s+/);
       if ((name === '/branches' && branch !== undefined) ||
