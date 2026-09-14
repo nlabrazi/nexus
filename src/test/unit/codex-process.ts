@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
-import { RpcMessage, CodexThread } from '../../codex/types';
+import { RpcMessage, CodexThread, CodexModel } from '../../codex/types';
 
 export class FakeProcess extends EventEmitter {
   stdin = new PassThrough();
@@ -10,6 +10,10 @@ export class FakeProcess extends EventEmitter {
   blockedMethods = new Set<string>();
   threads = new Map<string, CodexThread>();
   kills = 0;
+  models: CodexModel[] = [{ id: 'test-model', model: 'test-model', displayName: 'Test model', description: 'Fixture model',
+    isDefault: true, defaultReasoningEffort: 'medium', supportedReasoningEfforts: [
+      { reasoningEffort: 'low', description: 'Fast' }, { reasoningEffort: 'medium', description: 'Balanced' },
+    ] }];
   private threadCount = 0;
 
   constructor() {
@@ -22,6 +26,10 @@ export class FakeProcess extends EventEmitter {
       }
       if (message.method === 'initialize') {
         this.receive({ id: message.id, result: {} });
+      } else if (message.method === 'model/list') {
+        this.receive({ id: message.id, result: { data: this.models, nextCursor: null } });
+      } else if (message.method === 'account/rateLimits/read') {
+        this.receive({ id: message.id, result: { rateLimits: { limitId: 'codex', primary: { usedPercent: 25, windowDurationMins: 300, resetsAt: 2000000000 } } } });
       } else if (message.method === 'thread/start') {
         const id = ++this.threadCount === 1 ? 'thread' : `thread-${this.threadCount}`;
         const thread = { id, cwd: (message.params as { cwd: string }).cwd, status: { type: 'idle' } };

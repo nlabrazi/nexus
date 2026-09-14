@@ -46,6 +46,106 @@ async function setup(t: TestContext, repository = true) {
 }
 
 suite('Workspace and Git preflight', () => {
+  test('lists protected and remote branches and switches from master to staging', async t => {
+    const { root, guard, git, commit } = await setup(t);
+    await commit();
+    await git(root, 'branch', '-m', 'master');
+    await git(root, 'branch', 'staging');
+    await git(root, 'remote', 'add', 'origin', root);
+    await git(root, 'update-ref', 'refs/remotes/origin/staging', 'HEAD');
+    await git(root, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/staging');
+    await assert.rejects(guard.validate(root), { code: 'protected_branch' });
+    assert.deepEqual(await guard.listBranches(root), [
+      { name: 'master', localName: 'master', remote: false, current: true, protected: true },
+      { name: 'staging', localName: 'staging', remote: false, current: false, protected: false },
+      { name: 'origin/staging', localName: 'staging', remote: true, current: false, protected: false },
+    ]);
+    assert.equal(await guard.switchBranch(root, 'staging'), 'staging');
+    assert.equal((await guard.validate(root)).git?.branch, 'staging');
+    await assert.rejects(guard.switchBranch(root, 'master'), { code: 'protected_branch' });
+    await assert.rejects(guard.switchBranch(root, 'origin/staging'), { code: 'branch_exists' });
+  });
+
+  test('creates a local tracking branch from an explicit remote selection', async t => {
+    const { root, guard, git, commit } = await setup(t);
+    await commit();
+    await git(root, 'remote', 'add', 'origin', root);
+    await git(root, 'update-ref', 'refs/remotes/origin/staging', 'HEAD');
+    await git(root, 'update-ref', 'refs/remotes/origin/master', 'HEAD');
+    await assert.rejects(guard.switchBranch(root, 'origin/master'), { code: 'protected_branch' });
+    assert.equal(await guard.switchBranch(root, 'origin/staging'), 'staging');
+    assert.equal((await git(root, 'rev-parse', '--abbrev-ref', '@{upstream}')).stdout.trim(), 'origin/staging');
+  });
+
+  test('switching preserves saved changes, staged files and untracked files by refusing dirty worktrees', async t => {
+    const { root, guard, git, commit } = await setup(t);
+    await commit();
+    await git(root, 'branch', 'staging');
+    await writeFile(join(root, 'example.txt'), 'keep me');
+    await assert.rejects(guard.switchBranch(root, 'staging'), { code: 'dirty_worktree' });
+    await git(root, 'add', 'example.txt');
+    await assert.rejects(guard.switchBranch(root, 'staging'), { code: 'dirty_worktree' });
+    assert.equal(await readFile(join(root, 'example.txt'), 'utf8'), 'keep me');
+    await git(root, 'commit', '-m', 'saved');
+    await writeFile(join(root, 'new.txt'), 'untracked');
+    await assert.rejects(guard.switchBranch(root, 'staging'), { code: 'dirty_worktree' });
+    assert.equal(await readFile(join(root, 'new.txt'), 'utf8'), 'untracked');
+    assert.equal((await guard.validate(root)).git?.branch, 'feature/test');
+  });
+
+  test('branch management retains workspace, editor and Git operation checks', async t => {
+    const { root, guard, context, git, commit } = await setup(t);
+    await commit();
+    await git(root, 'branch', 'staging');
+    context.trusted = false;
+    await assert.rejects(guard.listBranches(root), { code: 'untrusted' });
+    context.trusted = true;
+    context.dirtyDocuments.push({ scheme: 'file', path: join(root, 'example.txt') });
+    await assert.rejects(guard.switchBranch(root, 'staging'), { code: 'unsaved_documents' });
+    context.dirtyDocuments = [];
+    await writeFile(join(root, '.git', 'MERGE_HEAD'), 'pending');
+    await assert.rejects(guard.switchBranch(root, 'staging'), { code: 'git_operation' });
+  });
+
+  test('switching does not overwrite an ignored local file tracked on the target branch', async t => {
+    const { root, guard, git, commit } = await setup(t);
+    await commit();
+    await git(root, 'switch', '-c', 'staging');
+    await writeFile(join(root, 'local.txt'), 'tracked on staging');
+    await git(root, 'add', 'local.txt');
+    await git(root, 'commit', '-m', 'track file');
+    await git(root, 'switch', 'feature/test');
+    await writeFile(join(root, '.gitignore'), 'local.txt\n');
+    await git(root, 'add', '.gitignore');
+    await git(root, 'commit', '-m', 'ignore local file');
+    await writeFile(join(root, 'local.txt'), 'private local contents');
+    await assert.rejects(guard.switchBranch(root, 'staging'), { code: 'switch_failed' });
+    assert.equal(await readFile(join(root, 'local.txt'), 'utf8'), 'private local contents');
+    assert.equal((await guard.validate(root)).git?.branch, 'feature/test');
+  });
+
+  test('unknown names, Git revision syntax and options cannot select a branch', async t => {
+    const { root, guard, commit } = await setup(t);
+    await commit();
+    for (const name of ['missing', '-', '--detach', '@{-1}', 'HEAD~1', 'feature/test; touch injected']) {
+      await assert.rejects(guard.switchBranch(root, name), { code: 'unknown_branch' });
+    }
+    assert.equal((await guard.validate(root)).git?.branch, 'feature/test');
+  });
+
+  test('Git refusal for a branch checked out in another worktree leaves the current branch intact', async t => {
+    const { root, temp, guard, git, commit } = await setup(t);
+    await commit();
+    await git(root, 'worktree', 'add', '-b', 'staging', join(temp, 'linked'));
+    await assert.rejects(guard.switchBranch(root, 'staging'), { code: 'switch_failed' });
+    assert.equal((await guard.validate(root)).git?.branch, 'feature/test');
+  });
+
+  test('branch listing reports non-Git projects clearly', async t => {
+    const { root, guard } = await setup(t, false);
+    await assert.rejects(guard.listBranches(root), { code: 'no_repository' });
+  });
+
   test('accepts the repository root, including saved uncommitted and untracked files', async t => {
     const { root, guard, git, commit } = await setup(t);
     await commit();

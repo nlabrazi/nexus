@@ -39,6 +39,21 @@ suite('Telegram response HTTP API', () => {
 });
 
 suite('Telegram approval HTTP API', () => {
+  test('sends and edits model menu keyboards without changing the message identity', async t => {
+    const calls: { url: string; body: Record<string, unknown> }[] = [];
+    t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
+      calls.push({ url, body: JSON.parse(String(init.body)) });
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 42 } }));
+    });
+    const client = new TelegramClient('fake-token');
+    const first = { inline_keyboard: [[{ text: 'Model', callback_data: 'model:token:pick:0' }]] };
+    const next = { inline_keyboard: [[{ text: 'Low', callback_data: 'model:token:effort:0' }]] };
+    const sent = await client.sendKeyboardMessage(20, 'Models', first);
+    await client.editKeyboardMessage(20, sent.message_id, 'Reasoning', next);
+    assert.equal(calls[1].url.endsWith('/editMessageText'), true);
+    assert.deepEqual(calls[1].body, { chat_id: 20, message_id: 42, text: 'Reasoning', reply_markup: next });
+  });
+
   test('subscribes to callbacks and sends/removes inline buttons with API acknowledgements', async t => {
     const calls: { url: string; body?: Record<string, unknown> }[] = [];
     t.mock.method(globalThis, 'fetch', async (input: string, init?: RequestInit) => {

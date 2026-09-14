@@ -19,6 +19,14 @@ export interface WorkspaceIdentity {
   git?: { directory: string; branch: string };
 }
 
+export interface WorkspaceBranch {
+  name: string;
+  localName: string;
+  remote: boolean;
+  current: boolean;
+  protected: boolean;
+}
+
 export type WorkspaceValidator = (path: string) => Promise<WorkspaceIdentity>;
 type GitRunner = (cwd: string, args: string[]) => Promise<string>;
 
@@ -62,6 +70,10 @@ export class WorkspaceGuard {
   }
 
   async validate(path: string): Promise<WorkspaceIdentity> {
+    return this.inspect(path, false);
+  }
+
+  private async inspect(path: string, forBranches: boolean): Promise<WorkspaceIdentity> {
     const context = this.context();
     const target = this.target(context);
     if (!isAbsolute(path)) {
@@ -82,15 +94,61 @@ export class WorkspaceGuard {
       throw new WorkspaceError('workspace_missing', 'Le dossier du workspace est absent ou inaccessible. Rouvrez un dossier existant dans VS Code.', { cause: error });
     }
     await this.checkDirtyDocuments(root, context.dirtyDocuments);
-    const git = await this.inspectGit(root, context.protectedBranches);
+    const git = await this.inspectGit(root, forBranches ? [] : context.protectedBranches);
     // VS Code can change while Git is being queried. Read editor state again before returning.
     const latest = this.context();
     if (relative(root, await realpath(this.target(latest))) !== '') {
       throw new WorkspaceError('wrong_workspace', 'Le dossier ouvert a changé pendant les vérifications. Relancez la demande depuis le projet voulu.');
     }
     await this.checkDirtyDocuments(root, latest.dirtyDocuments);
-    if (git) { this.checkProtectedBranch(git.branch, latest.protectedBranches); }
+    if (git && !forBranches) { this.checkProtectedBranch(git.branch, latest.protectedBranches); }
     return { root, ...(git ? { git } : {}) };
+  }
+
+  async listBranches(path: string): Promise<WorkspaceBranch[]> {
+    const workspace = await this.inspect(path, true);
+    if (!workspace.git) { throw new WorkspaceError('no_repository', 'Ce workspace ne contient pas de dépôt Git.'); }
+    const refs = await this.git(workspace.root, [
+      'for-each-ref', '--sort=refname', '--format=%(refname)%09%(symref)', 'refs/heads/', 'refs/remotes/',
+    ]);
+    const protectedBranches = this.context().protectedBranches;
+    return refs.trimEnd().split('\n').filter(Boolean).flatMap(row => {
+      const [ref, symbolic] = row.split('\t');
+      if (symbolic) { return []; }
+      const remote = ref.startsWith('refs/remotes/');
+      const name = ref.slice(remote ? 'refs/remotes/'.length : 'refs/heads/'.length);
+      const localName = remote ? name.slice(name.indexOf('/') + 1) : name;
+      return [{ name, localName, remote, current: !remote && name === workspace.git!.branch,
+        protected: protectedBranches.includes(localName) }];
+    });
+  }
+
+  async switchBranch(path: string, name: string): Promise<string> {
+    const before = await this.inspect(path, true);
+    const branches = await this.listBranches(path);
+    // Prefer an exact local name; remote selections explicitly create a tracking branch.
+    const branch = branches.find(branch => !branch.remote && branch.name === name)
+      ?? branches.find(branch => branch.remote && branch.name === name);
+    if (!branch) { throw new WorkspaceError('unknown_branch', 'Branche inconnue. Consultez /branches et utilisez /switch <nom exact>.'); }
+    this.checkProtectedBranch(branch.localName, this.context().protectedBranches);
+    if (branch.current) { return branch.localName; }
+    if (branch.remote && branches.some(candidate => !candidate.remote && candidate.name === branch.localName)) {
+      throw new WorkspaceError('branch_exists', `La branche locale « ${branch.localName} » existe déjà. Utilisez /switch ${branch.localName}.`);
+    }
+    if (await this.git(before.root, ['status', '--porcelain', '--untracked-files=all'])) {
+      throw new WorkspaceError('dirty_worktree', 'Le dépôt contient des modifications locales. Faites un commit ou un stash dans VS Code avant de changer de branche.');
+    }
+    assertSameWorkspace(before, await this.inspect(path, true));
+    this.checkProtectedBranch(branch.localName, this.context().protectedBranches);
+    try {
+      await this.git(before.root, branch.remote
+        ? ['switch', '--no-guess', '--no-overwrite-ignore', '--track', '-c', branch.localName, `refs/remotes/${branch.name}`]
+        : ['switch', '--no-guess', '--no-overwrite-ignore', '--', branch.name]);
+    } catch (error) {
+      const detail = (error as { stderr?: string }).stderr?.trim();
+      throw new WorkspaceError('switch_failed', `Git a refusé le changement de branche. ${detail || 'Vérifiez git status dans VS Code.'}`, { cause: error });
+    }
+    return branch.localName;
   }
 
   private async checkDirtyDocuments(root: string, documents: WorkspaceContext['dirtyDocuments']): Promise<void> {
@@ -174,7 +232,7 @@ export class WorkspaceGuard {
   private checkProtectedBranch(branch: string, protectedBranches: readonly string[]): void {
     if (protectedBranches.includes(branch)) {
       throw new WorkspaceError('protected_branch',
-        `La branche « ${branch} » est protégée par Nexus. Sélectionnez une branche de travail, ou adaptez nexus.git.protectedBranches dans les paramètres VS Code.`);
+        `La branche « ${branch} » est protégée par Nexus. Utilisez /branches puis /switch <branche> pour sélectionner une branche de travail, ou adaptez nexus.git.protectedBranches dans les paramètres VS Code.`);
     }
   }
 }

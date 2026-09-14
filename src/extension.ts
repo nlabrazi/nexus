@@ -1,12 +1,13 @@
 import * as vscode from 'vscode';
 
 import { TelegramClient } from './telegram/client';
-import { RemotePromptReply, RemoteSessionAction, TelegramService } from './telegram/service';
+import { RemoteBranchAction, RemotePromptReply, RemoteSessionAction, TelegramService } from './telegram/service';
 import { formatFileSummary } from './telegram/file-summary';
 
 import { CodexClient } from './codex/client';
 import { CodexService } from './codex/service';
 import { WorkspaceSessionPersistence } from './codex/persistence';
+import { WorkspaceModelPreferences } from './codex/model-preferences';
 import { DEFAULT_PROTECTED_BRANCHES, WorkspaceGuard } from './workspace/guard';
 
 let telegramService: TelegramService | undefined;
@@ -28,7 +29,8 @@ export async function activate(
 ) {
   codexService = new CodexService(async (request, signal) => {
     return await telegramService?.requestApproval(request, signal) ?? 'decline';
-  }, path => workspaceGuard.validate(path), new WorkspaceSessionPersistence(context.workspaceState));
+  }, path => workspaceGuard.validate(path), new WorkspaceSessionPersistence(context.workspaceState),
+    new WorkspaceModelPreferences(context.workspaceState));
 
   const statusCommand = vscode.commands.registerCommand(
     'nexus.status',
@@ -268,6 +270,24 @@ export async function activate(
     await runLocalSessionAction({ type: 'new' });
   });
 
+  const switchBranchCommand = vscode.commands.registerCommand('nexus.switchBranch', async () => {
+    try {
+      const path = workspaceGuard.targetPath();
+      const branches = await workspaceGuard.listBranches(path);
+      const selected = await vscode.window.showQuickPick(branches.map(branch => ({
+        label: branch.name,
+        description: [branch.current ? 'actuelle' : '', branch.protected ? 'protégée' : '',
+          branch.remote ? 'distante' : 'locale'].filter(Boolean).join(' · '),
+        branch,
+      })), { placeHolder: 'Choisir la branche de travail' });
+      if (selected) {
+        vscode.window.showInformationMessage(await switchWorkspaceBranch(path, selected.branch.name));
+      }
+    } catch (error) {
+      vscode.window.showErrorMessage(`Nexus : ${error instanceof Error ? error.message : String(error)}`);
+    }
+  });
+
   const resumeCodexSessionCommand = vscode.commands.registerCommand('nexus.resumeCodexSession', async () => {
     const id = await vscode.window.showInputBox({
       prompt: 'Identifiant de la session Codex à reprendre dans le workspace courant',
@@ -287,7 +307,8 @@ export async function activate(
     startCodexSessionCommand,
     testCodexPromptCommand,
     newCodexSessionCommand,
-    resumeCodexSessionCommand
+    resumeCodexSessionCommand,
+    switchBranchCommand
   );
 
   const statusBar =
@@ -336,7 +357,8 @@ function startTelegramService(
       context,
       client,
       handleRemoteCodexPrompt,
-      () => {
+      async () => {
+        await codexService?.refreshStatus();
         const folders = vscode.workspace.workspaceFolders ?? [];
         const workspace = folders.length === 1 ? folders[0] : undefined;
         return {
@@ -346,7 +368,18 @@ function startTelegramService(
         };
       },
       handleSessionAction,
-      () => codexService?.cancelCurrentWork() ?? false
+      () => codexService?.cancelCurrentWork() ?? false,
+      handleBranchAction,
+      {
+        list: async () => {
+          if (!codexService) { throw new Error('Codex indisponible.'); }
+          return codexService.listModels(workspaceGuard.targetPath());
+        },
+        select: async (selection, menuContext) => {
+          if (!codexService) { throw new Error('Codex indisponible.'); }
+          await codexService.selectModel(workspaceGuard.targetPath(), selection, menuContext);
+        },
+      }
     );
 
   void telegramService.start();
@@ -375,6 +408,23 @@ async function handleSessionAction(action: RemoteSessionAction): Promise<string>
   return action.type === 'new'
     ? await codexService.newSession(path)
     : await codexService.resumeSession(path, action.sessionId);
+}
+
+async function switchWorkspaceBranch(path: string, name: string): Promise<string> {
+  if (!codexService) { throw new Error('Codex service unavailable.'); }
+  const branch = await codexService.withWorkspaceOperation(() => workspaceGuard.switchBranch(path, name));
+  return `✅ Branche courante : ${branch}.` + (codexService.getCurrentSessionId()
+    ? '\nAvant le prochain prompt, utilisez /new ou /resume <id> pour associer la session à cette branche.' : '');
+}
+
+async function handleBranchAction(action: RemoteBranchAction): Promise<string> {
+  const path = workspaceGuard.targetPath();
+  if (action.type === 'switch') { return switchWorkspaceBranch(path, action.name); }
+  const branches = await workspaceGuard.listBranches(path);
+  return ['Branches disponibles (références Git connues localement) :',
+    ...branches.map(branch => `${branch.current ? '→ ' : '• '}${branch.name}${branch.remote ? ' (distante)' : ''}${branch.protected ? ' 🔒 protégée' : ''}`),
+    branches.length ? 'Choisir : /switch <nom exact>\nExemples : /switch staging ou /switch origin/staging' : 'Aucune branche disponible.',
+  ].join('\n');
 }
 
 async function runLocalSessionAction(action: RemoteSessionAction): Promise<void> {

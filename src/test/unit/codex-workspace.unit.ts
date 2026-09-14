@@ -4,7 +4,7 @@ import childProcess = require('child_process');
 import { CodexService } from '../../codex/service';
 import { WorkspaceError, WorkspaceValidator } from '../../workspace/guard';
 import { FakeProcess } from './codex-process';
-import { flush } from './helpers';
+import { deferred, flush } from './helpers';
 
 function setup(t: TestContext, validate: WorkspaceValidator) {
   const child = new FakeProcess();
@@ -17,6 +17,36 @@ function setup(t: TestContext, validate: WorkspaceValidator) {
 const identity = (branch = 'feature/one') => ({ root: '/project', git: { directory: '/project/.git', branch } });
 
 suite('Codex workspace safety integration', () => {
+  test('branch operations exclude prompts and session changes, including after /stop', async t => {
+    const { service, spawn } = setup(t, async () => identity());
+    const pending = deferred<string>();
+    const operation = service.withWorkspaceOperation(() => pending.promise);
+    await assert.rejects(service.newSession('/project'), /changement de branche/);
+    await assert.rejects(service.sendPrompt('hello', '/project'), /already running/);
+    await assert.rejects(service.withWorkspaceOperation(async () => 'other'), /opération Git ou Codex/);
+    assert.equal(service.cancelCurrentWork(), false);
+    await assert.rejects(service.startSession('/project'), /changement de branche/);
+    assert.equal(spawn.mock.callCount(), 0);
+    pending.resolve('staging');
+    assert.equal(await operation, 'staging');
+    await assert.rejects(service.withWorkspaceOperation(async () => { throw new Error('Git refused'); }), /Git refused/);
+    assert.equal(await service.startSession('/project'), 'thread');
+  });
+
+  test('session startup and prompt preflight prevent switching before the first await completes', async t => {
+    const pending = deferred<void>();
+    const { service } = setup(t, async () => { await pending.promise; return identity(); });
+    const session = service.startSession('/project');
+    await assert.rejects(service.withWorkspaceOperation(async () => 'staging'), /opération Git ou Codex/);
+    pending.resolve();
+    await session;
+    const turn = service.sendPrompt('hello');
+    const failure = assert.rejects(turn, /annulée/);
+    await assert.rejects(service.withWorkspaceOperation(async () => 'staging'), /opération Git ou Codex/);
+    service.cancelCurrentWork();
+    await failure;
+  });
+
   test('all entry points validate before spawning and release their reservation after refusal', async t => {
     let blocked = true;
     const { service, spawn } = setup(t, async () => {

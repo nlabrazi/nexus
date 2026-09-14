@@ -116,7 +116,8 @@ Nexus is not intended to replace VS Code, Git, Codex, or other coding agents. It
   - Workspace and Git safety checks protect against accidental operations in the wrong project.
 
 - 💬 **Telegram UX**
-  - `/status` reports the current Nexus state.
+  - `/status` reports Nexus activity, the session model, token usage, context usage and Codex account quotas.
+  - `/model` opens a paginated model picker with reasoning-effort selection; the choice is saved per workspace.
   - `/stop` stops the current Codex turn.
   - Session commands allow creating or resuming Codex sessions.
   - Long Codex responses are formatted and split safely for Telegram.
@@ -355,6 +356,7 @@ Nexus: Test Telegram Connection
 Nexus: Pair Telegram
 Nexus: Test Codex Connection
 Nexus: Start Codex Session
+Nexus: Switch Branch
 ```
 
 ---
@@ -364,12 +366,24 @@ Nexus: Start Codex Session
 The current V1 includes remote commands such as:
 
 ```text
+/help
 /status
+/model
 /codex <instruction>
 /stop
 /new
 /resume <session-id>
+/branches
+/switch <branch>
 ```
+
+Send `/help` for a formatted command reference in French, grouped by usage with examples. Help remains available while Codex is working and is restricted to the paired private chat.
+
+Send `/model`, tap a model, then choose its reasoning effort. The catalog comes from the installed Codex app server. The choice applies to the next explicit prompt and survives extension reloads for that workspace; it does not modify the global Codex configuration. Model changes are refused during Codex work or a Nexus branch change. Menus expire after two minutes and include pagination and cancellation.
+
+`/status` displays the configuration acknowledged by Codex separately from the model selected for the next prompt. Token totals come from session usage events (including cached input and reasoning output); context occupancy is the last reported measurement. Account quotas are refreshed when the Codex process is connected, with reset times displayed in Europe/Paris. Missing data is shown as unavailable, not zero. The command does not start a process, session or prompt, and Telegram remains responsive while quotas are being fetched.
+
+These values describe the session controlled by Nexus. They do not mirror an unrelated Codex CLI conversation. After an extension reload, token measurements are unavailable until Codex reports them again.
 
 Examples:
 
@@ -387,7 +401,9 @@ Examples:
 
 Detailed documentation:
 
+- [Git branch selection](docs/workspace-safety.md#changer-de-branche)
 - [Telegram status](docs/telegram-status.md)
+- [Telegram model selection](docs/telegram-models.md)
 - [Telegram stop](docs/telegram-stop.md)
 - [Telegram approvals](docs/telegram-approvals.md)
 - [Telegram formatting](docs/telegram-formatting.md)
@@ -532,6 +548,7 @@ Current validation areas include:
 - Workspace/Git safety
 - Session persistence
 - Telegram `/stop`
+- Interactive model selection, workspace model preferences and usage telemetry
 - Response formatting
 
 Detailed test documentation:
@@ -605,9 +622,8 @@ npx @vscode/vsce ls
 
 # 📄 License
 
-Private project for now.
-
-Add a `LICENSE` file before public distribution if Nexus is released publicly.
+Nexus is proprietary software. All rights reserved.
+See [LICENSE](LICENSE) for the terms.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -625,4 +641,4 @@ Add a `LICENSE` file before public distribution if Nexus is released publicly.
 [node-url]: https://nodejs.org/
 
 [license-shield]: https://img.shields.io/badge/license-private-lightgrey?style=for-the-badge
-[license-url]: #
+[license-url]: LICENSE

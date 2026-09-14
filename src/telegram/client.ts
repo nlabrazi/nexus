@@ -76,6 +76,10 @@ export class TelegramClient {
     text: string,
     keyboard: TelegramInlineKeyboard
   ): Promise<TelegramSentMessage> {
+    return this.sendKeyboardMessage(chatId, text, keyboard);
+  }
+
+  async sendKeyboardMessage(chatId: number, text: string, keyboard: TelegramInlineKeyboard): Promise<TelegramSentMessage> {
     const result = await this.call<TelegramSentMessage>('sendMessage', {
       chat_id: chatId,
       text,
@@ -86,6 +90,10 @@ export class TelegramClient {
       throw new Error('Telegram approval message ID missing');
     }
     return result;
+  }
+
+  async editKeyboardMessage(chatId: number, messageId: number, text: string, keyboard: TelegramInlineKeyboard): Promise<void> {
+    await this.call('editMessageText', { chat_id: chatId, message_id: messageId, text, reply_markup: keyboard });
   }
 
   async answerCallbackQuery(id: string, text: string): Promise<void> {

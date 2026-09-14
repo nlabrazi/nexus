@@ -16,6 +16,60 @@ export interface CodexThread {
   id: string;
   cwd?: string;
   status?: { type: string };
+  model?: string | null;
+  modelProvider?: string;
+  reasoningEffort?: string | null;
+}
+
+export interface CodexModel {
+  id: string;
+  model: string;
+  displayName: string;
+  description: string;
+  hidden?: boolean;
+  isDefault: boolean;
+  defaultReasoningEffort: string;
+  supportedReasoningEfforts: { reasoningEffort: string; description: string }[];
+}
+
+export interface ModelSelection { model: string; effort: string }
+export interface ModelMenu { models: CodexModel[]; selected?: ModelSelection; context: string }
+export interface ModelControls {
+  list(): Promise<ModelMenu>;
+  select(selection: ModelSelection, context: string): Promise<void>;
+}
+
+export interface TokenBreakdown {
+  totalTokens: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  cacheWriteInputTokens?: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+}
+export interface ThreadTokenUsage {
+  total: TokenBreakdown;
+  last: TokenBreakdown;
+  modelContextWindow: number | null;
+}
+export interface RateLimitWindow { usedPercent: number; windowDurationMins?: number | null; resetsAt?: number | null }
+export interface RateLimitSnapshot {
+  limitId?: string | null;
+  limitName?: string | null;
+  primary?: RateLimitWindow | null;
+  secondary?: RateLimitWindow | null;
+  planType?: string | null;
+}
+export interface ThreadTelemetry {
+  model?: string;
+  modelProvider?: string;
+  reasoningEffort?: string | null;
+  serviceTier?: string | null;
+  approvalPolicy?: string;
+  sandbox?: string;
+  tokenUsage?: ThreadTokenUsage;
+  tokenUsageUpdatedAt?: number;
+  reroutedModel?: string;
 }
 
 export interface CodexClientStatus {
@@ -26,14 +80,20 @@ export interface CodexClientStatus {
     interrupting?: boolean;
   };
   pendingApprovals: number;
+  rateLimits?: RateLimitSnapshot[];
+  rateLimitsUpdatedAt?: number;
+  rateLimitsUnavailable?: boolean;
 }
 
-export interface CodexServiceStatus extends CodexClientStatus {
+export interface CodexServiceStatus extends CodexClientStatus, ThreadTelemetry {
   sessionId?: string;
   workspacePath?: string;
   sessionBranch?: string;
   sessionActive?: boolean;
   sessionChanging?: boolean;
+  modelSelection?: ModelSelection;
+  modelChanging?: boolean;
+  branchChanging?: boolean;
 }
 
 export type CodexTurnStatus =
@@ -53,6 +113,12 @@ export interface CodexTurn {
 
 export interface ThreadStartResponse {
   thread: CodexThread;
+  model?: string;
+  modelProvider?: string;
+  reasoningEffort?: string | null;
+  serviceTier?: string | null;
+  approvalPolicy?: string | object;
+  sandbox?: { type: string };
 }
 
 export interface TurnStartResponse {
