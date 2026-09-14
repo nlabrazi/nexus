@@ -23,7 +23,7 @@ const KEY = 'nexus.antigravity.session';
 export class WorkspaceAntigravitySessionPersistence implements AntigravitySessionPersistence {
   private pending: Promise<void> = Promise.resolve();
 
-  constructor(private readonly storage: WorkspaceStorage) {}
+  constructor(private readonly storage: WorkspaceStorage) { }
 
   load(): SavedSession | undefined {
     const value = this.storage.get(KEY) as Partial<SavedSession> | undefined;
@@ -63,7 +63,7 @@ export class WorkspaceAntigravitySessionPersistence implements AntigravitySessio
 
   save(session: SavedSession): Promise<void> {
     const snapshot = structuredClone(session);
-    const write = this.pending.catch(() => {}).then(async () => {
+    const write = this.pending.catch(() => { }).then(async () => {
       await this.storage.update(KEY, snapshot);
     });
     this.pending = write;

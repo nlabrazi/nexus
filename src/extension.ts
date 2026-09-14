@@ -308,7 +308,7 @@ export async function activate(
       const selected = await vscode.window.showQuickPick(branches.map(branch => ({
         label: branch.name,
         description: [branch.current ? 'actuelle' : '', branch.protected ? 'protégée' : '',
-          branch.remote ? 'distante' : 'locale'].filter(Boolean).join(' · '),
+        branch.remote ? 'distante' : 'locale'].filter(Boolean).join(' · '),
         branch,
       })), { placeHolder: 'Choisir la branche de travail' });
       if (selected) {

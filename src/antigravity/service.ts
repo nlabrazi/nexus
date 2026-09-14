@@ -100,8 +100,8 @@ export class AntigravityService {
       selected: this.modelSelection
         ? { ...this.modelSelection }
         : telemetry?.model
-        ? { model: telemetry.model, effort: telemetry.reasoningEffort ?? '' }
-        : undefined,
+          ? { model: telemetry.model, effort: telemetry.reasoningEffort ?? '' }
+          : undefined,
     };
   }
 

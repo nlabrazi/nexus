@@ -433,12 +433,12 @@ export class AntigravityClient {
 
     const cumulativeTotal = existing
       ? {
-          totalTokens: existing.total.totalTokens + breakdown.totalTokens,
-          inputTokens: existing.total.inputTokens + breakdown.inputTokens,
-          cachedInputTokens: existing.total.cachedInputTokens + breakdown.cachedInputTokens,
-          outputTokens: existing.total.outputTokens + breakdown.outputTokens,
-          reasoningOutputTokens: existing.total.reasoningOutputTokens + breakdown.reasoningOutputTokens,
-        }
+        totalTokens: existing.total.totalTokens + breakdown.totalTokens,
+        inputTokens: existing.total.inputTokens + breakdown.inputTokens,
+        cachedInputTokens: existing.total.cachedInputTokens + breakdown.cachedInputTokens,
+        outputTokens: existing.total.outputTokens + breakdown.outputTokens,
+        reasoningOutputTokens: existing.total.reasoningOutputTokens + breakdown.reasoningOutputTokens,
+      }
       : breakdown;
 
     const usage: ConversationTokenUsage = {

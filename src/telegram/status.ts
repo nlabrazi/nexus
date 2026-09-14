@@ -79,8 +79,7 @@ function formatCodexSection(
     const active = codex.sessionActive ?? codex.processRunning;
     const indicator = active ? '🟢' : codex.processRunning ? '🟠' : '🔴';
     lines.push(
-      `${indicator} Session Codex : ${
-        active ? 'active' : codex.processRunning ? 'à reprendre' : 'indisponible (processus arrêté)'
+      `${indicator} Session Codex : ${active ? 'active' : codex.processRunning ? 'à reprendre' : 'indisponible (processus arrêté)'
       }`
     );
     lines.push(`ID session : ${literal(codex.sessionId)}`);
@@ -166,8 +165,7 @@ function formatCodexSection(
   if (codex.rateLimits?.length) {
     for (const limit of codex.rateLimits) {
       lines.push(
-        `${literal(limit.limitName ?? limit.limitId ?? 'Codex')}${
-          limit.planType ? ` · ${literal(limit.planType)}` : ''
+        `${literal(limit.limitName ?? limit.limitId ?? 'Codex')}${limit.planType ? ` · ${literal(limit.planType)}` : ''
         }`
       );
       let windows = 0;
@@ -184,8 +182,8 @@ function formatCodexSection(
           ? mins % 1440 === 0
             ? `${mins / 1440} j`
             : mins % 60 === 0
-            ? `${mins / 60} h`
-            : `${mins} min`
+              ? `${mins / 60} h`
+              : `${mins} min`
           : label;
         lines.push(
           `${duration} : ${number(window.usedPercent)} % utilisé (${number(
@@ -217,10 +215,10 @@ function formatCodexSection(
     const activity = codex.turn.interrupting
       ? 'interruption en cours'
       : codex.pendingApprovals > 0
-      ? 'en attente d’approbation'
-      : codex.turn.id
-      ? 'en cours'
-      : 'démarrage';
+        ? 'en attente d’approbation'
+        : codex.turn.id
+          ? 'en cours'
+          : 'démarrage';
     lines.push(`${codex.pendingApprovals > 0 ? '🟠' : '⏳'} Turn : ${activity} (${elapsed} s)`);
     if (codex.turn.id) {
       lines.push(`ID turn : ${literal(codex.turn.id)}`);
@@ -254,8 +252,7 @@ function formatAntigravitySection(
     const active = agy.sessionActive ?? agy.processRunning;
     const indicator = active ? '🟢' : agy.processRunning ? '🟠' : '🔴';
     lines.push(
-      `${indicator} Session Antigravity : ${
-        active ? 'active' : agy.processRunning ? 'à reprendre' : 'indisponible (processus arrêté)'
+      `${indicator} Session Antigravity : ${active ? 'active' : agy.processRunning ? 'à reprendre' : 'indisponible (processus arrêté)'
       }`
     );
     lines.push(`ID session : ${literal(agy.sessionId)}`);
@@ -326,8 +323,8 @@ function formatAntigravitySection(
     const activity = agy.turn.interrupting
       ? 'interruption en cours'
       : agy.turn.id
-      ? 'en cours'
-      : 'démarrage';
+        ? 'en cours'
+        : 'démarrage';
     lines.push(`⏳ Turn Antigravity : ${activity} (${elapsed} s)`);
   } else {
     lines.push('⚪ Turn Antigravity : aucun en cours');

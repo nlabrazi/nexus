@@ -138,12 +138,16 @@ export class TelegramModels {
     const button = (text: string, action: string, index = 0) => ({ text: text.slice(0, 100), callback_data: `model:${menu.token}:${action}:${index}` });
     if (menu.model) {
       const model = menu.model;
-      return { text: `🧠 ${model.displayName.slice(0, 200)} — raisonnement\n\n${model.description.slice(0, 600)}\n\nChoisissez l’effort pour la prochaine demande.`,
-        keyboard: { inline_keyboard: [
-          ...model.supportedReasoningEfforts.map((option, index) => [button(
-            `${option.reasoningEffort}${option.reasoningEffort === model.defaultReasoningEffort ? ' · par défaut' : ''}`, 'effort', index)]),
-          [button('‹ Modèles', 'back'), button('Annuler', 'cancel')],
-        ] } };
+      return {
+        text: `🧠 ${model.displayName.slice(0, 200)} — raisonnement\n\n${model.description.slice(0, 600)}\n\nChoisissez l’effort pour la prochaine demande.`,
+        keyboard: {
+          inline_keyboard: [
+            ...model.supportedReasoningEfforts.map((option, index) => [button(
+              `${option.reasoningEffort}${option.reasoningEffort === model.defaultReasoningEffort ? ' · par défaut' : ''}`, 'effort', index)]),
+            [button('‹ Modèles', 'back'), button('Annuler', 'cancel')],
+          ]
+        }
+      };
     }
     const pages = Math.ceil(menu.data.models.length / PAGE_SIZE);
     const navigation = [];
@@ -152,12 +156,16 @@ export class TelegramModels {
     const title = this.agentName === 'Antigravity'
       ? `✨ Nexus — modèles Antigravity (${menu.page + 1}/${pages})`
       : `🤖 Nexus — modèles (${menu.page + 1}/${pages})`;
-    return { text: `${title}\n\nChoisissez un modèle, puis son effort de raisonnement.\n✓ Modèle sélectionné · ☆ Modèle par défaut\nCe choix sera conservé pour ce workspace.\nLe menu expire après 2 minutes.`,
-      keyboard: { inline_keyboard: [
-        ...menu.data.models.slice(menu.page * PAGE_SIZE, (menu.page + 1) * PAGE_SIZE).map((model, index) => [button(
-          `${model.model === menu.data.selected?.model ? '✓ ' : ''}${model.isDefault ? '☆ ' : ''}${model.displayName}`, 'pick', menu.page * PAGE_SIZE + index)]),
-        ...(navigation.length ? [navigation] : []), [button('Annuler', 'cancel')],
-      ] } };
+    return {
+      text: `${title}\n\nChoisissez un modèle, puis son effort de raisonnement.\n✓ Modèle sélectionné · ☆ Modèle par défaut\nCe choix sera conservé pour ce workspace.\nLe menu expire après 2 minutes.`,
+      keyboard: {
+        inline_keyboard: [
+          ...menu.data.models.slice(menu.page * PAGE_SIZE, (menu.page + 1) * PAGE_SIZE).map((model, index) => [button(
+            `${model.model === menu.data.selected?.model ? '✓ ' : ''}${model.isDefault ? '☆ ' : ''}${model.displayName}`, 'pick', menu.page * PAGE_SIZE + index)]),
+          ...(navigation.length ? [navigation] : []), [button('Annuler', 'cancel')],
+        ]
+      }
+    };
   }
 
   private close(menu: Menu, text: string): void {
