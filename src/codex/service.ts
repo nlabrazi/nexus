@@ -14,6 +14,7 @@ export class CodexService {
   private workspaceIdentity?: WorkspaceIdentity;
   private sessionConnection?: number;
   private turnRunning = false;
+  private workspaceOperation = false;
   private generation = 0;
   private sessionOperation?: { key: string; promise: Promise<string> };
 
@@ -40,7 +41,17 @@ export class CodexService {
     return this.changeSession('resume', cwd, sessionId);
   }
 
+  async withWorkspaceOperation<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.workspaceOperation || this.turnRunning || this.sessionOperation) {
+      throw new Error('Une opération Git ou Codex est en cours. Attendez sa fin avant de changer de branche.');
+    }
+    this.workspaceOperation = true;
+    try { return await operation(); }
+    finally { this.workspaceOperation = false; }
+  }
+
   private async changeSession(action: SessionAction, cwd: string, sessionId?: string): Promise<string> {
+    if (this.workspaceOperation) { throw new Error('Un changement de branche est en cours. Attendez sa fin.'); }
     const path = this.normalizeWorkspace(cwd);
     const id = sessionId?.trim();
     if (action === 'resume' && (!id || /\s/.test(id))) {
@@ -175,7 +186,7 @@ export class CodexService {
       throw new Error('No active Codex session.');
     }
     const path = this.normalizeWorkspace(cwd);
-    if (this.turnRunning || this.sessionOperation) {
+    if (this.turnRunning || this.sessionOperation || this.workspaceOperation) {
       throw new Error('A Codex turn or session operation is already running.');
     }
     // Reserve the whole request, including session startup, before the first await.

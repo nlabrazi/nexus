@@ -355,6 +355,7 @@ Nexus: Test Telegram Connection
 Nexus: Pair Telegram
 Nexus: Test Codex Connection
 Nexus: Start Codex Session
+Nexus: Switch Branch
 ```
 
 ---
@@ -369,6 +370,8 @@ The current V1 includes remote commands such as:
 /stop
 /new
 /resume <session-id>
+/branches
+/switch <branch>
 ```
 
 Examples:
@@ -387,6 +390,7 @@ Examples:
 
 Detailed documentation:
 
+- [Git branch selection](docs/workspace-safety.md#changer-de-branche)
 - [Telegram status](docs/telegram-status.md)
 - [Telegram stop](docs/telegram-stop.md)
 - [Telegram approvals](docs/telegram-approvals.md)

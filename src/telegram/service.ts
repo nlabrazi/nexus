@@ -13,6 +13,7 @@ type RemotePromptHandler = (
 ) => Promise<string | RemotePromptReply>;
 
 export type RemoteSessionAction = { type: 'new' } | { type: 'resume'; sessionId: string };
+export type RemoteBranchAction = { type: 'list' } | { type: 'switch'; name: string };
 
 export class TelegramService {
   private pairingCode?: string;
@@ -21,6 +22,7 @@ export class TelegramService {
   private abortController?: AbortController;
   private remotePromptRunning = false;
   private remoteSessionRunning = false;
+  private remoteBranchRunning = false;
   private operationGeneration = 0;
   private readonly approvals: TelegramApprovals;
 
@@ -30,7 +32,8 @@ export class TelegramService {
     private readonly onRemotePrompt?: RemotePromptHandler,
     private readonly getStatus?: () => NexusStatusSnapshot,
     private readonly onSessionAction?: (action: RemoteSessionAction) => Promise<string>,
-    private readonly onStop?: () => boolean
+    private readonly onStop?: () => boolean,
+    private readonly onBranchAction?: (action: RemoteBranchAction) => Promise<string>
   ) {
     this.approvals = new TelegramApprovals(client, () => this.getApprovalPeer());
   }
@@ -200,6 +203,26 @@ export class TelegramService {
 
     // Commands
     const command = text.trim();
+    if (/^\/(branches|switch)(?:\s|$)/.test(command)) {
+      const [name, branch, ...extra] = command.split(/\s+/);
+      if ((name === '/branches' && branch !== undefined) ||
+        (name === '/switch' && (!branch || extra.length > 0))) {
+        await this.client.sendMessage(chatId, name === '/branches' ? 'Usage : /branches' : 'Usage : /switch <branche>');
+        return;
+      }
+      if (!this.onBranchAction) {
+        await this.client.sendMessage(chatId, 'La gestion des branches est indisponible.');
+        return;
+      }
+      if (this.remoteBranchRunning || (name === '/switch' && (this.remotePromptRunning || this.remoteSessionRunning))) {
+        await this.client.sendMessage(chatId, 'Une opération Git ou Codex est en cours. Attendez sa fin.');
+        return;
+      }
+      this.remoteBranchRunning = true;
+      void this.runBranchCommand(chatId, name === '/branches' ? { type: 'list' } : { type: 'switch', name: branch },
+        this.abortController!.signal);
+      return;
+    }
     if (/^\/stop(?:\s|$)/.test(command)) {
       if (command !== '/stop') {
         await this.client.sendMessage(chatId, 'Usage : /stop');
@@ -236,7 +259,7 @@ export class TelegramService {
         await this.client.sendMessage(chatId, 'La gestion des sessions Codex est indisponible.');
         return;
       }
-      if (this.remotePromptRunning || this.remoteSessionRunning) {
+      if (this.remotePromptRunning || this.remoteSessionRunning || this.remoteBranchRunning) {
         await this.client.sendMessage(chatId, 'Une requête Codex est déjà en cours. Attendez sa fin.');
         return;
       }
@@ -293,7 +316,7 @@ export class TelegramService {
         return;
       }
 
-      if (this.remotePromptRunning || this.remoteSessionRunning) {
+      if (this.remotePromptRunning || this.remoteSessionRunning || this.remoteBranchRunning) {
         await this.client.sendMessage(chatId, 'A Codex turn is already running.');
         return;
       }
@@ -303,6 +326,18 @@ export class TelegramService {
       void this.runRemotePrompt(chatId, prompt, this.abortController!.signal);
       return;
     }
+  }
+
+  private async runBranchCommand(chatId: number, action: RemoteBranchAction, signal: AbortSignal): Promise<void> {
+    try {
+      const response = await this.onBranchAction!(action);
+      if (!signal.aborted) { await this.client.sendMessage(chatId, response); }
+    } catch (error) {
+      if (!signal.aborted) {
+        await this.client.sendMessage(chatId, `❌ ${error instanceof Error ? error.message : String(error)}`)
+          .catch(() => console.error('[Telegram] Branch response delivery failed.'));
+      }
+    } finally { this.remoteBranchRunning = false; }
   }
 
   private async runSessionCommand(chatId: number, action: RemoteSessionAction, signal: AbortSignal, generation = this.operationGeneration): Promise<void> {

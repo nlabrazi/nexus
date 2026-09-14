@@ -16,13 +16,34 @@ La session mémorise la racine canonique, le répertoire Git et la branche. Un c
 
 Les contrôles ne modifient ni fichiers, ni index, ni branche. Les variables d’environnement qui redirigent Git vers un autre dépôt sont retirées des vérifications et du processus Codex. Les commandes locales de session/prompt utilisent les mêmes contrôles que Telegram.
 
+## Changer de branche
+
+Depuis Telegram, même lorsque la branche courante est `master` ou `main` :
+
+```text
+/branches
+/switch staging
+```
+
+`/branches` liste les branches locales et les références distantes déjà connues du dépôt. La branche courante est marquée `→`, les branches protégées `🔒`. Aucun fetch réseau n’est lancé : si une branche distante manque, actualisez les références depuis Git dans VS Code.
+
+Utilisez le nom exact affiché. `/switch staging` sélectionne la branche locale ; `/switch origin/staging` crée une branche locale `staging` avec suivi de `origin/staging`. Si la branche locale existe déjà, sélectionnez-la directement. Aucun reset ni remplacement de branche existante n’est effectué.
+
+La commande **Nexus: Switch Branch** propose la même sélection dans VS Code. Les branches protégées restent visibles mais leur sélection est refusée. La protection de la branche de départ ne bloque pas le passage vers une branche de travail.
+
+Le changement exige un dépôt sans modifications locales (y compris staged et fichiers non suivis), sans document non sauvegardé, conflit ou opération Git en cours. Faites un commit ou un stash vous-même si nécessaire. Aucun stash automatique ni changement forcé ; Git refuse aussi d’écraser un fichier ignoré présent localement. Les autres contrôles du workspace restent applicables, y compris le refus de HEAD détachée.
+
+Une requête Codex et un changement de branche ne peuvent pas s’exécuter simultanément via Nexus, depuis Telegram comme depuis VS Code. `/stop` concerne Codex et n’annule pas une commande Git en cours. Les actions Git manuelles depuis un autre outil restent hors de ce verrou.
+
+Si une session était déjà sélectionnée sur l’ancienne branche, utilisez ensuite `/new` ou `/resume <id>` avant d’envoyer un prompt sur la nouvelle branche. Le changement ne lance pas Codex et ne réassocie pas automatiquement la conversation.
+
 ## Tester soi-même
 
 1. Dans le projet Nexus : `npm run test:unit`, puis `npm run compile`. Attendu : aucun échec.
 2. Relancer le débogage avec **F5**, puis ouvrir **un seul dépôt de test à sa racine** dans l’Extension Development Host. Utiliser une branche de travail différente de `main` et `master`, par exemple créée avec `git switch -c test/nexus-safety`. Conserver l’appairage Telegram habituel.
 3. Envoyer `/codex Réponds simplement OK`, puis `/status`. Attendu : une réponse et la branche associée à la session.
 4. Désactiver Auto Save si nécessaire, modifier un fichier sans sauvegarder, puis renvoyer le prompt. Attendu : refus signalant le fichier non sauvegardé. Faire `Ctrl+S` et réessayer : accepté, même sans commit.
-5. Sur ce dépôt de test, passer sur une branche `main` ou `master` existante. Envoyer le prompt : refus pour branche protégée. Revenir sur la branche de travail.
+5. Sur ce dépôt de test, passer sur une branche `main` ou `master` existante. Envoyer le prompt : refus pour branche protégée, avec indication de `/branches` et `/switch`. Envoyer `/branches`, puis `/switch test/nexus-safety` : retour à la branche de travail. Vérifier également le sélecteur **Nexus: Switch Branch** dans VS Code.
 6. Créer une autre branche de travail avec `git switch -c test/nexus-other`. Envoyer le prompt : refus pour changement de contexte. Envoyer `/new`, puis le prompt : accepté ; `/status` affiche la nouvelle branche. Une reprise explicite avec `/resume <id>` permet aussi d’associer la conversation choisie à la branche courante, dans le même projet.
 7. Ajouter un second dossier dans la fenêtre. Attendu : `/status` signale la cible ambiguë et `/codex` est bloqué. Retirer ce second dossier.
 8. Ouvrir uniquement un sous-dossier du dépôt : `/codex` doit demander d’ouvrir la racine Git. Rouvrir ensuite la racine.

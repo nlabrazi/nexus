@@ -36,6 +36,10 @@
     },
     "commands": [
       {
+        "command": "nexus.switchBranch",
+        "title": "Nexus: Switch Branch"
+      },
+      {
         "command": "nexus.status",
         "title": "Nexus: Status"
       },
