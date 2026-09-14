@@ -18,11 +18,15 @@ Codex sont simulés ; les contrôles Git utilisent aussi des dépôts temporaire
 | Redémarrage Telegram | Offset repris, anciennes commandes/anciens boutons ignorés, aucune réponse de l’ancien polling exécutée après arrêt | `regressions.unit.ts`, `telegram-service.unit.ts` |
 | Approbation expirée | Refus après expiration, clic tardif inopérant, nettoyage des boutons | `approvals.unit.ts` |
 | Codex absent | Erreur explicite dans Telegram, verrous libérés, nouvelle tentative possible | `regressions.unit.ts`, `codex-errors.unit.ts` |
+| Antigravity absent | Erreur explicite avec code `not_installed`, instructions d'installation claires | `antigravity-errors.unit.ts`, `antigravity-client.unit.ts` |
 | Workspace absent | Refus avant lancement du processus, nouvelle tentative possible | `regressions.unit.ts`, `workspace-guard.unit.ts` |
 | Double session/double prompt | Une seule sélection ou exécution, blocage maintenu si Telegram redémarre pendant un turn | `regressions.unit.ts`, `codex-sessions.unit.ts`, `telegram-sessions.unit.ts` |
-| Crash du processus | Erreur immédiate, approbations invalidées, ancienne session reprise au prochain prompt, événements tardifs ignorés | `regressions.unit.ts`, `codex-client.unit.ts`, `codex-errors.unit.ts` |
-| Arrêt manuel | Annulation pendant démarrage, validation ou approbation, aucun prompt tardif | `telegram-stop.unit.ts` |
-| Persistance | Restauration inactive, reprise de la session, branche vérifiée, erreurs de stockage explicites | `codex-persistence.unit.ts` |
+| Crash du processus | Erreur immédiate, approbations invalidées, ancienne session reprise au prochain prompt, événements tardifs ignorés | `regressions.unit.ts`, `codex-client.unit.ts`, `codex-errors.unit.ts`, `antigravity-client.unit.ts` |
+| Arrêt manuel | Annulation pendant démarrage, validation ou approbation, arrêt de Codex et Antigravity | `telegram-stop.unit.ts`, `telegram-antigravity.unit.ts` |
+| Persistance | Restauration inactive, reprise de la session, branche vérifiée, erreurs de stockage explicites | `codex-persistence.unit.ts`, `antigravity-persistence.unit.ts` |
+| Télémétrie et tokens | Parsing NDJSON Antigravity (défense en profondeur contre compteurs négatifs et nan), calcul context window | `antigravity-telemetry.unit.ts` |
+| Modèles et catalogue | Récupération catalogue `agy models`, pagination, sélection effort de raisonnement, persistance workspace | `antigravity-models.unit.ts`, `telegram-models.unit.ts` |
+| Multi-Backend Telegram | Bascule `/backend [codex\|antigravity]`, routage `/new`, `/resume`, `/model`, prompts `/antigravity`, `/agy`, `/gemini` | `telegram-antigravity.unit.ts` |
 
 Tous les fichiers cités se trouvent dans `src/test/unit/`.
 
