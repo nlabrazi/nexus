@@ -12,11 +12,13 @@ import {
   TurnCompletedNotification,
   TurnStartResponse,
   CodexApprovalHandler,
-  CodexClientStatus
+  CodexClientStatus,
+  CodexModel, ModelSelection, ThreadTelemetry, RateLimitSnapshot
 } from './types';
 import { CodexApprovals } from './approvals';
 import { CodexError, processError, rpcError, turnTimeoutError } from './errors';
 import { workspaceEnvironment } from '../workspace/environment';
+import { isModel, isRateLimit, isTokenUsage } from './telemetry';
 
 export class CodexClient {
   private process?: ChildProcessWithoutNullStreams;
@@ -27,6 +29,12 @@ export class CodexClient {
   private starting?: Promise<void>;
   private connectionId = 0;
   private turnFailure?: (error: Error) => void;
+  private readonly telemetry = new Map<string, ThreadTelemetry>();
+  private rateLimits?: RateLimitSnapshot[];
+  private rateLimitsUpdatedAt?: number;
+  private rateLimitsUnavailable = false;
+  private rateLimitsRevision = 0;
+  private rateLimitsRefresh?: Promise<void>;
 
   constructor(approvalHandler?: CodexApprovalHandler) {
     this.approvals = new CodexApprovals(
@@ -40,7 +48,85 @@ export class CodexClient {
       processRunning: this.process !== undefined,
       turn: this.currentTurn ? { ...this.currentTurn } : undefined,
       pendingApprovals: this.approvals.getPendingCount(),
+      ...(this.rateLimits ? { rateLimits: structuredClone(this.rateLimits), rateLimitsUpdatedAt: this.rateLimitsUpdatedAt } : {}),
+      ...(this.rateLimitsUnavailable ? { rateLimitsUnavailable: true } : {}),
     };
+  }
+
+  getThreadTelemetry(threadId: string): ThreadTelemetry {
+    return structuredClone(this.telemetry.get(threadId) ?? {});
+  }
+
+  async listModels(): Promise<CodexModel[]> {
+    const models = new Map<string, CodexModel>();
+    const cursors = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      const result = await this.request('model/list', { limit: 100, includeHidden: false, ...(cursor ? { cursor } : {}) }) as
+        { data?: unknown[]; nextCursor?: string | null };
+      if (!result || !Array.isArray(result.data) || !result.data.every(isModel) ||
+        (result.nextCursor !== null && result.nextCursor !== undefined &&
+          (typeof result.nextCursor !== 'string' || !result.nextCursor || cursors.has(result.nextCursor)))) {
+        throw new CodexError('protocol_error', 'La liste des modèles renvoyée par Codex est invalide.');
+      }
+      for (const model of result.data) { if (!model.hidden) { models.set(model.model, model); } }
+      cursor = result.nextCursor ?? undefined;
+      if (cursor) { cursors.add(cursor); }
+      if (cursors.size > 100) { throw new CodexError('protocol_error', 'La liste des modèles Codex est trop longue.'); }
+    } while (cursor);
+    return [...models.values()];
+  }
+
+  refreshRateLimits(): Promise<void> {
+    if (!this.process) { return Promise.resolve(); }
+    if (this.rateLimitsRefresh) { return this.rateLimitsRefresh; }
+    const child = this.process;
+    const revision = this.rateLimitsRevision;
+    const refresh = (async () => {
+      try {
+        const result = await this.request('account/rateLimits/read', {}, 3000) as
+          { rateLimits?: unknown; rateLimitsByLimitId?: Record<string, unknown> | null };
+        if (this.process !== child || revision !== this.rateLimitsRevision) { return; }
+        const limits = result?.rateLimitsByLimitId ? Object.values(result.rateLimitsByLimitId) : [result?.rateLimits];
+        if (!limits.length || !limits.every(isRateLimit)) { throw new Error('Invalid rate limits'); }
+        this.rateLimits = limits;
+        this.rateLimitsUpdatedAt = Date.now();
+        this.rateLimitsUnavailable = false;
+      } catch {
+        if (this.process === child && revision === this.rateLimitsRevision) { this.rateLimitsUnavailable = true; }
+      }
+    })();
+    this.rateLimitsRefresh = refresh;
+    void refresh.finally(() => { if (this.rateLimitsRefresh === refresh) { this.rateLimitsRefresh = undefined; } });
+    return refresh;
+  }
+
+  private rememberTelemetry(notification: RpcNotification): void {
+    const params = notification.params as { threadId?: string; tokenUsage?: unknown; rateLimits?: unknown; toModel?: string } | undefined;
+    if (!params) { return; }
+    if (notification.method === 'account/updated') {
+      this.rateLimits = undefined;
+      this.rateLimitsUpdatedAt = undefined;
+      this.rateLimitsUnavailable = false;
+      this.rateLimitsRevision++;
+      this.rateLimitsRefresh = undefined;
+      return;
+    }
+    if (notification.method === 'account/rateLimits/updated' && isRateLimit(params.rateLimits)) {
+      const updated = params.rateLimits;
+      const limits = this.rateLimits ?? [];
+      this.rateLimits = [...limits.filter(limit => limit.limitId !== updated.limitId), updated];
+      this.rateLimitsUpdatedAt = Date.now();
+      this.rateLimitsUnavailable = false;
+      this.rateLimitsRevision++;
+    }
+    if (typeof params.threadId !== 'string' || !this.telemetry.has(params.threadId)) { return; }
+    const state = this.telemetry.get(params.threadId)!;
+    if (notification.method === 'thread/tokenUsage/updated' && isTokenUsage(params.tokenUsage)) {
+      state.tokenUsage = structuredClone(params.tokenUsage);
+      state.tokenUsageUpdatedAt = Date.now();
+    }
+    if (notification.method === 'model/rerouted' && typeof params.toModel === 'string') { state.reroutedModel = params.toModel; }
   }
 
   private notificationListeners = new Set<
@@ -152,7 +238,7 @@ export class CodexClient {
   }
 
   async startSession(
-    cwd: string
+    cwd: string, selection?: ModelSelection
   ): Promise<ThreadStartResponse> {
     return await this.sessionRequest(
       'thread/start',
@@ -162,6 +248,7 @@ export class CodexClient {
         approvalsReviewer: 'user',
         sandbox: 'workspace-write',
         serviceName: 'nexus',
+        ...(selection ? { model: selection.model, config: { model_reasoning_effort: selection.effort } } : {}),
       }
     );
   }
@@ -173,13 +260,14 @@ export class CodexClient {
     });
   }
 
-  async resumeSession(threadId: string, cwd: string): Promise<ThreadStartResponse> {
+  async resumeSession(threadId: string, cwd: string, selection?: ModelSelection): Promise<ThreadStartResponse> {
     return await this.sessionRequest('thread/resume', {
       threadId,
       cwd,
       approvalPolicy: 'on-request',
       approvalsReviewer: 'user',
       sandbox: 'workspace-write',
+      ...(selection ? { model: selection.model, config: { model_reasoning_effort: selection.effort } } : {}),
     });
   }
 
@@ -190,6 +278,18 @@ export class CodexClient {
       if (!result?.thread || typeof result.thread.id !== 'string' || !result.thread.id.trim()) {
         throw new CodexError('protocol_error', 'Codex a renvoyé une session invalide.');
       }
+      const state = this.telemetry.get(result.thread.id) ?? {};
+      const model = result.model ?? result.thread.model;
+      if (typeof model === 'string') { state.model = model; }
+      const provider = result.modelProvider ?? result.thread.modelProvider;
+      if (typeof provider === 'string') { state.modelProvider = provider; }
+      if ('reasoningEffort' in result || 'reasoningEffort' in result.thread) {
+        state.reasoningEffort = result.reasoningEffort ?? result.thread.reasoningEffort ?? null;
+      }
+      if ('serviceTier' in result) { state.serviceTier = result.serviceTier; }
+      if (typeof result.approvalPolicy === 'string') { state.approvalPolicy = result.approvalPolicy; }
+      if (typeof result.sandbox?.type === 'string') { state.sandbox = result.sandbox.type; }
+      this.telemetry.set(result.thread.id, state);
       return result;
     } catch (error) {
       if (child && error instanceof CodexError && ['rpc_timeout', 'protocol_error'].includes(error.code)) {
@@ -210,6 +310,7 @@ export class CodexClient {
       return;
     }
     this.process = undefined;
+    this.rateLimitsRefresh = undefined;
     this.starting = undefined;
     this.buffer = '';
     this.approvals.endTurn(false);
@@ -221,7 +322,7 @@ export class CodexClient {
     }
   }
 
-  async runTurn(threadId: string, prompt: string, onFilesChanged?: (paths: readonly string[]) => void): Promise<string> {
+  async runTurn(threadId: string, prompt: string, onFilesChanged?: (paths: readonly string[]) => void, selection?: ModelSelection): Promise<string> {
     if (!this.process) {
       throw processError(new Error('Codex is not running'));
     }
@@ -234,6 +335,9 @@ export class CodexClient {
     }
 
     const child = this.process;
+    const telemetry = this.telemetry.get(threadId) ?? {};
+    delete telemetry.reroutedModel;
+    this.telemetry.set(threadId, telemetry);
     this.approvals.beginTurn(threadId);
     const currentTurn: NonNullable<CodexClientStatus['turn']> = { startedAt: Date.now() };
     this.currentTurn = currentTurn;
@@ -365,6 +469,7 @@ export class CodexClient {
       this.notificationListeners.add(onNotification);
       void this.request('turn/start', {
         threadId,
+        ...(selection ? { model: selection.model, effort: selection.effort } : {}),
         input: [{ type: 'text', text: trimmedPrompt, textElements: [] }],
       }).then(result => {
         if (settled) { return; }
@@ -373,6 +478,7 @@ export class CodexClient {
           throw new CodexError('protocol_error', 'Codex a renvoyé un turn invalide.');
         }
         turnId = response.turn.id;
+        if (selection) { telemetry.model = selection.model; telemetry.reasoningEffort = selection.effort; }
         currentTurn.id = turnId;
         this.approvals.setTurnId(turnId);
         for (const notification of earlyNotifications) { onNotification(notification); }
@@ -494,6 +600,7 @@ export class CodexClient {
           params: message.params,
         };
         this.approvals.handleNotification(notification);
+        this.rememberTelemetry(notification);
 
         for (
           const listener

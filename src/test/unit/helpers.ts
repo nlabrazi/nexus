@@ -79,6 +79,16 @@ export class FakeTelegram extends TelegramClient {
     return { message_id: messageId };
   }
 
+  override async sendKeyboardMessage(chatId: number, text: string, keyboard: TelegramInlineKeyboard) {
+    return this.sendApprovalMessage(chatId, text, keyboard);
+  }
+
+  override async editKeyboardMessage(_chatId: number, messageId: number, text: string, keyboard: TelegramInlineKeyboard): Promise<void> {
+    if (this.failEdit) { throw new Error('Offline'); }
+    const sent = this.approvals.find(message => message.messageId === messageId);
+    if (sent) { sent.text = text; sent.keyboard = keyboard; }
+  }
+
   override async answerCallbackQuery(_id: string, text: string): Promise<void> {
     if (this.failAnswer) { throw new Error('Offline'); }
     this.answers.push(text);

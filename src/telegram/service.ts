@@ -3,9 +3,10 @@ import { randomInt } from 'crypto';
 import { TelegramClient } from './client';
 import { TelegramUpdate } from './types';
 import { TelegramApprovals, TelegramPeer } from './approvals';
-import { ApprovalDecision, CodexApprovalRequest } from '../codex/types';
+import { ApprovalDecision, CodexApprovalRequest, ModelControls } from '../codex/types';
 import { formatTelegramStatus, NexusStatusSnapshot } from './status';
 import { TELEGRAM_HELP } from './help';
+import { TelegramModels } from './models';
 
 export interface RemotePromptReply { text: string; fileSummary?: string }
 
@@ -26,17 +27,22 @@ export class TelegramService {
   private remoteBranchRunning = false;
   private operationGeneration = 0;
   private readonly approvals: TelegramApprovals;
+  private readonly models: TelegramModels;
+  private statusRunning = false;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly client: TelegramClient,
     private readonly onRemotePrompt?: RemotePromptHandler,
-    private readonly getStatus?: () => NexusStatusSnapshot,
+    private readonly getStatus?: () => NexusStatusSnapshot | Promise<NexusStatusSnapshot>,
     private readonly onSessionAction?: (action: RemoteSessionAction) => Promise<string>,
     private readonly onStop?: () => boolean,
-    private readonly onBranchAction?: (action: RemoteBranchAction) => Promise<string>
+    private readonly onBranchAction?: (action: RemoteBranchAction) => Promise<string>,
+    modelControls?: ModelControls
   ) {
     this.approvals = new TelegramApprovals(client, () => this.getApprovalPeer());
+    this.models = new TelegramModels(client, () => this.getApprovalPeer(), modelControls,
+      () => this.remotePromptRunning || this.remoteSessionRunning || this.remoteBranchRunning);
   }
 
   requestApproval(request: CodexApprovalRequest, signal: AbortSignal): Promise<ApprovalDecision> {
@@ -106,6 +112,7 @@ export class TelegramService {
           }
 
           this.approvals.cancelAll();
+          this.models.cancel();
           console.error('Telegram polling failed.');
 
           await new Promise(resolve =>
@@ -118,11 +125,13 @@ export class TelegramService {
         this.abortController = undefined;
         this.running = false;
         this.approvals.cancelAll();
+        this.models.cancel();
       }
     }
   }
 
   stop(): void {
+    this.models.cancel();
     this.running = false;
     this.abortController?.abort();
     this.approvals.cancelAll();
@@ -130,7 +139,9 @@ export class TelegramService {
 
   private async handleUpdate(update: TelegramUpdate): Promise<void> {
     if (update.callback_query) {
-      await this.approvals.handleCallback(update.callback_query);
+      if (update.callback_query.data?.startsWith('model:')) {
+        void this.models.handleCallback(update.callback_query);
+      } else { await this.approvals.handleCallback(update.callback_query); }
       return;
     }
     const text = update.message?.text;
@@ -161,6 +172,7 @@ export class TelegramService {
       }
 
       this.approvals.cancelAll();
+      this.models.cancel();
 
       await this.context.globalState.update(
         'nexus.telegram.allowedUserId',
@@ -204,6 +216,11 @@ export class TelegramService {
 
     // Commands
     const command = text.trim();
+    if (/^\/model(?:\s|$)/.test(command)) {
+      if (command !== '/model') { await this.client.sendMessage(chatId, 'Usage : /model'); }
+      else { void this.models.open(); }
+      return;
+    }
     if (/^\/help(?:\s|$)/.test(command)) {
       await this.client.sendMessage(chatId, command === '/help' ? TELEGRAM_HELP : 'Usage : /help', 'markdown');
       return;
@@ -224,6 +241,7 @@ export class TelegramService {
         return;
       }
       this.remoteBranchRunning = true;
+      if (name === '/switch') { this.models.cancel(); }
       void this.runBranchCommand(chatId, name === '/branches' ? { type: 'list' } : { type: 'switch', name: branch },
         this.abortController!.signal);
       return;
@@ -245,6 +263,7 @@ export class TelegramService {
         return;
       }
       this.operationGeneration++;
+      this.models.cancel();
       this.remotePromptRunning = false;
       this.remoteSessionRunning = false;
       this.approvals.cancelAll();
@@ -269,21 +288,14 @@ export class TelegramService {
         return;
       }
       this.remoteSessionRunning = true;
+      this.models.cancel();
       const action: RemoteSessionAction = name === '/new' ? { type: 'new' } : { type: 'resume', sessionId: id };
       void this.runSessionCommand(chatId, action, this.abortController!.signal);
       return;
     }
 
     if (text.trim() === '/status') {
-      let status: string;
-      try {
-        status = this.getStatus
-          ? formatTelegramStatus(this.getStatus(), this.remotePromptRunning)
-          : 'Statut indisponible.';
-      } catch {
-        status = 'Impossible de lire le statut de Nexus.';
-      }
-      await this.client.sendMessage(chatId, status, 'markdown');
+      if (!this.statusRunning) { void this.runStatusCommand(chatId, this.abortController!.signal); }
       return;
     }
 
@@ -331,6 +343,22 @@ export class TelegramService {
       void this.runRemotePrompt(chatId, prompt, this.abortController!.signal);
       return;
     }
+  }
+
+  private async runStatusCommand(chatId: number, signal: AbortSignal): Promise<void> {
+    this.statusRunning = true;
+    const peer = this.getApprovalPeer();
+    try {
+      let status: string;
+      try {
+        status = this.getStatus ? formatTelegramStatus(await this.getStatus(), this.remotePromptRunning) : 'Statut indisponible.';
+      } catch { status = 'Impossible de lire le statut de Nexus.'; }
+      const current = this.getApprovalPeer();
+      if (!signal.aborted && peer && current?.userId === peer.userId && current.chatId === peer.chatId) {
+        await this.client.sendMessage(chatId, status, 'markdown');
+      }
+    } catch { console.warn('[Telegram] Status delivery failed.'); }
+    finally { this.statusRunning = false; }
   }
 
   private async runBranchCommand(chatId: number, action: RemoteBranchAction, signal: AbortSignal): Promise<void> {

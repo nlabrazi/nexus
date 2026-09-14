@@ -7,6 +7,7 @@ import { formatFileSummary } from './telegram/file-summary';
 import { CodexClient } from './codex/client';
 import { CodexService } from './codex/service';
 import { WorkspaceSessionPersistence } from './codex/persistence';
+import { WorkspaceModelPreferences } from './codex/model-preferences';
 import { DEFAULT_PROTECTED_BRANCHES, WorkspaceGuard } from './workspace/guard';
 
 let telegramService: TelegramService | undefined;
@@ -28,7 +29,8 @@ export async function activate(
 ) {
   codexService = new CodexService(async (request, signal) => {
     return await telegramService?.requestApproval(request, signal) ?? 'decline';
-  }, path => workspaceGuard.validate(path), new WorkspaceSessionPersistence(context.workspaceState));
+  }, path => workspaceGuard.validate(path), new WorkspaceSessionPersistence(context.workspaceState),
+    new WorkspaceModelPreferences(context.workspaceState));
 
   const statusCommand = vscode.commands.registerCommand(
     'nexus.status',
@@ -355,7 +357,8 @@ function startTelegramService(
       context,
       client,
       handleRemoteCodexPrompt,
-      () => {
+      async () => {
+        await codexService?.refreshStatus();
         const folders = vscode.workspace.workspaceFolders ?? [];
         const workspace = folders.length === 1 ? folders[0] : undefined;
         return {
@@ -366,7 +369,17 @@ function startTelegramService(
       },
       handleSessionAction,
       () => codexService?.cancelCurrentWork() ?? false,
-      handleBranchAction
+      handleBranchAction,
+      {
+        list: async () => {
+          if (!codexService) { throw new Error('Codex indisponible.'); }
+          return codexService.listModels(workspaceGuard.targetPath());
+        },
+        select: async (selection, menuContext) => {
+          if (!codexService) { throw new Error('Codex indisponible.'); }
+          await codexService.selectModel(workspaceGuard.targetPath(), selection, menuContext);
+        },
+      }
     );
 
   void telegramService.start();
