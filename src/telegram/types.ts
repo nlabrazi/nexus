@@ -6,11 +6,20 @@ export interface TelegramGetMeResponse {
   };
 }
 
+export interface TelegramVoice {
+  file_id: string;
+  file_unique_id: string;
+  duration: number;
+  mime_type?: string;
+  file_size?: number;
+}
+
 export interface TelegramUpdate {
   update_id: number;
   callback_query?: TelegramCallbackQuery;
   message?: {
     text?: string;
+    voice?: TelegramVoice;
     from?: {
       id: number;
     };

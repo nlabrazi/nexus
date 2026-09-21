@@ -252,12 +252,13 @@ export class TelegramService {
       return;
     }
     const text = update.message?.text;
+    const voice = update.message?.voice;
     const userId = update.message?.from?.id;
     const chatId = update.message?.chat.id;
     const chatType = update.message?.chat.type;
 
     if (
-      !text ||
+      (!text && !voice) ||
       userId === undefined ||
       chatId === undefined
     ) {
@@ -265,7 +266,7 @@ export class TelegramService {
     }
 
     // Pairing
-    if (text.startsWith('/pair ')) {
+    if (text?.startsWith('/pair ')) {
       const receivedCode = text.split(' ')[1];
 
       const isValid =
@@ -321,6 +322,14 @@ export class TelegramService {
     ) {
       return;
     }
+
+    if (voice) {
+      await this.client.sendMessage(chatId,
+        '🎙 Message vocal reçu. La transcription n’est pas encore disponible. Utilisez /codex <instruction> pour envoyer votre demande par écrit.');
+      return;
+    }
+
+    if (!text) { return; }
 
     // Commands
     const command = text.trim();
