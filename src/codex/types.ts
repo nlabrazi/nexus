@@ -166,6 +166,7 @@ export interface RpcServerRequest {
 export type ApprovalDecision = 'accept' | 'decline';
 
 export interface CodexApprovalRequest {
+  agentName?: string;
   kind: 'command' | 'fileChange';
   threadId: string;
   turnId: string;

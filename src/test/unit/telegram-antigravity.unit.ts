@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { suite, test, TestContext } from 'node:test';
 import { ModelMenu, ModelSelection } from '../../codex/types';
+import { ApprovalRequest } from '../../telegram/approvals';
 import { TelegramService } from '../../telegram/service';
 import { TelegramUpdate } from '../../telegram/types';
 import { context, deferred, FakeTelegram, flush } from './helpers';
@@ -341,5 +342,144 @@ suite('Telegram Antigravity & Multi-Backend Integration', () => {
     assert.equal(codexStopped, 2);
     assert.equal(agyStopped, 2);
     assert.match(client.messages[2], /⚪ Aucune requête Antigravity en cours\./);
+  });
+
+  test('Antigravity approval buttons prompt and handle accept callback via Telegram', async t => {
+    const client = new FakeTelegram();
+    const service = new TelegramService(context(), client);
+    const polling = service.start();
+    t.after(async () => { service.stop(); await polling; });
+
+    const request: ApprovalRequest = {
+      agentName: 'Antigravity',
+      kind: 'command',
+      threadId: 'thread-agy',
+      turnId: 'turn-1',
+      itemId: 'run_command',
+      details: 'Commande : rm -rf /tmp/test\nWorkspace : /project',
+      expiresAt: Date.now() + 60_000,
+    };
+
+    const resultPromise = service.requestApproval(request, new AbortController().signal);
+    await flush();
+
+    // Verify Telegram received the approval prompt with Antigravity branding
+    assert.equal(client.approvals.length, 1);
+    assert.match(client.approvals[0].text, /🔐 Antigravity — commande/);
+    assert.match(client.approvals[0].text, /rm -rf \/tmp\/test/);
+    assert.deepEqual(
+      client.approvals[0].keyboard.inline_keyboard[0].map(b => b.text),
+      ['Autoriser une fois', 'Refuser']
+    );
+
+    // Simulate clicking accept button
+    const acceptData = client.approvals[0].keyboard.inline_keyboard[0][0].callback_data;
+    const event: TelegramUpdate = {
+      update_id: 10,
+      callback_query: {
+        id: 'cb-1',
+        from: { id: 10 },
+        data: acceptData,
+        message: { message_id: client.approvals[0].messageId, chat: { id: 20, type: 'private' } },
+      },
+    };
+    client.push(event);
+    await flush();
+
+    const decision = await resultPromise;
+    assert.equal(decision, 'accept');
+    assert.equal(client.closed.length, 1);
+    assert.match(client.closed[0].text, /✅ Autorisation ponctuelle transmise à Antigravity\./);
+  });
+
+  test('Antigravity approval buttons handle decline callback via Telegram', async t => {
+    const client = new FakeTelegram();
+    const service = new TelegramService(context(), client);
+    const polling = service.start();
+    t.after(async () => { service.stop(); await polling; });
+
+    const request: ApprovalRequest = {
+      agentName: 'Antigravity',
+      kind: 'fileChange',
+      threadId: 'thread-agy',
+      turnId: 'turn-2',
+      itemId: 'write_to_file',
+      details: 'Fichier : /project/index.ts',
+      expiresAt: Date.now() + 60_000,
+    };
+
+    const resultPromise = service.requestApproval(request, new AbortController().signal);
+    await flush();
+
+    // Verify Telegram received the fileChange prompt
+    assert.equal(client.approvals.length, 1);
+    assert.match(client.approvals[0].text, /🔐 Antigravity — modification de fichier/);
+    assert.match(client.approvals[0].text, /\/project\/index\.ts/);
+
+    // Simulate clicking decline button
+    const declineData = client.approvals[0].keyboard.inline_keyboard[0][1].callback_data;
+    const event: TelegramUpdate = {
+      update_id: 20,
+      callback_query: {
+        id: 'cb-2',
+        from: { id: 10 },
+        data: declineData,
+        message: { message_id: client.approvals[0].messageId, chat: { id: 20, type: 'private' } },
+      },
+    };
+    client.push(event);
+    await flush();
+
+    const decision = await resultPromise;
+    assert.equal(decision, 'decline');
+    assert.equal(client.closed.length, 1);
+    assert.match(client.closed[0].text, /⛔ Approbation refusée\./);
+  });
+
+  test('/status displays Antigravity pending approvals count and waiting indicator', async t => {
+    const client = new FakeTelegram();
+    let pendingApprovals = 1;
+
+    const service = new TelegramService(
+      context(),
+      client,
+      undefined,
+      () => ({
+        workspaceCount: 1,
+        antigravity: {
+          processRunning: true,
+          turn: { startedAt: 1000, id: 'turn-123' },
+          pendingApprovals,
+          sessionId: 'session-123',
+          workspacePath: '/project',
+          model: 'gemini-2.5-pro',
+        },
+      }),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => 'antigravity'
+    );
+
+    const polling = service.start();
+    t.after(async () => { service.stop(); await polling; });
+
+    // With 1 pending approval
+    client.push(message(1, '/status'));
+    await flush();
+    assert.match(client.messages[0], /🟠 Turn Antigravity : en attente d’approbation/);
+    assert.match(client.messages[0], /🔐 Approbations en attente : 1/);
+
+    // With 0 pending approvals
+    pendingApprovals = 0;
+    client.push(message(2, '/status'));
+    await flush();
+    assert.match(client.messages[1], /⏳ Turn Antigravity : en cours/);
+    assert.doesNotMatch(client.messages[1], /🔐 Approbations en attente/);
   });
 });

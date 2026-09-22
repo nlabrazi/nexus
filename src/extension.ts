@@ -43,6 +43,9 @@ export async function activate(
 
   const agyConfig = vscode.workspace.getConfiguration('nexus.antigravity');
   antigravityService = new AntigravityService(
+    async (request, signal) => {
+      return await telegramService?.requestApproval({ ...request, agentName: 'Antigravity' }, signal) ?? 'decline';
+    },
     path => workspaceGuard.validate(path),
     new WorkspaceAntigravitySessionPersistence(context.workspaceState),
     new WorkspaceAntigravityModelPreferences(context.workspaceState),

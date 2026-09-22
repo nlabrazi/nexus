@@ -5,6 +5,7 @@ import { AntigravityError } from './errors';
 import { AntigravityModelPreferences } from './model-preferences';
 import { AntigravitySessionPersistence } from './persistence';
 import {
+  AntigravityApprovalHandler,
   AntigravityServiceStatus,
   AntigravitySession,
   ModelMenu,
@@ -15,6 +16,9 @@ type SessionAction = 'ensure' | 'new' | 'resume';
 
 export class AntigravityService {
   private readonly client: AntigravityClient;
+  private readonly validateWorkspace?: WorkspaceValidator;
+  private readonly persistence?: AntigravitySessionPersistence;
+  private readonly modelPreferences?: AntigravityModelPreferences;
   private sessionId?: string;
   private workspacePath?: string;
   private workspaceIdentity?: WorkspaceIdentity;
@@ -31,9 +35,55 @@ export class AntigravityService {
     private readonly validateWorkspace?: WorkspaceValidator,
     private readonly persistence?: AntigravitySessionPersistence,
     private readonly modelPreferences?: AntigravityModelPreferences,
+    approvalHandler: AntigravityApprovalHandler,
+    validateWorkspace?: WorkspaceValidator,
+    persistence?: AntigravitySessionPersistence,
+    modelPreferences?: AntigravityModelPreferences,
+    options?: AntigravityClientOptions
+  );
+  constructor(
+    validateWorkspace?: WorkspaceValidator,
+    persistence?: AntigravitySessionPersistence,
+    modelPreferences?: AntigravityModelPreferences,
+    options?: AntigravityClientOptions
+  );
+  constructor(
+    approvalHandlerOrValidator?: AntigravityApprovalHandler | WorkspaceValidator,
+    validateWorkspaceOrPersistence?: WorkspaceValidator | AntigravitySessionPersistence,
+    persistenceOrModelPrefs?: AntigravitySessionPersistence | AntigravityModelPreferences,
+    modelPreferencesOrOptions?: AntigravityModelPreferences | AntigravityClientOptions,
     options?: AntigravityClientOptions
   ) {
     this.client = new AntigravityClient(options);
+    let approvalHandler: AntigravityApprovalHandler | undefined;
+    let validateWorkspace: WorkspaceValidator | undefined;
+    let persistence: AntigravitySessionPersistence | undefined;
+    let modelPreferences: AntigravityModelPreferences | undefined;
+    let clientOptions: AntigravityClientOptions | undefined;
+
+    if (typeof validateWorkspaceOrPersistence === 'function') {
+      approvalHandler = approvalHandlerOrValidator as AntigravityApprovalHandler;
+      validateWorkspace = validateWorkspaceOrPersistence;
+      persistence = persistenceOrModelPrefs as AntigravitySessionPersistence;
+      modelPreferences = modelPreferencesOrOptions as AntigravityModelPreferences;
+      clientOptions = options;
+    } else if (typeof approvalHandlerOrValidator === 'function' && approvalHandlerOrValidator.length === 2) {
+      approvalHandler = approvalHandlerOrValidator as AntigravityApprovalHandler;
+      persistence = validateWorkspaceOrPersistence as AntigravitySessionPersistence;
+      modelPreferences = persistenceOrModelPrefs as AntigravityModelPreferences;
+      clientOptions = modelPreferencesOrOptions as AntigravityClientOptions;
+    } else {
+      validateWorkspace = approvalHandlerOrValidator as WorkspaceValidator;
+      persistence = validateWorkspaceOrPersistence as AntigravitySessionPersistence;
+      modelPreferences = persistenceOrModelPrefs as AntigravityModelPreferences;
+      clientOptions = modelPreferencesOrOptions as AntigravityClientOptions;
+    }
+
+    this.validateWorkspace = validateWorkspace;
+    this.persistence = persistence;
+    this.modelPreferences = modelPreferences;
+    const effectiveHandler = clientOptions?.approvalHandler ?? approvalHandler;
+    this.client = new AntigravityClient(clientOptions, effectiveHandler);
     this.modelSelection = modelPreferences?.load();
     const saved = persistence?.load();
     if (saved) {

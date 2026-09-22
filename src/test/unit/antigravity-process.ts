@@ -76,6 +76,11 @@ export class FakeAntigravityProcess extends EventEmitter {
   }
 
   sendTool(toolName: string, parameters: Record<string, unknown>, output?: string, stepIndex = 2): void {
+    this.sendToolActive(toolName, parameters, stepIndex);
+    this.sendToolDone(toolName, parameters, output, stepIndex);
+  }
+
+  sendToolActive(toolName: string, parameters: Record<string, unknown>, stepIndex = 2): void {
     this.send({
       event: 'step_update',
       step_update: {
@@ -87,6 +92,9 @@ export class FakeAntigravityProcess extends EventEmitter {
         tool_info: { name: toolName, parameters },
       },
     });
+  }
+
+  sendToolDone(toolName: string, parameters: Record<string, unknown>, output?: string, stepIndex = 2): void {
     this.send({
       event: 'step_update',
       step_update: {
@@ -98,6 +106,14 @@ export class FakeAntigravityProcess extends EventEmitter {
         tool_info: { name: toolName, parameters, output: output ?? 'ok' },
       },
     });
+  }
+
+  sendApprovalRequest(id: string, kind: 'command' | 'fileChange', details: string, turnId = '1'): void {
+    this.stdout.write(`${JSON.stringify({
+      event: 'approval_request',
+      conversation_id: this.conversationId,
+      approval_request: { id, kind, details, turnId },
+    })}\n`);
   }
 
   complete(

@@ -5,6 +5,8 @@ import { TelegramUpdate, TelegramVoice, TelegramVoiceFile } from './types';
 import { SpeechError } from '../speech/errors';
 import { TelegramApprovals, TelegramPeer } from './approvals';
 import { ApprovalDecision, CodexApprovalRequest, ModelControls } from '../codex/types';
+import { ApprovalRequest, TelegramApprovals, TelegramPeer } from './approvals';
+import { ApprovalDecision, ModelControls } from '../codex/types';
 import { formatTelegramStatus, NexusStatusSnapshot, AgentBackendType } from './status';
 import { TELEGRAM_HELP } from './help';
 import { TelegramModels } from './models';
@@ -148,8 +150,9 @@ export class TelegramService {
   }
 
   requestApproval(request: CodexApprovalRequest, signal: AbortSignal): Promise<ApprovalDecision> {
-    return this.approvals.request(request, signal);
-  }
+    requestApproval(request: ApprovalRequest, signal: AbortSignal): Promise < ApprovalDecision > {
+      return this.approvals.request(request, signal);
+    }
 
   private getApprovalPeer(): TelegramPeer | undefined {
     const userId = this.context.globalState.get<number>('nexus.telegram.allowedUserId');

@@ -8,7 +8,14 @@ export interface TelegramPeer {
   chatId: number;
 }
 
+export type ApprovalRequest = CodexApprovalRequest;
+export type ApprovalHandler = (
+  request: ApprovalRequest,
+  signal: AbortSignal
+) => Promise<ApprovalDecision>;
+
 interface PendingApproval {
+  agentName: string;
   peer: TelegramPeer;
   messageId?: number;
   expiresAt: number;
@@ -24,14 +31,17 @@ export class TelegramApprovals {
   ) { }
 
   request(request: CodexApprovalRequest, signal: AbortSignal): Promise<ApprovalDecision> {
-    const peer = this.getPeer();
-    if (!peer || signal.aborted || Date.now() >= request.expiresAt) {
+    request(request: ApprovalRequest, signal: AbortSignal): Promise < ApprovalDecision > {
+      const peer = this.getPeer();
+      if(!peer || signal.aborted || Date.now() >= request.expiresAt) {
       return Promise.resolve('decline');
     }
 
+    const agentName = request.agentName ?? 'Codex';
     const seconds = Math.ceil((request.expiresAt - Date.now()) / 1000);
     const text = [
       `🔐 Codex — ${request.kind === 'command' ? 'commande' : 'modification de fichiers'}`,
+      `🔐 ${agentName} — ${request.kind === 'command' ? 'commande' : 'modification de fichiers'}`,
       `Sans réponse sous ${seconds} s : refus automatique.`,
       request.details,
     ].join('\n\n');
@@ -53,6 +63,7 @@ export class TelegramApprovals {
           : '⛔ Approbation annulée — aucune autorisation.'
       );
       const approval: PendingApproval = {
+        agentName,
         peer,
         expiresAt: request.expiresAt,
         settle: (decision, status) => {
@@ -120,7 +131,8 @@ export class TelegramApprovals {
     const decision = match[2] as ApprovalDecision;
     approval.settle(decision, decision === 'accept'
       ? '✅ Autorisation ponctuelle transmise à Codex.'
-      : '⛔ Approbation refusée.'
+        ? `✅ Autorisation ponctuelle transmise à ${approval.agentName}.`
+        : '⛔ Approbation refusée.'
     );
     await this.answer(query.id, decision === 'accept' ? 'Autorisé une fois.' : 'Refusé.');
   }

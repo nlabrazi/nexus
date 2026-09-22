@@ -56,6 +56,24 @@ export interface ConversationTelemetry {
   tokenUsageUpdatedAt?: number;
 }
 
+import type { ApprovalDecision } from '../codex/types';
+export type { ApprovalDecision };
+
+export interface AntigravityApprovalRequest {
+  agentName?: string;
+  kind: 'command' | 'fileChange';
+  threadId: string;
+  turnId: string;
+  itemId: string;
+  details: string;
+  expiresAt: number;
+}
+
+export type AntigravityApprovalHandler = (
+  request: AntigravityApprovalRequest,
+  signal: AbortSignal
+) => Promise<ApprovalDecision>;
+
 export interface AntigravityClientStatus {
   processRunning: boolean;
   turn?: {
@@ -63,6 +81,7 @@ export interface AntigravityClientStatus {
     startedAt: number;
     interrupting?: boolean;
   };
+  pendingApprovals?: number;
 }
 
 export interface AntigravityServiceStatus extends AntigravityClientStatus, ConversationTelemetry {

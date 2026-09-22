@@ -320,15 +320,25 @@ function formatAntigravitySection(
   lines.push('', '⚡ **Activité Antigravity**');
   if (agy.turn) {
     const elapsed = Math.max(0, Math.floor((now - agy.turn.startedAt) / 1000));
+    const pending = agy.pendingApprovals ?? 0;
     const activity = agy.turn.interrupting
       ? 'interruption en cours'
       : agy.turn.id
         ? 'en cours'
         : 'démarrage';
     lines.push(`⏳ Turn Antigravity : ${activity} (${elapsed} s)`);
+      : pending > 0
+      ? 'en attente d’approbation'
+      : agy.turn.id
+        ? 'en cours'
+        : 'démarrage';
+    lines.push(`${pending > 0 ? '🟠' : '⏳'} Turn Antigravity : ${activity} (${elapsed} s)`);
   } else {
     lines.push('⚪ Turn Antigravity : aucun en cours');
   }
+  lines.push(
+    `${(agy.pendingApprovals ?? 0) > 0 ? '🔐 ' : ''}Approbations en attente : ${agy.pendingApprovals ?? 0}`
+  );
 }
 
 function number(value: number): string {

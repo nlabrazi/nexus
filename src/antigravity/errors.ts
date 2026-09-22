@@ -8,6 +8,7 @@ export type AntigravityErrorCode =
   | 'interrupted'
   | 'empty_response'
   | 'session_lost'
+  | 'approval_declined'
   | 'protocol_error';
 
 export class AntigravityError extends Error {
