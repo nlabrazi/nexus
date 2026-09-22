@@ -14,6 +14,19 @@ export interface TelegramVoice {
   file_size?: number;
 }
 
+export interface TelegramFile {
+  file_id: string;
+  file_unique_id: string;
+  file_size?: number;
+  file_path?: string;
+}
+
+export interface TelegramVoiceFile {
+  data: Buffer;
+  fileName: string;
+  mimeType?: string;
+}
+
 export interface TelegramUpdate {
   update_id: number;
   callback_query?: TelegramCallbackQuery;

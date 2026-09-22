@@ -1,7 +1,7 @@
 import type * as vscode from 'vscode';
 import { randomInt } from 'crypto';
-import { TelegramClient } from './client';
-import { TelegramUpdate } from './types';
+import { TelegramClient, TelegramVoiceDownloadError } from './client';
+import { TelegramUpdate, TelegramVoice } from './types';
 import { TelegramApprovals, TelegramPeer } from './approvals';
 import { ApprovalDecision, CodexApprovalRequest, ModelControls } from '../codex/types';
 import { formatTelegramStatus, NexusStatusSnapshot, AgentBackendType } from './status';
@@ -37,6 +37,7 @@ export class TelegramService {
   private pairingExpiresAt = 0;
   private running = false;
   private abortController?: AbortController;
+  private voiceDownload?: AbortController;
   private remotePromptRunning = false;
   private remoteSessionRunning = false;
   private remoteBranchRunning = false;
@@ -230,11 +231,21 @@ export class TelegramService {
   }
 
   stop(): void {
+    this.cancelVoiceDownload();
     this.models.cancel();
     this.antigravityModels.cancel();
     this.running = false;
     this.abortController?.abort();
     this.approvals.cancelAll();
+  }
+
+  private cancelVoiceDownload(): boolean {
+    if (!this.voiceDownload) { return false; }
+    this.voiceDownload.abort();
+    this.voiceDownload = undefined;
+    this.operationGeneration++;
+    this.remotePromptRunning = false;
+    return true;
   }
 
   private async handleUpdate(update: TelegramUpdate): Promise<void> {
@@ -279,6 +290,7 @@ export class TelegramService {
         return;
       }
 
+      this.cancelVoiceDownload();
       this.approvals.cancelAll();
       this.models.cancel();
       this.antigravityModels.cancel();
@@ -324,8 +336,15 @@ export class TelegramService {
     }
 
     if (voice) {
-      await this.client.sendMessage(chatId,
-        '🎙 Message vocal reçu. La transcription n’est pas encore disponible. Utilisez /codex <instruction> pour envoyer votre demande par écrit.');
+      if (this.remotePromptRunning || this.remoteSessionRunning || this.remoteBranchRunning) {
+        await this.client.sendMessage(chatId, 'Une requête est déjà en cours. Attendez sa fin avant d’envoyer un message vocal.');
+        return;
+      }
+      const controller = new AbortController();
+      this.voiceDownload = controller;
+      this.remotePromptRunning = true;
+      const signal = AbortSignal.any([controller.signal, this.abortController!.signal]);
+      void this.runVoiceDownload(chatId, voice, signal, controller);
       return;
     }
 
@@ -400,15 +419,18 @@ export class TelegramService {
         await this.client.sendMessage(chatId, 'Usage : /stop');
         return;
       }
-      if (!this.onStop && !this.onAntigravityStop) {
+      if (!this.onStop && !this.onAntigravityStop && !this.voiceDownload) {
         await this.client.sendMessage(chatId, 'L’arrêt de Codex est indisponible.');
         return;
       }
+      const voiceCancelled = this.cancelVoiceDownload();
       let cancelled: boolean;
+      let agentCancelled: boolean;
       try {
         const codexCancelled = this.onStop ? this.onStop() : false;
         const agyCancelled = this.onAntigravityStop ? this.onAntigravityStop() : false;
-        cancelled = codexCancelled || agyCancelled || this.remotePromptRunning || this.remoteSessionRunning;
+        agentCancelled = codexCancelled || agyCancelled;
+        cancelled = voiceCancelled || agentCancelled || this.remotePromptRunning || this.remoteSessionRunning;
       } catch {
         const name = this.getActiveBackend() === 'antigravity' ? 'Antigravity' : 'Codex';
         await this.client.sendMessage(chatId, `❌ Impossible de demander l’arrêt de ${name}. Vérifiez son état dans VS Code.`);
@@ -420,6 +442,10 @@ export class TelegramService {
       this.remotePromptRunning = false;
       this.remoteSessionRunning = false;
       this.approvals.cancelAll();
+      if (voiceCancelled && !agentCancelled) {
+        await this.client.sendMessage(chatId, '⏹ Téléchargement du message vocal annulé.');
+        return;
+      }
       const agentName = this.getActiveBackend() === 'antigravity' ? 'Antigravity' : 'Codex';
       await this.client.sendMessage(chatId, cancelled
         ? `⏹ Requête annulée côté Nexus. Si ${agentName} était lancé, la connexion a été fermée et son arrêt demandé.\nL’arrêt des commandes enfants n’est pas garanti : vérifiez les commandes et fichiers avant de continuer.\nL’identifiant de la session sélectionnée est conservé, s’il existe.`
@@ -532,6 +558,32 @@ export class TelegramService {
       this.remotePromptRunning = true;
       void this.runRemoteAntigravityPrompt(chatId, prompt, this.abortController!.signal);
       return;
+    }
+  }
+
+  private async runVoiceDownload(
+    chatId: number, voice: TelegramVoice, signal: AbortSignal, controller: AbortController,
+    generation = this.operationGeneration
+  ): Promise<void> {
+    try {
+      await this.client.sendMessage(chatId, '⏳ Téléchargement du message vocal…');
+      if (signal.aborted || generation !== this.operationGeneration) { return; }
+      const audio = await this.client.downloadVoice(voice, signal);
+      // No transcription yet: clear the downloaded buffer instead of retaining audio.
+      audio.data.fill(0);
+      if (!signal.aborted && generation === this.operationGeneration) {
+        await this.client.sendMessage(chatId,
+          '🎙 Message vocal téléchargé. La transcription n’est pas encore disponible. Utilisez /codex <instruction> pour envoyer votre demande par écrit.');
+      }
+    } catch (error) {
+      if (!signal.aborted && generation === this.operationGeneration) {
+        const message = error instanceof TelegramVoiceDownloadError ? error.message : 'Impossible de récupérer le message vocal. Réessayez.';
+        await this.client.sendMessage(chatId, `❌ ${message}`)
+          .catch(() => console.error('[Telegram] Voice response delivery failed.'));
+      }
+    } finally {
+      if (this.voiceDownload === controller) { this.voiceDownload = undefined; }
+      if (generation === this.operationGeneration) { this.remotePromptRunning = false; }
     }
   }
 

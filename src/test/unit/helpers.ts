@@ -1,6 +1,6 @@
 import type * as vscode from 'vscode';
 import { TelegramClient } from '../../telegram/client';
-import { TelegramInlineKeyboard, TelegramUpdate, TelegramUpdatesResponse } from '../../telegram/types';
+import { TelegramInlineKeyboard, TelegramUpdate, TelegramUpdatesResponse, TelegramVoice, TelegramVoiceFile } from '../../telegram/types';
 
 export function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -69,6 +69,11 @@ export class FakeTelegram extends TelegramClient {
 
   override async sendMessage(_chatId: number, text: string): Promise<void> {
     this.messages.push(text);
+  }
+
+  override async downloadVoice(voice: TelegramVoice, signal?: AbortSignal): Promise<TelegramVoiceFile> {
+    signal?.throwIfAborted();
+    return { data: Buffer.from('fake-audio'), fileName: 'voice.oga', mimeType: voice.mime_type };
   }
 
   override async sendApprovalMessage(_chatId: number, text: string, keyboard: TelegramInlineKeyboard) {

@@ -3,8 +3,24 @@
 Depuis la fenêtre VS Code contenant le code source Nexus :
 
 1. Arrêter l’ancienne exécution avec **Shift+F5** si elle tourne.
-2. Choisir **Run Extension**, puis **F5**.
-3. Tester les commandes dans le bot Telegram déjà appairé.
+2. Si Nexus est aussi installé dans la fenêtre de travail habituelle, le désactiver
+   pour ce workspace depuis la vue Extensions, puis effectuer le redémarrage demandé
+   par VS Code. Fermer également les autres fenêtres qui utilisent le même bot.
+3. Choisir **Run Extension**, puis **F5**.
+4. Envoyer `/status` au bot : le workspace doit être `project`, avec un chemin
+   se terminant par `.nexus-dev/project`.
+5. Tester les commandes dans le bot Telegram déjà appairé.
+
+Une seule instance doit interroger Telegram avec le même token. La version installée
+et la version lancée avec F5 peuvent sinon récupérer les messages l’une à la place
+de l’autre. Une ancienne version sans support vocal peut recevoir puis ignorer un
+vocal : il ne sera alors plus proposé à la version de test après confirmation de
+l’offset. Voir [le fonctionnement de `getUpdates`](https://core.telegram.org/bots/api#getupdates).
+
+Un `/status` affichant le projet `nexus` au lieu de `.nexus-dev/project` indique
+qu’une autre fenêtre répond, ou que le lancement n’utilise pas cette configuration
+F5. Vérifier ce point avant de tester les vocaux. La désactivation pour le workspace
+est décrite dans la [documentation VS Code](https://code.visualstudio.com/docs/configure/extensions/extension-marketplace#disable-an-extension).
 
 F5 compile l’extension puis prépare automatiquement `.nexus-dev/project`.
 Ce dossier possède son propre dépôt Git, créé sur la branche `nexus-test`.
