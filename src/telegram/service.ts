@@ -4,6 +4,7 @@ import { TelegramClient, TelegramVoiceDownloadError } from './client';
 import { TelegramUpdate, TelegramVoice, TelegramVoiceFile } from './types';
 import { SpeechError } from '../speech/errors';
 import { ApprovalRequest, TelegramApprovals, TelegramPeer } from './approvals';
+import { TelegramContinuations, TurnTimeoutRequest } from './continuations';
 import { ApprovalDecision, ModelControls } from '../codex/types';
 import { formatTelegramStatus, NexusStatusSnapshot, AgentBackendType } from './status';
 import { TELEGRAM_HELP } from './help';
@@ -46,6 +47,7 @@ export class TelegramService {
   private remoteBranchRunning = false;
   private operationGeneration = 0;
   private readonly approvals: TelegramApprovals;
+  private readonly continuations: TelegramContinuations;
   private readonly models: TelegramModels;
   private readonly antigravityModels: TelegramModels;
   private statusRunning = false;
@@ -116,6 +118,7 @@ export class TelegramService {
       this.context.globalState.get<AgentBackendType>('nexus.activeBackend') ?? 'codex';
 
     this.approvals = new TelegramApprovals(client, () => this.getApprovalPeer());
+    this.continuations = new TelegramContinuations(client, () => this.getApprovalPeer());
     this.models = new TelegramModels(
       client,
       () => this.getApprovalPeer(),
@@ -153,6 +156,16 @@ export class TelegramService {
 
   requestApproval(request: ApprovalRequest, signal: AbortSignal): Promise<ApprovalDecision> {
     return this.approvals.request(request, signal);
+  }
+
+  requestTurnTimeoutContinuation(
+    request: TurnTimeoutRequest,
+    signal: AbortSignal
+  ): Promise<boolean> {
+    if (!this.remotePromptRunning) {
+      return Promise.resolve(false);
+    }
+    return this.continuations.request(request, signal);
   }
 
   private getApprovalPeer(): TelegramPeer | undefined {
@@ -210,6 +223,7 @@ export class TelegramService {
           }
 
           this.approvals.cancelAll();
+          this.continuations.cancelAll();
           this.models.cancel();
           this.antigravityModels.cancel();
           console.error('Telegram polling failed.');
@@ -222,6 +236,7 @@ export class TelegramService {
         this.abortController = undefined;
         this.running = false;
         this.approvals.cancelAll();
+        this.continuations.cancelAll();
         this.models.cancel();
         this.antigravityModels.cancel();
       }
@@ -235,6 +250,7 @@ export class TelegramService {
     this.running = false;
     this.abortController?.abort();
     this.approvals.cancelAll();
+    this.continuations.cancelAll();
   }
 
   private cancelVoiceOperation(): boolean {
@@ -260,6 +276,8 @@ export class TelegramService {
             this.getActiveBackend() === 'antigravity' ? this.antigravityModels : this.models;
           void picker.handleCallback(update.callback_query);
         }
+      } else if (update.callback_query.data?.startsWith('continue:')) {
+        await this.continuations.handleCallback(update.callback_query);
       } else {
         await this.approvals.handleCallback(update.callback_query);
       }
@@ -291,6 +309,7 @@ export class TelegramService {
 
       this.cancelVoiceOperation();
       this.approvals.cancelAll();
+      this.continuations.cancelAll();
       this.models.cancel();
       this.antigravityModels.cancel();
 
@@ -459,6 +478,7 @@ export class TelegramService {
       this.remotePromptRunning = false;
       this.remoteSessionRunning = false;
       this.approvals.cancelAll();
+      this.continuations.cancelAll();
       if (voiceCancelled && !agentCancelled) {
         await this.client.sendMessage(chatId, '⏹ Traitement du message vocal annulé.');
         return;

@@ -56,8 +56,8 @@ export interface ConversationTelemetry {
   tokenUsageUpdatedAt?: number;
 }
 
-import type { ApprovalDecision } from '../codex/types';
-export type { ApprovalDecision };
+import type { ApprovalDecision, TurnTimeoutRequest, TurnTimeoutHandler } from '../codex/types';
+export type { ApprovalDecision, TurnTimeoutRequest, TurnTimeoutHandler };
 
 export interface AntigravityApprovalRequest {
   agentName?: string;

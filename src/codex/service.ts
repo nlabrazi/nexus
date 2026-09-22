@@ -1,5 +1,5 @@
 import { isAbsolute, resolve } from 'node:path';
-import { CodexClient } from './client';
+import { CodexClient, CodexClientOptions } from './client';
 import {
   CodexApprovalHandler,
   CodexServiceStatus,
@@ -32,9 +32,10 @@ export class CodexService {
     approvalHandler?: CodexApprovalHandler,
     private readonly validateWorkspace?: WorkspaceValidator,
     private readonly persistence?: SessionPersistence,
-    private readonly modelPreferences?: ModelPreferences
+    private readonly modelPreferences?: ModelPreferences,
+    options?: CodexClientOptions
   ) {
-    this.client = new CodexClient(approvalHandler);
+    this.client = new CodexClient(approvalHandler, options);
     this.modelSelection = modelPreferences?.load();
     const saved = persistence?.load();
     if (saved) {

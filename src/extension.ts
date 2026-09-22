@@ -48,7 +48,12 @@ export async function activate(context: vscode.ExtensionContext) {
     },
     (path) => workspaceGuard.validate(path),
     new WorkspaceSessionPersistence(context.workspaceState),
-    new WorkspaceModelPreferences(context.workspaceState)
+    new WorkspaceModelPreferences(context.workspaceState),
+    {
+      turnTimeoutHandler: async (request, signal) => {
+        return (await telegramService?.requestTurnTimeoutContinuation(request, signal)) ?? false;
+      },
+    }
   );
 
   const agyConfig = vscode.workspace.getConfiguration('nexus.antigravity');
@@ -68,6 +73,9 @@ export async function activate(context: vscode.ExtensionContext) {
       executablePath: agyConfig.get<string>('path') || undefined,
       sandbox: agyConfig.get<boolean>('sandbox', true),
       dangerouslySkipPermissions: agyConfig.get<boolean>('dangerouslySkipPermissions', false),
+      turnTimeoutHandler: async (request, signal) => {
+        return (await telegramService?.requestTurnTimeoutContinuation(request, signal)) ?? false;
+      },
     }
   );
 

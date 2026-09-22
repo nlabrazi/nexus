@@ -17,6 +17,7 @@ import {
   ModelSelection,
   StreamOutputEvent,
   UserStreamInput,
+  TurnTimeoutHandler,
 } from './types';
 import { AntigravityApprovals, isGuardRailTool } from './approvals';
 
@@ -28,6 +29,8 @@ export interface AntigravityClientOptions {
   model?: string;
   effort?: string;
   approvalHandler?: AntigravityApprovalHandler;
+  turnTimeoutHandler?: TurnTimeoutHandler;
+  turnTimeoutMs?: number;
 }
 
 export class AntigravityClient {
@@ -223,11 +226,10 @@ export class AntigravityClient {
     child.on('exit', (code, signal) => {
       const recent = this.recentStderr.slice(-5);
       const extra = recent.length > 0 ? `\nLogs stderr :\n${recent.join('\n')}` : '';
-      this.disconnect(
-        child,
-        processError(new Error(`Antigravity exited: code=${code}, signal=${signal}${extra}`)),
-        false
-      );
+      const err = this.currentTurn?.interrupting
+        ? turnTimeoutError(false)
+        : processError(new Error(`Antigravity exited: code=${code}, signal=${signal}${extra}`));
+      this.disconnect(child, err, false);
     });
     for (const stream of [child.stdin, child.stdout, child.stderr]) {
       stream.on('error', (error) => this.disconnect(child, processError(error)));
@@ -324,8 +326,12 @@ export class AntigravityClient {
       let settled = false;
       let timeout: ReturnType<typeof setTimeout>;
       let interruptTimeout: ReturnType<typeof setTimeout> | undefined;
+      let timeoutPromptController: AbortController | undefined;
+      const turnTimeoutMs = this.options.turnTimeoutMs ?? 120_000;
+      let elapsedSeconds = Math.round(turnTimeoutMs / 1000);
 
       const cleanup = () => {
+        timeoutPromptController?.abort();
         this.eventListeners.delete(onNotification);
         if (this.currentTurn === currentTurn) {
           this.currentTurn = undefined;
@@ -536,8 +542,7 @@ export class AntigravityClient {
 
       this.eventListeners.add(onNotification);
 
-      // Turn timeout (120 s)
-      timeout = setTimeout(() => {
+      const triggerInterrupt = () => {
         currentTurn.interrupting = true;
         if (settled) {
           return;
@@ -551,10 +556,46 @@ export class AntigravityClient {
         }
 
         interruptTimeout = setTimeout(() => {
-          this.disconnect(child, turnTimeoutError(false));
-          fail(turnTimeoutError(false));
+          this.disconnect(child, turnTimeoutError(false, elapsedSeconds));
+          fail(turnTimeoutError(false, elapsedSeconds));
         }, 5000);
-      }, 120_000);
+      };
+
+      const scheduleTimeout = () => {
+        timeout = setTimeout(async () => {
+          if (settled) {
+            return;
+          }
+          if (this.options.turnTimeoutHandler) {
+            const controller = new AbortController();
+            timeoutPromptController = controller;
+            let shouldContinue = false;
+            try {
+              shouldContinue = await this.options.turnTimeoutHandler(
+                { agentName: 'Antigravity', elapsedSeconds },
+                controller.signal
+              );
+            } catch {
+              shouldContinue = false;
+            } finally {
+              if (timeoutPromptController === controller) {
+                timeoutPromptController = undefined;
+              }
+            }
+            if (settled) {
+              return;
+            }
+            if (shouldContinue) {
+              elapsedSeconds += Math.round(turnTimeoutMs / 1000);
+              scheduleTimeout();
+              return;
+            }
+          }
+          triggerInterrupt();
+        }, turnTimeoutMs);
+      };
+
+      scheduleTimeout();
 
       // Write prompt to stdin
       const inputMessage: UserStreamInput = {

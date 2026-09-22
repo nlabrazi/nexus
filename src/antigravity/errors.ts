@@ -92,12 +92,12 @@ export function processError(cause: unknown): AntigravityError {
   );
 }
 
-export function turnTimeoutError(confirmed: boolean): AntigravityError {
+export function turnTimeoutError(confirmed: boolean, elapsedSeconds = 120): AntigravityError {
   return new AntigravityError(
     'turn_timeout',
     confirmed
-      ? 'Le délai de 120 s est dépassé. Antigravity a confirmé la fin du turn. Vérifiez les modifications éventuelles avant une nouvelle instruction.'
-      : 'Le délai de 120 s est dépassé et la fin du turn n’a pas été confirmée. Nexus a fermé la connexion et demandé l’arrêt du processus. Vérifiez les commandes et modifications éventuelles avant de continuer.'
+      ? `Le délai de ${elapsedSeconds} s est dépassé. Antigravity a confirmé la fin du turn. Vérifiez les modifications éventuelles avant une nouvelle instruction.`
+      : `Le délai de ${elapsedSeconds} s est dépassé et la fin du turn n’a pas été confirmée. Nexus a fermé la connexion et demandé l’arrêt du processus. Vérifiez les commandes et modifications éventuelles avant de continuer.`
   );
 }
 

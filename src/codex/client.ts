@@ -14,11 +14,17 @@ import {
   ModelSelection,
   ThreadTelemetry,
   RateLimitSnapshot,
+  TurnTimeoutHandler,
 } from './types';
 import { CodexApprovals } from './approvals';
 import { CodexError, processError, rpcError, turnTimeoutError } from './errors';
 import { workspaceEnvironment } from '../workspace/environment';
 import { isModel, isRateLimit, isTokenUsage } from './telemetry';
+
+export interface CodexClientOptions {
+  turnTimeoutHandler?: TurnTimeoutHandler;
+  turnTimeoutMs?: number;
+}
 
 export class CodexClient {
   private process?: ChildProcessWithoutNullStreams;
@@ -36,7 +42,10 @@ export class CodexClient {
   private rateLimitsRevision = 0;
   private rateLimitsRefresh?: Promise<void>;
 
-  constructor(approvalHandler?: CodexApprovalHandler) {
+  constructor(
+    approvalHandler?: CodexApprovalHandler,
+    private readonly options?: CodexClientOptions
+  ) {
     this.approvals = new CodexApprovals((message) => this.write(message), approvalHandler);
   }
 
@@ -435,8 +444,12 @@ export class CodexClient {
       let settled = false;
       let timeout: ReturnType<typeof setTimeout>;
       let interruptTimeout: ReturnType<typeof setTimeout> | undefined;
+      let timeoutPromptController: AbortController | undefined;
+      const turnTimeoutMs = this.options?.turnTimeoutMs ?? 120_000;
+      let elapsedSeconds = Math.round(turnTimeoutMs / 1000);
 
       const cleanup = () => {
+        timeoutPromptController?.abort();
         if (this.currentTurn === currentTurn) {
           this.currentTurn = undefined;
         }
@@ -489,7 +502,7 @@ export class CodexClient {
           throw new Error('Invalid terminal turn status');
         }
         if (timedOut) {
-          fail(turnTimeoutError(true));
+          fail(turnTimeoutError(true, elapsedSeconds));
           return;
         }
         if (params.turn.status !== 'completed') {
@@ -570,7 +583,7 @@ export class CodexClient {
         }
       };
 
-      timeout = setTimeout(() => {
+      const triggerInterrupt = () => {
         timedOut = true;
         currentTurn.interrupting = true;
         // Invalidate approval buttons immediately, but keep the turn lock until termination.
@@ -579,19 +592,55 @@ export class CodexClient {
           return;
         }
         if (!turnId) {
-          this.disconnect(child, turnTimeoutError(false));
+          this.disconnect(child, turnTimeoutError(false, elapsedSeconds));
           return;
         }
         interruptTimeout = setTimeout(() => {
-          this.disconnect(child, turnTimeoutError(false));
+          this.disconnect(child, turnTimeoutError(false, elapsedSeconds));
         }, 5000);
         // An RPC acknowledgement alone does not confirm that the turn has ended.
         void this.request('turn/interrupt', { threadId, turnId }, 5000).catch(() => {
           if (!settled) {
-            this.disconnect(child, turnTimeoutError(false));
+            this.disconnect(child, turnTimeoutError(false, elapsedSeconds));
           }
         });
-      }, 120_000);
+      };
+
+      const scheduleTimeout = () => {
+        timeout = setTimeout(async () => {
+          if (settled) {
+            return;
+          }
+          if (this.options?.turnTimeoutHandler) {
+            const controller = new AbortController();
+            timeoutPromptController = controller;
+            let shouldContinue = false;
+            try {
+              shouldContinue = await this.options.turnTimeoutHandler(
+                { agentName: 'Codex', elapsedSeconds },
+                controller.signal
+              );
+            } catch {
+              shouldContinue = false;
+            } finally {
+              if (timeoutPromptController === controller) {
+                timeoutPromptController = undefined;
+              }
+            }
+            if (settled) {
+              return;
+            }
+            if (shouldContinue) {
+              elapsedSeconds += Math.round(turnTimeoutMs / 1000);
+              scheduleTimeout();
+              return;
+            }
+          }
+          triggerInterrupt();
+        }, turnTimeoutMs);
+      };
+
+      scheduleTimeout();
       this.turnFailure = fail;
       this.notificationListeners.add(onNotification);
       void this.request('turn/start', {

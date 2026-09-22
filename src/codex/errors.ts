@@ -37,12 +37,12 @@ export function processError(cause: unknown): CodexError {
   );
 }
 
-export function turnTimeoutError(confirmed: boolean): CodexError {
+export function turnTimeoutError(confirmed: boolean, elapsedSeconds = 120): CodexError {
   return new CodexError(
     'turn_timeout',
     confirmed
-      ? 'Le délai de 120 s est dépassé. Codex a confirmé la fin du turn. Vérifiez les modifications éventuelles avant une nouvelle instruction.'
-      : 'Le délai de 120 s est dépassé et la fin du turn n’a pas été confirmée. Nexus a fermé la connexion et demandé l’arrêt du processus. Vérifiez les commandes et modifications éventuelles avant de continuer.'
+      ? `Le délai de ${elapsedSeconds} s est dépassé. Codex a confirmé la fin du turn. Vérifiez les modifications éventuelles avant une nouvelle instruction.`
+      : `Le délai de ${elapsedSeconds} s est dépassé et la fin du turn n’a pas été confirmée. Nexus a fermé la connexion et demandé l’arrêt du processus. Vérifiez les commandes et modifications éventuelles avant de continuer.`
   );
 }
 

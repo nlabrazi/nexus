@@ -186,3 +186,13 @@ export type CodexApprovalHandler = (
   request: CodexApprovalRequest,
   signal: AbortSignal
 ) => Promise<ApprovalDecision>;
+
+export interface TurnTimeoutRequest {
+  agentName?: string;
+  elapsedSeconds: number;
+}
+
+export type TurnTimeoutHandler = (
+  request: TurnTimeoutRequest,
+  signal: AbortSignal
+) => Promise<boolean>;
