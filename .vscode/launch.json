@@ -13,7 +13,7 @@
 				"--extensionDevelopmentPath=${workspaceFolder}",
 				// Only this development window skips trust prompts for the generated test project.
 				"--disable-workspace-trust",
-				"${workspaceFolder}/.nexus-dev/project"
+				"/home/kaox/code"
 			],
 			"outFiles": [
 				"${workspaceFolder}/dist/**/*.js"

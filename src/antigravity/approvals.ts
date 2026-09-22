@@ -35,12 +35,14 @@ export function isGuardRailTool(toolName: string): boolean {
 interface PendingApproval {
   conversationId: string;
   stepIndex: number;
+  promise: Promise<ApprovalDecision>;
   settle: (decision: ApprovalDecision) => void;
 }
 
 /** Owns Antigravity approval lifecycle, timeouts, and guard-rail detection. */
 export class AntigravityApprovals {
   private readonly pending = new Map<string, PendingApproval>();
+  private readonly turnDecisions: ApprovalDecision[] = [];
   private activeTurn?: { conversationId: string };
 
   constructor(
@@ -55,6 +57,7 @@ export class AntigravityApprovals {
   beginTurn(conversationId: string): void {
     this.endTurn();
     this.activeTurn = { conversationId };
+    this.turnDecisions.length = 0;
   }
 
   endTurn(): void {
@@ -67,6 +70,14 @@ export class AntigravityApprovals {
 
   cancelAll(): void {
     this.endTurn();
+  }
+
+  async waitForAllPending(): Promise<ApprovalDecision[]> {
+    while (this.pending.size > 0) {
+      const promises = Array.from(this.pending.values()).map((p) => p.promise);
+      await Promise.all(promises);
+    }
+    return [...this.turnDecisions];
   }
 
   async requestToolApproval(
@@ -103,43 +114,48 @@ export class AntigravityApprovals {
     const controller = new AbortController();
     const expiresAt = Date.now() + this.timeoutMs;
 
-    return new Promise<ApprovalDecision>((resolve) => {
-      const approval: PendingApproval = {
-        conversationId,
-        stepIndex,
-        settle: (decision: ApprovalDecision) => {
-          if (this.pending.get(key) !== approval) {
-            return;
-          }
-          this.pending.delete(key);
-          clearTimeout(timer);
-          controller.abort();
-          resolve(decision);
-        },
+    let settleFn!: (decision: ApprovalDecision) => void;
+    const promise = new Promise<ApprovalDecision>((resolve) => {
+      settleFn = (decision: ApprovalDecision) => {
+        if (this.pending.get(key) !== approval) {
+          return;
+        }
+        this.pending.delete(key);
+        clearTimeout(timer);
+        controller.abort();
+        this.turnDecisions.push(decision);
+        resolve(decision);
       };
-
-      const timer = setTimeout(() => approval.settle('decline'), this.timeoutMs);
-      this.pending.set(key, approval);
-
-      const request: AntigravityApprovalRequest = {
-        agentName: 'Antigravity',
-        kind,
-        threadId: conversationId,
-        turnId: String(stepIndex),
-        itemId: toolName,
-        details,
-        expiresAt,
-      };
-
-      void Promise.resolve()
-        .then(() =>
-          controller.signal.aborted
-            ? ('decline' as const)
-            : this.handler!(request, controller.signal)
-        )
-        .then((decision) => approval.settle(decision === 'accept' ? 'accept' : 'decline'))
-        .catch(() => approval.settle('decline'));
     });
+
+    const approval: PendingApproval = {
+      conversationId,
+      stepIndex,
+      promise,
+      settle: settleFn,
+    };
+
+    const timer = setTimeout(() => approval.settle('decline'), this.timeoutMs);
+    this.pending.set(key, approval);
+
+    const request: AntigravityApprovalRequest = {
+      agentName: 'Antigravity',
+      kind,
+      threadId: conversationId,
+      turnId: String(stepIndex),
+      itemId: toolName,
+      details,
+      expiresAt,
+    };
+
+    void Promise.resolve()
+      .then(() =>
+        controller.signal.aborted ? ('decline' as const) : this.handler!(request, controller.signal)
+      )
+      .then((decision) => approval.settle(decision === 'accept' ? 'accept' : 'decline'))
+      .catch(() => approval.settle('decline'));
+
+    return promise;
   }
 
   async handleApprovalEvent(event: Record<string, unknown>): Promise<ApprovalDecision | undefined> {
@@ -161,42 +177,47 @@ export class AntigravityApprovals {
     const controller = new AbortController();
     const expiresAt = Date.now() + this.timeoutMs;
 
-    return new Promise<ApprovalDecision>((resolve) => {
-      const approval: PendingApproval = {
-        conversationId,
-        stepIndex: 0,
-        settle: (decision: ApprovalDecision) => {
-          if (this.pending.get(key) !== approval) {
-            return;
-          }
-          this.pending.delete(key);
-          clearTimeout(timer);
-          controller.abort();
-          resolve(decision);
-        },
+    let settleFn!: (decision: ApprovalDecision) => void;
+    const promise = new Promise<ApprovalDecision>((resolve) => {
+      settleFn = (decision: ApprovalDecision) => {
+        if (this.pending.get(key) !== approval) {
+          return;
+        }
+        this.pending.delete(key);
+        clearTimeout(timer);
+        controller.abort();
+        this.turnDecisions.push(decision);
+        resolve(decision);
       };
-
-      const timer = setTimeout(() => approval.settle('decline'), this.timeoutMs);
-      this.pending.set(key, approval);
-
-      const request: AntigravityApprovalRequest = {
-        agentName: 'Antigravity',
-        kind,
-        threadId: conversationId,
-        turnId: String(req.turnId ?? '0'),
-        itemId: String(req.id ?? 'approval'),
-        details,
-        expiresAt,
-      };
-
-      void Promise.resolve()
-        .then(() =>
-          controller.signal.aborted
-            ? ('decline' as const)
-            : this.handler!(request, controller.signal)
-        )
-        .then((decision) => approval.settle(decision === 'accept' ? 'accept' : 'decline'))
-        .catch(() => approval.settle('decline'));
     });
+
+    const approval: PendingApproval = {
+      conversationId,
+      stepIndex: 0,
+      promise,
+      settle: settleFn,
+    };
+
+    const timer = setTimeout(() => approval.settle('decline'), this.timeoutMs);
+    this.pending.set(key, approval);
+
+    const request: AntigravityApprovalRequest = {
+      agentName: 'Antigravity',
+      kind,
+      threadId: conversationId,
+      turnId: String(req.turnId ?? '0'),
+      itemId: String(req.id ?? 'approval'),
+      details,
+      expiresAt,
+    };
+
+    void Promise.resolve()
+      .then(() =>
+        controller.signal.aborted ? ('decline' as const) : this.handler!(request, controller.signal)
+      )
+      .then((decision) => approval.settle(decision === 'accept' ? 'accept' : 'decline'))
+      .catch(() => approval.settle('decline'));
+
+    return promise;
   }
 }

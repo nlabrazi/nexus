@@ -250,4 +250,104 @@ suite('Antigravity client turn approval integration', () => {
     assert.equal(result, 'Done');
     assert.equal(calls, 0);
   });
+
+  test('turn waits for pending approval before resolving with response text', async (t) => {
+    let spawned: FakeAntigravityProcess | undefined;
+    t.mock.method(childProcess, 'spawn', (_cmd: string, args: string[]) => {
+      spawned = new FakeAntigravityProcess(args);
+      return spawned;
+    });
+
+    const pending = deferred<ApprovalDecision>();
+    const client = new AntigravityClient({ dangerouslySkipPermissions: false }, async () => {
+      return pending.promise;
+    });
+    t.after(() => client.stop());
+
+    const convId = await client.start({ cwd: '/workspace' });
+    let resolved = false;
+    const turnPromise = client.runTurn(convId, 'Execute command').then((res) => {
+      resolved = true;
+      return res;
+    });
+
+    await flush();
+
+    // Tool ACTIVE event triggers approval
+    spawned?.sendToolActive('run_command', { CommandLine: 'pwd' });
+    await flush();
+
+    assert.equal(client.getStatus().pendingApprovals, 1);
+
+    // Tool finishes and turn completes before user clicks approval
+    spawned?.sendToolDone('run_command', { CommandLine: 'pwd' }, '/workspace\n');
+    spawned?.complete('I am in /workspace');
+    await flush();
+
+    // The turn must NOT have resolved yet because approval is still pending!
+    assert.equal(resolved, false);
+    assert.equal(client.getStatus().pendingApprovals, 1);
+
+    // User accepts on Telegram
+    pending.resolve('accept');
+    await flush();
+
+    const result = await turnPromise;
+    assert.equal(resolved, true);
+    assert.equal(result, 'I am in /workspace');
+    assert.equal(client.getStatus().pendingApprovals, 0);
+  });
+
+  test('turn fails with approval_declined if pending approval is declined after tool done', async (t) => {
+    let spawned: FakeAntigravityProcess | undefined;
+    t.mock.method(childProcess, 'spawn', (_cmd: string, args: string[]) => {
+      spawned = new FakeAntigravityProcess(args);
+      return spawned;
+    });
+
+    const pending = deferred<ApprovalDecision>();
+    const client = new AntigravityClient({ dangerouslySkipPermissions: false }, async () => {
+      return pending.promise;
+    });
+    t.after(() => client.stop());
+
+    const convId = await client.start({ cwd: '/workspace' });
+    const turnPromise = client.runTurn(convId, 'Execute command');
+    const rejected = assert.rejects(turnPromise, {
+      name: 'AntigravityError',
+      code: 'approval_declined',
+    });
+
+    await flush();
+
+    spawned?.sendToolActive('run_command', { CommandLine: 'pwd' });
+    await flush();
+
+    spawned?.sendToolDone('run_command', { CommandLine: 'pwd' }, '/workspace\n');
+    spawned?.complete('I am in /workspace');
+    await flush();
+
+    // User declines on Telegram
+    pending.resolve('decline');
+    await rejected;
+
+    assert.equal(client.getStatus().pendingApprovals, 0);
+  });
+
+  test('spawns agy with --dangerously-skip-permissions even when option is false', async (t) => {
+    let capturedArgs: string[] = [];
+    t.mock.method(childProcess, 'spawn', (_cmd: string, args: string[]) => {
+      capturedArgs = args;
+      return new FakeAntigravityProcess(args);
+    });
+
+    const client = new AntigravityClient({ dangerouslySkipPermissions: false });
+    t.after(() => client.stop());
+
+    await client.start({ cwd: '/workspace' });
+    assert.ok(
+      capturedArgs.includes('--dangerously-skip-permissions'),
+      'args should include --dangerously-skip-permissions to avoid headless auto-denials'
+    );
+  });
 });

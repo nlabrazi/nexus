@@ -197,9 +197,10 @@ export class AntigravityClient {
     if (this.options.sandbox !== false) {
       args.push('--sandbox');
     }
-    if (this.options.dangerouslySkipPermissions !== false) {
-      args.push('--dangerously-skip-permissions');
-    }
+    // In headless stream-json mode, agy cannot prompt on an interactive TTY and
+    // will auto-deny any tools requiring permissions (such as unsandboxed paths).
+    // Nexus acts as the supervisor that gates actions via Telegram approvals.
+    args.push('--dangerously-skip-permissions');
 
     let child: ChildProcessWithoutNullStreams;
     try {
@@ -501,13 +502,35 @@ export class AntigravityClient {
             return;
           }
 
-          if (onFilesChanged && changedFiles.size > 0) {
-            onFilesChanged([...changedFiles]);
-          }
+          const completeTurn = async () => {
+            if (this.approvals.getPendingCount() > 0) {
+              const decisions = await this.approvals.waitForAllPending();
+              if (settled) {
+                return;
+              }
+              if (decisions.some((d) => d === 'decline')) {
+                fail(
+                  new AntigravityError('approval_declined', 'Action refusée par l’utilisateur.')
+                );
+                try {
+                  child.kill('SIGINT');
+                } catch {
+                  /* ignore */
+                }
+                return;
+              }
+            }
 
-          settled = true;
-          cleanup();
-          resolve(responseText);
+            if (onFilesChanged && changedFiles.size > 0) {
+              onFilesChanged([...changedFiles]);
+            }
+
+            settled = true;
+            cleanup();
+            resolve(responseText);
+          };
+
+          void completeTurn();
         }
       };
 
