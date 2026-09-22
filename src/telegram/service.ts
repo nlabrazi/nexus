@@ -596,6 +596,7 @@ export class TelegramService {
   ): Promise<void> {
     let audio: TelegramVoiceFile | undefined;
     let phase: 'download' | 'transcription' | 'delivery' = 'delivery';
+    let text: string | undefined;
     try {
       if (!this.transcribeVoice) {
         throw new SpeechError('not_configured');
@@ -627,13 +628,15 @@ export class TelegramService {
       if (typeof transcript !== 'string') {
         throw new SpeechError('invalid_response');
       }
-      const text = transcript.trim();
-      if (!text) {
+      const trimmed = transcript.trim();
+      if (!trimmed) {
         throw new SpeechError('empty_transcript');
       }
       phase = 'delivery';
-      await this.client.sendMessage(chatId, `🎙 Transcription :\n\n${text}`, 'plain', signal);
+      await this.client.sendMessage(chatId, `🎙 Transcription :\n\n${trimmed}`, 'plain', signal);
+      text = trimmed;
     } catch (error) {
+      text = undefined;
       if (!signal.aborted && generation === this.operationGeneration) {
         const message =
           error instanceof TelegramVoiceDownloadError || error instanceof SpeechError
@@ -652,9 +655,36 @@ export class TelegramService {
       if (this.voiceOperation === controller) {
         this.voiceOperation = undefined;
       }
-      if (generation === this.operationGeneration) {
-        this.remotePromptRunning = false;
+      if (!text || signal.aborted || generation !== this.operationGeneration) {
+        if (generation === this.operationGeneration) {
+          this.remotePromptRunning = false;
+        }
       }
+    }
+
+    if (!text || signal.aborted || generation !== this.operationGeneration) {
+      return;
+    }
+
+    const backend = this.getActiveBackend();
+    if (backend === 'antigravity') {
+      if (!this.onRemoteAntigravityPrompt) {
+        await this.client.sendMessage(chatId, 'Gemini Antigravity is unavailable.');
+        if (generation === this.operationGeneration) {
+          this.remotePromptRunning = false;
+        }
+        return;
+      }
+      await this.runRemoteAntigravityPrompt(chatId, text, this.abortController!.signal, generation);
+    } else {
+      if (!this.onRemotePrompt) {
+        await this.client.sendMessage(chatId, 'Codex is unavailable.');
+        if (generation === this.operationGeneration) {
+          this.remotePromptRunning = false;
+        }
+        return;
+      }
+      await this.runRemotePrompt(chatId, text, this.abortController!.signal, generation);
     }
   }
 

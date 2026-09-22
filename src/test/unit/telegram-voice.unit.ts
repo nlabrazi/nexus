@@ -23,7 +23,7 @@ const audio = (): TelegramVoiceFile => ({ data: Buffer.from('audio'), fileName: 
 
 suite('Telegram voice reception', () => {
   for (const metadata of [{}, { mime_type: 'audio/ogg', file_size: 2048 }]) {
-    test(`acknowledges an authorized voice ${'mime_type' in metadata ? 'with' : 'without'} optional metadata without starting an agent`, async (t) => {
+    test(`acknowledges an authorized voice ${'mime_type' in metadata ? 'with' : 'without'} optional metadata and routes to active agent`, async (t) => {
       const client = new FakeTelegram();
       const send = t.mock.method(client, 'sendMessage');
       const download = t.mock.method(client, 'downloadVoice');
@@ -45,12 +45,15 @@ suite('Telegram voice reception', () => {
 
       assert.equal(download.mock.callCount(), 1);
       assert.equal(download.mock.calls[0].arguments[0].file_id, 'voice-file');
-      assert.equal(send.mock.callCount(), 3);
+      assert.equal(send.mock.callCount(), 5);
       assert.equal(send.mock.calls[0].arguments[0], 20);
       assert.match(client.messages[0], /Téléchargement du message vocal/);
       assert.match(client.messages[1], /Transcription locale du message vocal/);
       assert.equal(client.messages[2], '🎙 Transcription :\n\nBonjour');
-      assert.equal(codex.mock.callCount(), 0);
+      assert.equal(client.messages[3], '⏳ Codex is working...');
+      assert.equal(client.messages[4], 'Codex response');
+      assert.equal(codex.mock.callCount(), 1);
+      assert.deepEqual(codex.mock.calls[0].arguments, ['Bonjour']);
       assert.equal(antigravity.mock.callCount(), 0);
     });
   }
@@ -126,8 +129,9 @@ suite('Telegram voice reception', () => {
     await flush();
 
     assert.equal(client.messages.filter((text) => text.includes('🎙 Transcription :')).length, 1);
-    assert.equal(codex.mock.callCount(), 1);
-    assert.deepEqual(codex.mock.calls[0].arguments, ['bonjour']);
+    assert.equal(codex.mock.callCount(), 2);
+    assert.deepEqual(codex.mock.calls[0].arguments, ['Bonjour']);
+    assert.deepEqual(codex.mock.calls[1].arguments, ['bonjour']);
     assert.equal(client.messages.at(-1), 'Réponse : bonjour');
   });
 
@@ -311,7 +315,11 @@ suite('Telegram voice reception', () => {
       const download = t.mock.method(client, 'downloadVoice', async () => {
         throw error;
       });
-      const service = new TelegramService(context(), client, { transcribeVoice });
+      const codex = t.mock.fn(async () => 'OK');
+      const service = new TelegramService(context(), client, {
+        transcribeVoice,
+        onRemotePrompt: codex,
+      });
       const polling = service.start();
       t.after(async () => {
         service.stop();
@@ -330,7 +338,8 @@ suite('Telegram voice reception', () => {
       download.mock.mockImplementation(async () => audio());
       client.push(voiceMessage(2));
       await flush();
-      assert.match(client.messages.at(-1)!, /🎙 Transcription :/);
+      assert.ok(client.messages.some((text) => text.includes('🎙 Transcription :')));
+      assert.equal(client.messages.at(-1)!, 'OK');
     });
   }
 });

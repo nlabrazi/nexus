@@ -1,7 +1,8 @@
 # Messages vocaux Telegram
 
 Nexus détecte les messages `message.voice` du compte appairé dans sa conversation
-privée, télécharge leur audio depuis Telegram, puis le transcrit localement.
+privée, télécharge leur audio depuis Telegram, le transcrit localement, puis
+transmet automatiquement le texte reconnu à l'agent actif (**Codex** ou **Gemini Antigravity**).
 Aucun préfixe `/codex` ou
 `/agy` n’est nécessaire pour envoyer un vocal avec le microphone Telegram.
 
@@ -15,13 +16,16 @@ Les messages suivants accompagnent le traitement :
 >
 > Le texte reconnu dans votre vocal.
 
+> ⏳ Codex is working… *(ou ⏳ Gemini Antigravity is working…)*
+
+> *(Réponse finale de l'agent)*
+
 Le [service de transcription locale](speech-local.md) utilise les mêmes paramètres
 `nexus.speech.pythonPath`, `nexus.speech.modelPath` et `nexus.speech.language` que
 le test VS Code. Les réglages sont relus à chaque vocal ; ils doivent être définis
 sur la machine où Nexus tourne. Le workspace doit être approuvé dans VS Code.
-Aucun prompt n’est envoyé à Codex ou Antigravity à cette étape.
-Même si le texte reconnu contient `/codex`, `/agy` ou `/stop`, il est affiché
-littéralement et n’est jamais interprété comme une commande.
+Le texte reconnu est transmis comme prompt à l'agent actif avec la session, le modèle
+et le workspace en cours.
 
 ## Téléchargement
 
@@ -54,12 +58,15 @@ puis envoyer un nouveau vocal pour réessayer.
 
 ## Annulation et concurrence
 
-Le polling reste actif pendant le téléchargement et la transcription : `/ping`, `/status`, `/stop`
-et les boutons Telegram continuent à fonctionner. Une autre demande de vocal ou
-de prompt est refusée pendant l’opération ; elle n’est pas mise en attente.
+Le polling reste actif pendant le téléchargement, la transcription et l'exécution de l'agent :
+`/ping`, `/status`, `/stop` et les boutons Telegram continuent à fonctionner.
+Une autre demande de vocal ou de prompt est refusée pendant l’opération ; elle n’est pas mise en attente.
 
-`/stop`, l’arrêt de l’extension et un nouvel appairage annulent le traitement vocal,
-y compris le processus Python et les envois de texte encore en attente.
+- Si `/stop` intervient pendant le téléchargement ou la transcription locale, l'opération vocale
+  est annulée et Nexus répond : « ⏹ Traitement du message vocal annulé. ».
+- Si `/stop` intervient pendant l'exécution du prompt par l'agent actif, l'arrêt de l'agent
+  est déclenché et Nexus répond avec le message d'annulation habituel.
+- L’arrêt de l’extension et un nouvel appairage annulent le traitement en cours.
 Un message déjà reçu par Telegram ne peut pas être rappelé par cette annulation.
 Un résultat arrivé après annulation est ignoré. Un nouvel envoi explicite permet
 de réessayer après une erreur ou une annulation.
@@ -69,8 +76,8 @@ de réessayer après une erreur ou une annulation.
 Les tests de `src/test/unit/telegram-voice.unit.ts`,
 `src/test/unit/telegram-voice-download.unit.ts` et
 `src/test/unit/telegram-voice-transcription.unit.ts` couvrent les autorisations,
-le transport HTTP, les limites, la transcription, les erreurs, l’annulation et
-les réponses tardives.
+le transport HTTP, les limites, la transcription, l'envoi du prompt à l'agent actif,
+les erreurs, l’annulation et les réponses tardives.
 Ils utilisent des transports simulés et ne contactent aucun bot réel.
 
 ```sh
@@ -83,7 +90,8 @@ npm run compile
    `project` et le chemin `.nexus-dev/project`.
 2. Envoyer un vocal au bot avec le microphone Telegram, depuis le compte appairé.
 3. Vérifier le message de téléchargement, puis celui de transcription locale,
-   puis « 🎙 Transcription : » suivi des paroles reconnues.
+   puis « 🎙 Transcription : » suivi des paroles reconnues, puis l'indicateur de travail
+   de l'agent (« ⏳ Codex is working... » ou « ⏳ Gemini Antigravity is working... »),
+   et enfin la réponse finale de l'agent.
 4. Envoyer `/ping` : le bot doit répondre `pong`.
-5. Si le téléchargement ou la transcription est encore en cours, envoyer `/stop` :
-   Nexus doit répondre « Traitement du message vocal annulé », sans résultat tardif.
+5. Si l'opération est encore en cours, envoyer `/stop` pour vérifier l'annulation sans résultat tardif.

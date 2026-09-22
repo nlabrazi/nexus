@@ -1,8 +1,8 @@
 # Transcription locale
 
 Le moteur de transcription peut être testé depuis VS Code ou directement avec
-un [vocal Telegram](telegram-voice.md). Telegram renvoie maintenant le texte
-reconnu. L’envoi de cette transcription à un agent viendra à l’étape suivante.
+un [vocal Telegram](telegram-voice.md). Telegram transcrit le message vocal puis
+l’envoie directement comme prompt à l’agent actif (Codex ou Antigravity).
 
 Nexus lance [faster-whisper](https://github.com/SYSTRAN/faster-whisper) dans un
 processus Python local, avec le modèle multilingue `small`, sur CPU en `int8`.
@@ -87,10 +87,9 @@ supplémentaires. Le test manuel vérifie, lui, la reconnaissance réelle de la 
 Après le test local, relancer la session F5 pour charger les changements de code,
 puis envoyer un vocal avec le microphone Telegram depuis le compte appairé.
 Aucun préfixe n’est nécessaire. Nexus confirme le téléchargement, annonce la
-transcription locale, puis renvoie le texte reconnu dans Telegram. Les paramètres
-sont les mêmes que pour le test VS Code ; aucune configuration supplémentaire
-n’est nécessaire.
+transcription locale, affiche le texte reconnu (« 🎙 Transcription : »), puis
+transmet ce texte comme prompt au backend agent actif (Codex ou Gemini Antigravity)
+avec la session et le modèle en cours.
 
-`/stop` annule le téléchargement ou la transcription en cours. `/ping` et
-`/status` restent disponibles. À ce stade, le vocal ne lance aucun agent et ne
-modifie aucun fichier du workspace.
+`/stop` annule le téléchargement, la transcription ou le turn de l'agent en cours.
+`/ping` et `/status` restent disponibles.
