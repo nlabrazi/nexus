@@ -40,6 +40,25 @@
           "scope": "window",
           "description": "Backend agent par défaut pour les commandes Telegram (/new, /resume, /model)."
         },
+        "nexus.speech.pythonPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Chemin absolu vers le Python de l'environnement local contenant faster-whisper. À configurer sur la machine où Nexus s'exécute (WSL/SSH le cas échéant)."
+        },
+        "nexus.speech.modelPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Chemin absolu vers le modèle faster-whisper déjà téléchargé. La transcription ne télécharge rien."
+        },
+        "nexus.speech.language": {
+          "type": "string",
+          "default": "",
+          "pattern": "^$|^[a-z]{2,3}$",
+          "scope": "machine",
+          "description": "Langue des audios, par exemple fr ou en. Vide : détection automatique."
+        },
         "nexus.antigravity.path": {
           "type": "string",
           "default": "",
@@ -61,6 +80,10 @@
       }
     },
     "commands": [
+      {
+        "command": "nexus.testSpeechToText",
+        "title": "Nexus: Test Local Speech-to-Text"
+      },
       {
         "command": "nexus.switchBranch",
         "title": "Nexus: Switch Branch"

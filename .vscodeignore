@@ -1,5 +1,7 @@
 .vscode/**
 .nexus-dev/**
+.nexus-speech/**
+**/__pycache__/**
 scripts/**
 .vscode-test/**
 out/**

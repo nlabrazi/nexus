@@ -405,6 +405,7 @@ Nexus: Configure Telegram
 Nexus: Test Telegram Connection
 Nexus: Pair Telegram
 Nexus: Switch Branch
+Nexus: Test Local Speech-to-Text
 
 # Codex commands
 Nexus: Test Codex Connection
@@ -469,6 +470,8 @@ Examples:
 
 Detailed documentation:
 
+- [Local speech-to-text setup and test](docs/speech-local.md)
+- [Telegram voice download](docs/telegram-voice.md)
 - [Git branch selection](docs/workspace-safety.md#changer-de-branche)
 - [Telegram status](docs/telegram-status.md)
 - [Telegram model selection](docs/telegram-models.md)

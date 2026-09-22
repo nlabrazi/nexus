@@ -15,6 +15,7 @@ import { AntigravityService } from './antigravity/service';
 import { WorkspaceAntigravitySessionPersistence } from './antigravity/persistence';
 import { WorkspaceAntigravityModelPreferences } from './antigravity/model-preferences';
 import { AgentBackendType } from './telegram/status';
+import { registerSpeechTestCommand } from './speech/commands';
 
 let telegramService: TelegramService | undefined;
 let codexService: CodexService | undefined;
@@ -409,6 +410,7 @@ export async function activate(
   });
 
   context.subscriptions.push(
+    registerSpeechTestCommand(context),
     statusCommand,
     selectBackendCommand,
     configureTelegramCommand,

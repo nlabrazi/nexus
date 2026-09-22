@@ -10,7 +10,9 @@ Deux messages accompagnent la réception :
 
 > 🎙 Message vocal téléchargé. La transcription n’est pas encore disponible. Utilisez `/codex <instruction>` pour envoyer votre demande par écrit.
 
-La transcription et l’envoi à un agent viendront dans les étapes suivantes.
+Le [service de transcription locale](speech-local.md) peut maintenant être testé
+depuis VS Code. Son branchement à Telegram et l’envoi à un agent viendront dans
+les étapes suivantes.
 Aucun prompt n’est envoyé à Codex ou Antigravity à cette étape.
 
 ## Téléchargement
