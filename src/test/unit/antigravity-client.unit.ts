@@ -1,12 +1,13 @@
 import * as assert from 'node:assert/strict';
 import { suite, test } from 'node:test';
-import childProcess = require('child_process');
+import childProcess = require('node:child_process');
 import { AntigravityClient } from '../../antigravity/client';
+import { AntigravityError } from '../../antigravity/errors';
 import { flush } from './helpers';
 import { FakeAntigravityProcess } from './antigravity-process';
 
 suite('Antigravity client lifecycle and turn execution', () => {
-  test('starts process and captures conversation ID from init event', async t => {
+  test('starts process and captures conversation ID from init event', async (t) => {
     let spawned: FakeAntigravityProcess | undefined;
     t.mock.method(childProcess, 'spawn', (_cmd: string, args: string[]) => {
       spawned = new FakeAntigravityProcess(args);
@@ -25,7 +26,7 @@ suite('Antigravity client lifecycle and turn execution', () => {
     assert.equal(spawned?.args.includes('uuid-123'), true);
   });
 
-  test('runs turn, sends prompt over stdin, tracks file changes, and receives response', async t => {
+  test('runs turn, sends prompt over stdin, tracks file changes, and receives response', async (t) => {
     let spawned: FakeAntigravityProcess | undefined;
     t.mock.method(childProcess, 'spawn', (_cmd: string, args: string[]) => {
       spawned = new FakeAntigravityProcess(args);
@@ -38,7 +39,7 @@ suite('Antigravity client lifecycle and turn execution', () => {
     const convId = await client.start({ cwd: '/workspace' });
     const changedFiles: string[] = [];
 
-    const turnPromise = client.runTurn(convId, 'Refactor codebase', files => {
+    const turnPromise = client.runTurn(convId, 'Refactor codebase', (files) => {
       changedFiles.push(...files);
     });
 
@@ -62,7 +63,10 @@ suite('Antigravity client lifecycle and turn execution', () => {
 
     const result = await turnPromise;
     assert.equal(result, 'Successfully refactored app.ts and created new.ts');
-    assert.deepEqual(changedFiles.sort(), ['/workspace/src/app.ts', '/workspace/src/new.ts'].sort());
+    assert.deepEqual(
+      changedFiles.sort(),
+      ['/workspace/src/app.ts', '/workspace/src/new.ts'].sort()
+    );
 
     // Verify telemetry
     const telemetry = client.getConversationTelemetry(convId);
@@ -71,7 +75,7 @@ suite('Antigravity client lifecycle and turn execution', () => {
     assert.equal(telemetry.tokenUsage?.last.reasoningOutputTokens, 60);
   });
 
-  test('handles turn failure when result event status is ERROR', async t => {
+  test('handles turn failure when result event status is ERROR', async (t) => {
     let spawned: FakeAntigravityProcess | undefined;
     t.mock.method(childProcess, 'spawn', (_cmd: string, args: string[]) => {
       spawned = new FakeAntigravityProcess(args);
@@ -93,7 +97,7 @@ suite('Antigravity client lifecycle and turn execution', () => {
     });
   });
 
-  test('handles process crash during turn with process_failed', async t => {
+  test('handles process crash during turn with process_failed', async (t) => {
     let spawned: FakeAntigravityProcess | undefined;
     t.mock.method(childProcess, 'spawn', (_cmd: string, args: string[]) => {
       spawned = new FakeAntigravityProcess(args);
@@ -116,7 +120,7 @@ suite('Antigravity client lifecycle and turn execution', () => {
     assert.equal(client.getStatus().processRunning, false);
   });
 
-  test('rejects turn if response is empty', async t => {
+  test('rejects turn if response is empty', async (t) => {
     let spawned: FakeAntigravityProcess | undefined;
     t.mock.method(childProcess, 'spawn', (_cmd: string, args: string[]) => {
       spawned = new FakeAntigravityProcess(args);
@@ -130,11 +134,21 @@ suite('Antigravity client lifecycle and turn execution', () => {
     const turnPromise = client.runTurn(convId, 'Do empty');
 
     await flush();
+    spawned?.sendTool('write_to_file', { TargetFile: '/workspace/test.ts' });
+    spawned?.stderr.write('Warning: model produced no tokens\n');
+    await flush();
     spawned?.complete('   '); // Whitespace only
 
-    await assert.rejects(turnPromise, {
-      name: 'AntigravityError',
-      code: 'empty_response',
+    await assert.rejects(turnPromise, (err: unknown) => {
+      const error = err as AntigravityError;
+      assert.equal(error.name, 'AntigravityError');
+      assert.equal(error.code, 'empty_response');
+      assert.ok(error.message.includes('Antigravity a terminé sans réponse textuelle finale.'));
+      assert.ok(error.message.includes('/workspace/test.ts'));
+      assert.ok(error.message.includes('write_to_file'));
+      assert.ok(error.message.includes('Warning: model produced no tokens'));
+      assert.ok(error.message.includes('popin'));
+      return true;
     });
   });
 });

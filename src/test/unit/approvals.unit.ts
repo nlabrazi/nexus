@@ -1,7 +1,12 @@
 import * as assert from 'node:assert/strict';
 import { suite, test } from 'node:test';
 import { CodexApprovals } from '../../codex/approvals';
-import { ApprovalDecision, CodexApprovalRequest, RpcMessage, RpcServerRequest } from '../../codex/types';
+import {
+  ApprovalDecision,
+  CodexApprovalRequest,
+  RpcMessage,
+  RpcServerRequest,
+} from '../../codex/types';
 import { TelegramApprovals } from '../../telegram/approvals';
 import { TelegramCallbackQuery } from '../../telegram/types';
 import { deferred, FakeTelegram, flush } from './helpers';
@@ -9,17 +14,28 @@ import { deferred, FakeTelegram, flush } from './helpers';
 const serverRequest = (id: number | string = 1): RpcServerRequest => ({
   id,
   method: 'item/commandExecution/requestApproval',
-  params: { threadId: 'thread', turnId: 'turn', itemId: 'item', command: 'npm test', cwd: '/project' },
+  params: {
+    threadId: 'thread',
+    turnId: 'turn',
+    itemId: 'item',
+    command: 'npm test',
+    cwd: '/project',
+  },
 });
 
 const approvalRequest = (): CodexApprovalRequest => ({
-  kind: 'command', threadId: 'thread', turnId: 'turn', itemId: 'item',
-  details: 'Commande : npm test\nWorkspace : /project', expiresAt: Date.now() + 60_000,
+  kind: 'command',
+  threadId: 'thread',
+  turnId: 'turn',
+  itemId: 'item',
+  details: 'Commande : npm test\nWorkspace : /project',
+  expiresAt: Date.now() + 60_000,
 });
 
 function callback(client: FakeTelegram, index = 0, action = 0): TelegramCallbackQuery {
   return {
-    id: 'callback', from: { id: 10 },
+    id: 'callback',
+    from: { id: 10 },
     data: client.approvals[index].keyboard.inline_keyboard[0][action].callback_data,
     message: { message_id: client.approvals[index].messageId, chat: { id: 20, type: 'private' } },
   };
@@ -30,9 +46,13 @@ suite('Codex approval protocol', () => {
     const replies: RpcMessage[] = [];
     const decision = deferred<ApprovalDecision>();
     let calls = 0;
-    const approvals = new CodexApprovals(reply => replies.push(reply), async () => {
-      calls++; return decision.promise;
-    });
+    const approvals = new CodexApprovals(
+      (reply) => replies.push(reply),
+      async () => {
+        calls++;
+        return decision.promise;
+      }
+    );
     approvals.beginTurn('thread');
     approvals.setTurnId('turn');
     approvals.handleRequest(serverRequest('rpc-42'));
@@ -46,10 +66,13 @@ suite('Codex approval protocol', () => {
 
   test('declines without a handler, outside the active turn, or on invalid params', () => {
     const replies: RpcMessage[] = [];
-    const approvals = new CodexApprovals(reply => replies.push(reply));
+    const approvals = new CodexApprovals((reply) => replies.push(reply));
     approvals.beginTurn('thread');
     approvals.handleRequest(serverRequest());
-    const guarded = new CodexApprovals(reply => replies.push(reply), async () => 'accept');
+    const guarded = new CodexApprovals(
+      (reply) => replies.push(reply),
+      async () => 'accept'
+    );
     guarded.handleRequest(serverRequest(2));
     guarded.beginTurn('other-thread');
     guarded.handleRequest(serverRequest(3));
@@ -58,12 +81,14 @@ suite('Codex approval protocol', () => {
     guarded.handleRequest(serverRequest(4));
     guarded.handleRequest({ ...serverRequest(5), params: null });
     assert.equal(replies.length, 5);
-    assert.ok(replies.every(reply => (reply.result as { decision: string }).decision === 'decline'));
+    assert.ok(
+      replies.every((reply) => (reply.result as { decision: string }).decision === 'decline')
+    );
   });
 
   test('refuses turn/session permissions and returns an RPC error for unsupported methods', () => {
     const replies: RpcMessage[] = [];
-    const approvals = new CodexApprovals(reply => replies.push(reply));
+    const approvals = new CodexApprovals((reply) => replies.push(reply));
     approvals.handleRequest({ id: 1, method: 'item/permissions/requestApproval' });
     approvals.handleRequest({ id: 2, method: 'unknown/request' });
     assert.deepEqual(replies[0].result, { permissions: {}, scope: 'turn' });
@@ -72,28 +97,44 @@ suite('Codex approval protocol', () => {
 
   test('rejects accept when availableDecisions excludes it', () => {
     const replies: RpcMessage[] = [];
-    const approvals = new CodexApprovals(reply => replies.push(reply), async () => 'accept');
+    const approvals = new CodexApprovals(
+      (reply) => replies.push(reply),
+      async () => 'accept'
+    );
     approvals.beginTurn('thread');
-    approvals.handleRequest({ ...serverRequest(), params: {
-      ...serverRequest().params as object, availableDecisions: ['cancel', 'acceptForSession'],
-    } });
+    approvals.handleRequest({
+      ...serverRequest(),
+      params: {
+        ...(serverRequest().params as object),
+        availableDecisions: ['cancel', 'acceptForSession'],
+      },
+    });
     assert.deepEqual(replies[0].result, { decision: 'decline' });
   });
 
   test('refuses requests without a reviewable action', () => {
     const replies: RpcMessage[] = [];
-    const approvals = new CodexApprovals(reply => replies.push(reply), async () => 'accept');
+    const approvals = new CodexApprovals(
+      (reply) => replies.push(reply),
+      async () => 'accept'
+    );
     approvals.beginTurn('thread');
     approvals.setTurnId('turn');
     const params = { threadId: 'thread', turnId: 'turn', itemId: 'item' };
     approvals.handleRequest({ ...serverRequest(), params });
     approvals.handleRequest({ id: 2, method: 'item/fileChange/requestApproval', params });
-    assert.deepEqual(replies.map(reply => reply.result), [{ decision: 'decline' }, { decision: 'decline' }]);
+    assert.deepEqual(
+      replies.map((reply) => reply.result),
+      [{ decision: 'decline' }, { decision: 'decline' }]
+    );
   });
 
   test('an early approval cannot authorize a turn whose ID is still unknown', async () => {
     const replies: RpcMessage[] = [];
-    const approvals = new CodexApprovals(reply => replies.push(reply), async () => 'accept');
+    const approvals = new CodexApprovals(
+      (reply) => replies.push(reply),
+      async () => 'accept'
+    );
     approvals.beginTurn('thread');
     approvals.handleRequest(serverRequest());
     await flush();
@@ -102,47 +143,70 @@ suite('Codex approval protocol', () => {
 
   test('managed network approvals display the destination without requiring a command', async () => {
     const replies: RpcMessage[] = [];
-    const approvals = new CodexApprovals(reply => replies.push(reply), async request => {
-      assert.match(request.details, /example.com/);
-      return 'accept';
-    });
+    const approvals = new CodexApprovals(
+      (reply) => replies.push(reply),
+      async (request) => {
+        assert.match(request.details, /example.com/);
+        return 'accept';
+      }
+    );
     approvals.beginTurn('thread');
     approvals.setTurnId('turn');
-    approvals.handleRequest({ ...serverRequest(), params: {
-      threadId: 'thread', turnId: 'turn', itemId: 'item',
-      networkApprovalContext: { host: 'example.com', protocol: 'https' },
-    } });
+    approvals.handleRequest({
+      ...serverRequest(),
+      params: {
+        threadId: 'thread',
+        turnId: 'turn',
+        itemId: 'item',
+        networkApprovalContext: { host: 'example.com', protocol: 'https' },
+      },
+    });
     await flush();
     assert.deepEqual(replies[0].result, { decision: 'accept' });
   });
 
   test('shows file changes from item/started before requesting approval', async () => {
     const replies: RpcMessage[] = [];
-    const approvals = new CodexApprovals(reply => replies.push(reply), async request => {
-      assert.equal(request.kind, 'fileChange');
-      assert.match(request.details, /example.ts/);
-      assert.match(request.details, /diff/);
-      return 'accept';
-    });
+    const approvals = new CodexApprovals(
+      (reply) => replies.push(reply),
+      async (request) => {
+        assert.equal(request.kind, 'fileChange');
+        assert.match(request.details, /example.ts/);
+        assert.match(request.details, /diff/);
+        return 'accept';
+      }
+    );
     approvals.beginTurn('thread');
-    approvals.handleNotification({ method: 'item/started', params: {
-      threadId: 'thread', turnId: 'turn',
-      item: { id: 'item', type: 'fileChange', changes: [{ path: '/project/example.ts', diff: '+hello' }] },
-    } });
+    approvals.handleNotification({
+      method: 'item/started',
+      params: {
+        threadId: 'thread',
+        turnId: 'turn',
+        item: {
+          id: 'item',
+          type: 'fileChange',
+          changes: [{ path: '/project/example.ts', diff: '+hello' }],
+        },
+      },
+    });
     approvals.setTurnId('turn');
     approvals.handleRequest({ ...serverRequest(), method: 'item/fileChange/requestApproval' });
     await flush();
     assert.deepEqual(replies[0].result, { decision: 'accept' });
   });
 
-  test('expires after 60 seconds and ignores late acceptance', async t => {
+  test('expires after 60 seconds and ignores late acceptance', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
     const replies: RpcMessage[] = [];
     const decision = deferred<ApprovalDecision>();
     let signal!: AbortSignal;
-    const approvals = new CodexApprovals(reply => replies.push(reply), async (_request, value) => {
-      signal = value; return decision.promise;
-    });
+    const approvals = new CodexApprovals(
+      (reply) => replies.push(reply),
+      async (_request, value) => {
+        signal = value;
+        return decision.promise;
+      }
+    );
     approvals.beginTurn('thread');
     approvals.handleRequest(serverRequest());
     await flush();
@@ -156,7 +220,12 @@ suite('Codex approval protocol', () => {
 
   test('handler exceptions fail closed', async () => {
     const replies: RpcMessage[] = [];
-    const approvals = new CodexApprovals(reply => replies.push(reply), async () => { throw new Error('Offline'); });
+    const approvals = new CodexApprovals(
+      (reply) => replies.push(reply),
+      async () => {
+        throw new Error('Offline');
+      }
+    );
     approvals.beginTurn('thread');
     approvals.handleRequest(serverRequest());
     await flush();
@@ -168,14 +237,21 @@ suite('Codex approval protocol', () => {
       const replies: RpcMessage[] = [];
       const decision = deferred<ApprovalDecision>();
       let signal!: AbortSignal;
-      const approvals = new CodexApprovals(reply => replies.push(reply), async (_request, value) => {
-        signal = value; return decision.promise;
-      });
+      const approvals = new CodexApprovals(
+        (reply) => replies.push(reply),
+        async (_request, value) => {
+          signal = value;
+          return decision.promise;
+        }
+      );
       approvals.beginTurn('thread');
       approvals.handleRequest(serverRequest());
       await flush();
       if (reason === 'resolved') {
-        approvals.handleNotification({ method: 'serverRequest/resolved', params: { threadId: 'thread', requestId: 1 } });
+        approvals.handleNotification({
+          method: 'serverRequest/resolved',
+          params: { threadId: 'thread', requestId: 1 },
+        });
       } else {
         approvals.endTurn(reason === 'endTurn');
       }
@@ -183,7 +259,9 @@ suite('Codex approval protocol', () => {
       decision.resolve('accept');
       await flush();
       assert.equal(replies.length, reason === 'endTurn' ? 1 : 0);
-      if (reason === 'endTurn') { assert.deepEqual(replies[0].result, { decision: 'decline' }); }
+      if (reason === 'endTurn') {
+        assert.deepEqual(replies[0].result, { decision: 'decline' });
+      }
     });
   }
 });
@@ -195,7 +273,10 @@ suite('Telegram approval controls', () => {
       const approvals = new TelegramApprovals(client, () => ({ userId: 10, chatId: 20 }));
       const result = approvals.request(approvalRequest(), new AbortController().signal);
       await flush();
-      assert.deepEqual(client.approvals[0].keyboard.inline_keyboard[0].map(button => button.text), ['Autoriser une fois', 'Refuser']);
+      assert.deepEqual(
+        client.approvals[0].keyboard.inline_keyboard[0].map((button) => button.text),
+        ['Autoriser une fois', 'Refuser']
+      );
       assert.ok(Buffer.byteLength(callback(client).data!) <= 64);
       await Promise.all([
         approvals.handleCallback(callback(client, 0, action)),
@@ -212,7 +293,9 @@ suite('Telegram approval controls', () => {
     const approvals = new TelegramApprovals(client, () => ({ userId: 10, chatId: 20 }));
     const result = approvals.request(approvalRequest(), new AbortController().signal);
     let settled = false;
-    void result.then(() => { settled = true; });
+    void result.then(() => {
+      settled = true;
+    });
     await flush();
     const valid = callback(client);
     const invalid = [
@@ -223,7 +306,9 @@ suite('Telegram approval controls', () => {
       { ...valid, message: undefined },
       { ...valid, data: 'approval:fake:accept' },
     ];
-    for (const query of invalid) { await approvals.handleCallback(query); }
+    for (const query of invalid) {
+      await approvals.handleCallback(query);
+    }
     assert.equal(settled, false);
     await approvals.handleCallback(valid);
     assert.equal(await result, 'accept');
@@ -276,30 +361,51 @@ suite('Telegram approval controls', () => {
     assert.equal(await offline.request(approvalRequest(), new AbortController().signal), 'decline');
     const approvals = new TelegramApprovals(client, () => ({ userId: 10, chatId: 20 }));
     assert.equal(await approvals.request(approvalRequest(), AbortSignal.abort()), 'decline');
-    assert.equal(await approvals.request({ ...approvalRequest(), expiresAt: Date.now() }, new AbortController().signal), 'decline');
-    assert.equal(await approvals.request({ ...approvalRequest(), details: 'x'.repeat(4001) }, new AbortController().signal), 'decline');
+    assert.equal(
+      await approvals.request(
+        { ...approvalRequest(), expiresAt: Date.now() },
+        new AbortController().signal
+      ),
+      'decline'
+    );
+    assert.equal(
+      await approvals.request(
+        { ...approvalRequest(), details: 'x'.repeat(4001) },
+        new AbortController().signal
+      ),
+      'decline'
+    );
     assert.equal(client.approvals.length, 0);
     client.failSend = true;
-    assert.equal(await approvals.request(approvalRequest(), new AbortController().signal), 'decline');
+    assert.equal(
+      await approvals.request(approvalRequest(), new AbortController().signal),
+      'decline'
+    );
   });
 
-  test('expiration from Codex removes Telegram buttons and declines exactly once', async t => {
+  test('expiration from Codex removes Telegram buttons and declines exactly once', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
     const client = new FakeTelegram();
     const replies: RpcMessage[] = [];
     const telegram = new TelegramApprovals(client, () => ({ userId: 10, chatId: 20 }));
-    const codex = new CodexApprovals(reply => replies.push(reply), (request, signal) => telegram.request(request, signal));
+    const codex = new CodexApprovals(
+      (reply) => replies.push(reply),
+      (request, signal) => telegram.request(request, signal)
+    );
     codex.beginTurn('thread');
     codex.handleRequest(serverRequest());
     await flush();
     t.mock.timers.tick(60_000);
     await telegram.handleCallback(callback(client));
     await flush();
-    assert.deepEqual(replies.map(reply => reply.result), [{ decision: 'decline' }]);
+    assert.deepEqual(
+      replies.map((reply) => reply.result),
+      [{ decision: 'decline' }]
+    );
     assert.match(client.closed[0].text, /expirée/);
   });
 
-  test('checks wall-clock expiry even before the timer callback runs', async t => {
+  test('checks wall-clock expiry even before the timer callback runs', async (t) => {
     t.mock.timers.enable({ apis: ['Date'], now: 1000 });
     const client = new FakeTelegram();
     const telegram = new TelegramApprovals(client, () => ({ userId: 10, chatId: 20 }));

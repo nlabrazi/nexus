@@ -25,9 +25,13 @@ export function isTokenUsage(value: unknown): value is ConversationTokenUsage {
 export function isTokenBreakdown(value: unknown): value is TokenBreakdown {
   return (
     record(value) &&
-    ['totalTokens', 'inputTokens', 'cachedInputTokens', 'outputTokens', 'reasoningOutputTokens'].every(
-      key => count(value[key])
-    ) &&
+    [
+      'totalTokens',
+      'inputTokens',
+      'cachedInputTokens',
+      'outputTokens',
+      'reasoningOutputTokens',
+    ].every((key) => count(value[key])) &&
     (value.cacheWriteInputTokens === undefined || count(value.cacheWriteInputTokens))
   );
 }
@@ -36,21 +40,21 @@ export function isModel(value: unknown): value is AntigravityModel {
   return (
     record(value) &&
     ['id', 'model', 'displayName', 'defaultReasoningEffort'].every(
-      key => typeof value[key] === 'string' && (value[key] as string).trim()
+      (key) => typeof value[key] === 'string' && (value[key] as string).trim()
     ) &&
     typeof value.description === 'string' &&
     typeof value.isDefault === 'boolean' &&
     Array.isArray(value.supportedReasoningEfforts) &&
     value.supportedReasoningEfforts.length > 0 &&
     value.supportedReasoningEfforts.every(
-      option =>
+      (option) =>
         record(option) &&
         typeof option.reasoningEffort === 'string' &&
         !!option.reasoningEffort.trim() &&
         typeof option.description === 'string'
     ) &&
     value.supportedReasoningEfforts.some(
-      option => option.reasoningEffort === value.defaultReasoningEffort
+      (option) => option.reasoningEffort === value.defaultReasoningEffort
     )
   );
 }

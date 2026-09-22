@@ -1,6 +1,6 @@
-import { ChildProcessWithoutNullStreams, execFile, spawn } from 'child_process';
+import { ChildProcessWithoutNullStreams, execFile, spawn } from 'node:child_process';
 import { workspaceEnvironment } from '../workspace/environment';
-import { AntigravityError, processError, turnTimeoutError } from './errors';
+import { AntigravityError, emptyResponseError, processError, turnTimeoutError } from './errors';
 import {
   convertRawUsage,
   isInitEvent,
@@ -9,6 +9,7 @@ import {
   parseModelsOutput,
 } from './telemetry';
 import {
+  AntigravityApprovalHandler,
   AntigravityClientStatus,
   AntigravityModel,
   ConversationTelemetry,
@@ -16,7 +17,9 @@ import {
   ModelSelection,
   StreamOutputEvent,
   UserStreamInput,
+  TurnTimeoutHandler,
 } from './types';
+import { AntigravityApprovals, isGuardRailTool } from './approvals';
 
 export interface AntigravityClientOptions {
   binaryPath?: string;
@@ -25,6 +28,9 @@ export interface AntigravityClientOptions {
   dangerouslySkipPermissions?: boolean;
   model?: string;
   effort?: string;
+  approvalHandler?: AntigravityApprovalHandler;
+  turnTimeoutHandler?: TurnTimeoutHandler;
+  turnTimeoutMs?: number;
 }
 
 export class AntigravityClient {
@@ -37,9 +43,25 @@ export class AntigravityClient {
   private readonly telemetry = new Map<string, ConversationTelemetry>();
   private conversationId?: string;
   private readonly binaryPath: string;
+  private readonly approvals: AntigravityApprovals;
+  private readonly recentStderr: string[] = [];
 
-  constructor(private readonly options: AntigravityClientOptions = {}) {
+  private pushStderr(line: string): void {
+    this.recentStderr.push(line);
+    if (this.recentStderr.length > 50) {
+      this.recentStderr.shift();
+    }
+  }
+
+  constructor(
+    private readonly options: AntigravityClientOptions = {},
+    approvalHandler?: AntigravityApprovalHandler
+  ) {
     this.binaryPath = options.executablePath ?? options.binaryPath ?? 'agy';
+    const handler = this.options.dangerouslySkipPermissions
+      ? undefined
+      : (approvalHandler ?? options.approvalHandler);
+    this.approvals = new AntigravityApprovals(handler);
   }
 
   async checkInstalled(): Promise<string> {
@@ -58,6 +80,7 @@ export class AntigravityClient {
     return {
       processRunning: this.process !== undefined,
       turn: this.currentTurn ? { ...this.currentTurn } : undefined,
+      pendingApprovals: this.approvals.getPendingCount(),
     };
   }
 
@@ -177,9 +200,10 @@ export class AntigravityClient {
     if (this.options.sandbox !== false) {
       args.push('--sandbox');
     }
-    if (this.options.dangerouslySkipPermissions !== false) {
-      args.push('--dangerously-skip-permissions');
-    }
+    // In headless stream-json mode, agy cannot prompt on an interactive TTY and
+    // will auto-deny any tools requiring permissions (such as unsandboxed paths).
+    // Nexus acts as the supervisor that gates actions via Telegram approvals.
+    args.push('--dangerously-skip-permissions');
 
     let child: ChildProcessWithoutNullStreams;
     try {
@@ -198,22 +222,35 @@ export class AntigravityClient {
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
 
-    child.on('error', error => this.disconnect(child, processError(error)));
+    child.on('error', (error) => this.disconnect(child, processError(error)));
     child.on('exit', (code, signal) => {
-      this.disconnect(
-        child,
-        processError(new Error(`Antigravity exited: code=${code}, signal=${signal}`)),
-        false
-      );
+      const recent = this.recentStderr.slice(-5);
+      const extra = recent.length > 0 ? `\nLogs stderr :\n${recent.join('\n')}` : '';
+      const err = this.currentTurn?.interrupting
+        ? turnTimeoutError(false)
+        : processError(new Error(`Antigravity exited: code=${code}, signal=${signal}${extra}`));
+      this.disconnect(child, err, false);
     });
     for (const stream of [child.stdin, child.stdout, child.stderr]) {
-      stream.on('error', error => this.disconnect(child, processError(error)));
+      stream.on('error', (error) => this.disconnect(child, processError(error)));
     }
     child.stdout.on('end', () => {
       this.disconnect(child, processError(new Error('Antigravity stdout closed')));
     });
 
-    child.stdout.on('data', chunk => this.handleStdout(chunk));
+    child.stderr.on('data', (chunk: Buffer | string) => {
+      const text = chunk.toString();
+      const lines = text
+        .split('\n')
+        .map((l: string) => l.trim())
+        .filter((l: string) => Boolean(l));
+      for (const line of lines) {
+        console.warn(`[Antigravity stderr] ${line}`);
+        this.pushStderr(line);
+      }
+    });
+
+    child.stdout.on('data', (chunk) => this.handleStdout(chunk));
 
     return await new Promise<string>((resolve, reject) => {
       let settled = false;
@@ -274,22 +311,35 @@ export class AntigravityClient {
     const child = this.process;
     const currentTurn: NonNullable<AntigravityClientStatus['turn']> = { startedAt: Date.now() };
     this.currentTurn = currentTurn;
+    this.approvals.beginTurn(conversationId);
 
+    const stderrStartIdx = this.recentStderr.length;
+    const toolsCalled: Array<{ name: string; state: string; error?: string }> = [];
     const changedFiles = new Set<string>();
     let collectedResponse = '';
+
+    console.log(
+      `[Antigravity] Starting turn in conversation ${conversationId}: "${trimmedPrompt.slice(0, 100)}${trimmedPrompt.length > 100 ? '...' : ''}"`
+    );
 
     return await new Promise<string>((resolve, reject) => {
       let settled = false;
       let timeout: ReturnType<typeof setTimeout>;
       let interruptTimeout: ReturnType<typeof setTimeout> | undefined;
+      let timeoutPromptController: AbortController | undefined;
+      const turnTimeoutMs = this.options.turnTimeoutMs ?? 120_000;
+      let elapsedSeconds = Math.round(turnTimeoutMs / 1000);
 
       const cleanup = () => {
+        timeoutPromptController?.abort();
+        this.eventListeners.delete(onNotification);
         if (this.currentTurn === currentTurn) {
           this.currentTurn = undefined;
         }
         if (this.turnFailure === fail) {
           this.turnFailure = undefined;
         }
+        this.approvals.endTurn();
         clearTimeout(timeout);
         clearTimeout(interruptTimeout);
       };
@@ -310,6 +360,25 @@ export class AntigravityClient {
           return;
         }
 
+        const rawEvent = event as unknown as Record<string, unknown>;
+        if (rawEvent.approval_request || rawEvent.permission_request) {
+          void this.approvals.handleApprovalEvent(rawEvent).then((decision) => {
+            if (decision === 'decline' && !settled) {
+              fail(
+                new AntigravityError(
+                  'approval_declined',
+                  'L’approbation a été refusée par l’utilisateur.'
+                )
+              );
+              try {
+                child.kill('SIGINT');
+              } catch {
+                /* ignore */
+              }
+            }
+          });
+        }
+
         if (isStepUpdateEvent(event)) {
           const step = event.step_update;
           if (step.conversation_id !== conversationId) {
@@ -320,13 +389,65 @@ export class AntigravityClient {
             collectedResponse += step.text_delta;
           }
 
-          if (step.step_type === 'tool' && step.tool_info?.parameters) {
-            const params = step.tool_info.parameters;
-            for (const key of ['TargetFile', 'file_path', 'path']) {
-              const val = params[key];
-              if (typeof val === 'string' && val.trim()) {
-                changedFiles.add(val.trim());
+          if (step.step_type === 'tool') {
+            const toolName = step.tool_name ?? 'unknown';
+            const toolState = step.state ?? 'UNKNOWN';
+            const toolError = step.tool_info?.error
+              ? `${step.tool_info.error.type ? `[${step.tool_info.error.type}] ` : ''}${step.tool_info.error.message}`
+              : undefined;
+
+            console.log(
+              `[Antigravity] Tool ${toolName} [${toolState}]${toolError ? ` Error: ${toolError}` : ''}`
+            );
+
+            let existingIdx = -1;
+            for (let i = toolsCalled.length - 1; i >= 0; i--) {
+              if (toolsCalled[i].name === toolName) {
+                existingIdx = i;
+                break;
               }
+            }
+
+            if (existingIdx >= 0 && toolsCalled[existingIdx].state !== 'COMPLETED') {
+              toolsCalled[existingIdx] = { name: toolName, state: toolState, error: toolError };
+            } else {
+              toolsCalled.push({ name: toolName, state: toolState, error: toolError });
+            }
+
+            if (toolError) {
+              console.warn(`[Antigravity] Tool error on ${toolName}: ${toolError}`);
+            }
+
+            if (step.tool_info?.parameters) {
+              const params = step.tool_info.parameters;
+              for (const key of ['TargetFile', 'file_path', 'path']) {
+                const val = params[key];
+                if (typeof val === 'string' && val.trim()) {
+                  changedFiles.add(val.trim());
+                }
+              }
+            }
+
+            if (step.state === 'ACTIVE' && isGuardRailTool(step.tool_name ?? '')) {
+              void this.approvals
+                .requestToolApproval(
+                  conversationId,
+                  step.step_index,
+                  step.tool_name!,
+                  step.tool_info?.parameters
+                )
+                .then((decision) => {
+                  if (decision === 'decline' && !settled) {
+                    fail(
+                      new AntigravityError('approval_declined', 'Action refusée par l’utilisateur.')
+                    );
+                    try {
+                      child.kill('SIGINT');
+                    } catch {
+                      /* ignore */
+                    }
+                  }
+                });
             }
           }
 
@@ -344,10 +465,21 @@ export class AntigravityClient {
           }
 
           if (res.status !== 'SUCCESS') {
+            const turnStderr = this.recentStderr.slice(stderrStartIdx);
+            console.error(
+              `[Antigravity] Turn ended with non-success status: ${res.status}, error: ${res.error}`
+            );
             fail(
               new AntigravityError(
                 'turn_failed',
-                `Le turn Antigravity a échoué : ${res.error ?? 'erreur inconnue'}.`
+                `Le turn Antigravity a échoué : ${res.error ?? 'erreur inconnue'}.`,
+                undefined,
+                {
+                  toolsCalled,
+                  changedFiles: [...changedFiles],
+                  recentStderr: turnStderr,
+                  pendingApprovals: this.approvals.getPendingCount(),
+                }
               )
             );
             return;
@@ -355,29 +487,62 @@ export class AntigravityClient {
 
           const responseText = (res.response || collectedResponse).trim();
           if (!responseText) {
+            const turnStderr = this.recentStderr.slice(stderrStartIdx);
+            console.warn('[Antigravity] Turn completed with empty response.', {
+              toolsCalled,
+              changedFiles: [...changedFiles],
+              recentStderr: turnStderr,
+              pendingApprovals: this.approvals.getPendingCount(),
+            });
             fail(
-              new AntigravityError(
-                'empty_response',
-                'Antigravity a terminé sans réponse textuelle finale.'
+              emptyResponseError(
+                {
+                  toolsCalled,
+                  changedFiles: [...changedFiles],
+                  recentStderr: turnStderr,
+                  pendingApprovals: this.approvals.getPendingCount(),
+                },
+                { dangerouslySkipPermissions: this.options.dangerouslySkipPermissions }
               )
             );
             return;
           }
 
-          if (onFilesChanged && changedFiles.size > 0) {
-            onFilesChanged([...changedFiles]);
-          }
+          const completeTurn = async () => {
+            if (this.approvals.getPendingCount() > 0) {
+              const decisions = await this.approvals.waitForAllPending();
+              if (settled) {
+                return;
+              }
+              if (decisions.some((d) => d === 'decline')) {
+                fail(
+                  new AntigravityError('approval_declined', 'Action refusée par l’utilisateur.')
+                );
+                try {
+                  child.kill('SIGINT');
+                } catch {
+                  /* ignore */
+                }
+                return;
+              }
+            }
 
-          settled = true;
-          cleanup();
-          resolve(responseText);
+            if (onFilesChanged && changedFiles.size > 0) {
+              onFilesChanged([...changedFiles]);
+            }
+
+            settled = true;
+            cleanup();
+            resolve(responseText);
+          };
+
+          void completeTurn();
         }
       };
 
       this.eventListeners.add(onNotification);
 
-      // Turn timeout (120 s)
-      timeout = setTimeout(() => {
+      const triggerInterrupt = () => {
         currentTurn.interrupting = true;
         if (settled) {
           return;
@@ -391,10 +556,46 @@ export class AntigravityClient {
         }
 
         interruptTimeout = setTimeout(() => {
-          this.disconnect(child, turnTimeoutError(false));
-          fail(turnTimeoutError(false));
+          this.disconnect(child, turnTimeoutError(false, elapsedSeconds));
+          fail(turnTimeoutError(false, elapsedSeconds));
         }, 5000);
-      }, 120_000);
+      };
+
+      const scheduleTimeout = () => {
+        timeout = setTimeout(async () => {
+          if (settled) {
+            return;
+          }
+          if (this.options.turnTimeoutHandler) {
+            const controller = new AbortController();
+            timeoutPromptController = controller;
+            let shouldContinue = false;
+            try {
+              shouldContinue = await this.options.turnTimeoutHandler(
+                { agentName: 'Antigravity', elapsedSeconds },
+                controller.signal
+              );
+            } catch {
+              shouldContinue = false;
+            } finally {
+              if (timeoutPromptController === controller) {
+                timeoutPromptController = undefined;
+              }
+            }
+            if (settled) {
+              return;
+            }
+            if (shouldContinue) {
+              elapsedSeconds += Math.round(turnTimeoutMs / 1000);
+              scheduleTimeout();
+              return;
+            }
+          }
+          triggerInterrupt();
+        }, turnTimeoutMs);
+      };
+
+      scheduleTimeout();
 
       // Write prompt to stdin
       const inputMessage: UserStreamInput = {
@@ -403,7 +604,7 @@ export class AntigravityClient {
       };
 
       try {
-        child.stdin.write(`${JSON.stringify(inputMessage)}\n`, writeError => {
+        child.stdin.write(`${JSON.stringify(inputMessage)}\n`, (writeError) => {
           if (writeError) {
             this.disconnect(child, processError(writeError));
             fail(processError(writeError));
@@ -433,12 +634,13 @@ export class AntigravityClient {
 
     const cumulativeTotal = existing
       ? {
-        totalTokens: existing.total.totalTokens + breakdown.totalTokens,
-        inputTokens: existing.total.inputTokens + breakdown.inputTokens,
-        cachedInputTokens: existing.total.cachedInputTokens + breakdown.cachedInputTokens,
-        outputTokens: existing.total.outputTokens + breakdown.outputTokens,
-        reasoningOutputTokens: existing.total.reasoningOutputTokens + breakdown.reasoningOutputTokens,
-      }
+          totalTokens: existing.total.totalTokens + breakdown.totalTokens,
+          inputTokens: existing.total.inputTokens + breakdown.inputTokens,
+          cachedInputTokens: existing.total.cachedInputTokens + breakdown.cachedInputTokens,
+          outputTokens: existing.total.outputTokens + breakdown.outputTokens,
+          reasoningOutputTokens:
+            existing.total.reasoningOutputTokens + breakdown.reasoningOutputTokens,
+        }
       : breakdown;
 
     const usage: ConversationTokenUsage = {
@@ -469,14 +671,20 @@ export class AntigravityClient {
           listener(parsed);
         }
       } catch {
-        // Ignore unparseable non-JSON lines
+        // Non-JSON output from child process (e.g. startup banner, progress info, debug logs)
+        console.log(`[Antigravity stdout] ${line}`);
+        this.pushStderr(`[stdout] ${line}`);
       }
     }
   }
 
   stop(): void {
+    this.approvals.cancelAll();
     if (this.process) {
-      this.disconnect(this.process, new AntigravityError('stopped', 'Le processus Antigravity a été arrêté.'));
+      this.disconnect(
+        this.process,
+        new AntigravityError('stopped', 'Le processus Antigravity a été arrêté.')
+      );
     }
   }
 
@@ -484,6 +692,7 @@ export class AntigravityClient {
     if (this.process !== child) {
       return;
     }
+    this.approvals.cancelAll();
     this.process = undefined;
     this.starting = undefined;
     this.buffer = '';

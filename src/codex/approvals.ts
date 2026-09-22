@@ -11,7 +11,7 @@ export const APPROVAL_TIMEOUT_MS = 60_000;
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : undefined;
 }
 
@@ -31,7 +31,7 @@ export class CodexApprovals {
     private readonly reply: (message: RpcMessage) => void,
     private readonly handler?: CodexApprovalHandler,
     private readonly timeoutMs = APPROVAL_TIMEOUT_MS
-  ) { }
+  ) {}
 
   getPendingCount(): number {
     return this.pending.size;
@@ -101,11 +101,12 @@ export class CodexApprovals {
       this.send({ id: request.id, result: { permissions: {}, scope: 'turn' } });
       return;
     }
-    const kind = request.method === 'item/commandExecution/requestApproval'
-      ? 'command'
-      : request.method === 'item/fileChange/requestApproval'
-        ? 'fileChange'
-        : undefined;
+    const kind =
+      request.method === 'item/commandExecution/requestApproval'
+        ? 'command'
+        : request.method === 'item/fileChange/requestApproval'
+          ? 'fileChange'
+          : undefined;
     if (!kind) {
       this.send({
         id: request.id,
@@ -119,15 +120,20 @@ export class CodexApprovals {
     const turnId = params?.turnId;
     const itemId = params?.itemId;
     if (
-      !this.handler || !params ||
-      typeof threadId !== 'string' || typeof turnId !== 'string' ||
-      typeof itemId !== 'string' || !threadId || !turnId || !itemId ||
+      !this.handler ||
+      !params ||
+      typeof threadId !== 'string' ||
+      typeof turnId !== 'string' ||
+      typeof itemId !== 'string' ||
+      !threadId ||
+      !turnId ||
+      !itemId ||
       threadId !== this.activeTurn?.threadId ||
       (this.activeTurn.turnId !== undefined && turnId !== this.activeTurn.turnId) ||
-      (params.availableDecisions !== undefined && params.availableDecisions !== null && (
-        !Array.isArray(params.availableDecisions) ||
-        !params.availableDecisions.includes('accept')
-      ))
+      (params.availableDecisions !== undefined &&
+        params.availableDecisions !== null &&
+        (!Array.isArray(params.availableDecisions) ||
+          !params.availableDecisions.includes('accept')))
     ) {
       this.send({ id: request.id, result: { decision: 'decline' } });
       return;
@@ -136,19 +142,24 @@ export class CodexApprovals {
     const item = this.items.get(JSON.stringify([turnId, itemId]));
     const network = record(params.networkApprovalContext);
     const command = params.command ?? item?.command;
-    const hasAction = kind === 'command'
-      ? (typeof command === 'string' && command.trim().length > 0) ||
-        (typeof network?.host === 'string' && typeof network.protocol === 'string')
-      : item?.type === 'fileChange' && Array.isArray(item.changes) && item.changes.length > 0;
+    const hasAction =
+      kind === 'command'
+        ? (typeof command === 'string' && command.trim().length > 0) ||
+          (typeof network?.host === 'string' && typeof network.protocol === 'string')
+        : item?.type === 'fileChange' && Array.isArray(item.changes) && item.changes.length > 0;
     if (!hasAction) {
       this.send({ id: request.id, result: { decision: 'decline' } });
       return;
     }
     // Keep the entire action visible. Oversized prompts are refused by Telegram.
-    const details = JSON.stringify({
-      ...params,
-      ...(item ? { action: item } : {}),
-    }, null, 2);
+    const details = JSON.stringify(
+      {
+        ...params,
+        ...(item ? { action: item } : {}),
+      },
+      null,
+      2
+    );
     const controller = new AbortController();
     const expiresAt = Date.now() + this.timeoutMs;
     const approval: PendingApproval = {
@@ -164,9 +175,12 @@ export class CodexApprovals {
           this.send({
             id: request.id,
             result: {
-              decision: decision === 'accept' && Date.now() < expiresAt &&
+              decision:
+                decision === 'accept' &&
+                Date.now() < expiresAt &&
                 this.activeTurn?.turnId === turnId
-                ? 'accept' : 'decline',
+                  ? 'accept'
+                  : 'decline',
             },
           });
         }
@@ -176,10 +190,22 @@ export class CodexApprovals {
     const timeout = setTimeout(() => approval.settle('decline'), this.timeoutMs);
     this.pending.set(request.id, approval);
     void Promise.resolve()
-      .then(() => controller.signal.aborted ? 'decline' as const : this.handler!({
-        kind, threadId, turnId, itemId, details, expiresAt,
-      }, controller.signal))
-      .then(decision => approval.settle(decision === 'accept' ? 'accept' : 'decline'))
+      .then(() =>
+        controller.signal.aborted
+          ? ('decline' as const)
+          : this.handler!(
+              {
+                kind,
+                threadId,
+                turnId,
+                itemId,
+                details,
+                expiresAt,
+              },
+              controller.signal
+            )
+      )
+      .then((decision) => approval.settle(decision === 'accept' ? 'accept' : 'decline'))
       .catch(() => approval.settle('decline'));
   }
 

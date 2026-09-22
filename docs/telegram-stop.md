@@ -1,8 +1,11 @@
 # Commande Telegram /stop
 
-`/stop` annule la requête en cours (Codex ou Gemini Antigravity) depuis le compte appairé, dans la
+`/stop` annule la requête en cours (Codex, Gemini Antigravity ou téléchargement vocal) depuis le compte appairé, dans la
 conversation privée appairée. Aucun argument n’est accepté.
 
+- Pendant un téléchargement vocal : Nexus annule la requête HTTP et ignore tout
+  résultat tardif. Si aucun agent n’a été arrêté, il confirme « Téléchargement du
+  message vocal annulé ». Voir [les messages vocaux](telegram-voice.md).
 - Pendant un prompt, une approbation, la validation du workspace ou une création/
   reprise de session : Nexus annule son suivi, ferme la connexion à l'agent actif (Codex ou Antigravity)
   et demande l’arrêt du processus s’il est lancé. Les approbations sont invalidées.

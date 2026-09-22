@@ -55,7 +55,11 @@ suite('Antigravity session persistence', () => {
     memory.set('nexus.antigravity.session', { version: 2, id: 'unknown' });
     assert.equal(persistence.load(), undefined);
 
-    memory.set('nexus.antigravity.session', { version: 1, id: 'valid', workspace: { root: 'relative/path' } });
+    memory.set('nexus.antigravity.session', {
+      version: 1,
+      id: 'valid',
+      workspace: { root: 'relative/path' },
+    });
     assert.equal(persistence.load(), undefined);
   });
 });

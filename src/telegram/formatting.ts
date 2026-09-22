@@ -2,7 +2,10 @@ import { TelegramMessageEntity, TelegramTextMessage } from './types';
 
 const MESSAGE_LIMIT = 4000;
 type Style = Omit<TelegramMessageEntity, 'offset' | 'length'>;
-interface Span { text: string; style?: Style }
+interface Span {
+  text: string;
+  style?: Style;
+}
 
 /** A deliberately small Markdown subset. Unknown syntax stays readable as text. */
 export function formatTelegramResponse(source: string): TelegramTextMessage[] {
@@ -51,12 +54,16 @@ function inlineSpans(text: string, style?: Style, depth = 0): Span[] {
     return [{ text, style }];
   }
   // Code is consumed before its contents can be interpreted as other styles.
-  const pattern = new RegExp([
-    /\\(?<escaped>[\\`*_[\]()#!+>.~-])/.source,
-    /(?<ticks>`+)(?<code>.+?)\k<ticks>(?!`)/.source,
-    /(?<boldMark>\*\*|__)(?=\S)(?<bold>.+?\S|\S)\k<boldMark>/.source,
-    /(?<!!)\[(?<label>[^\]\n]+)\]\((?<destination><[^>\n]+>|[^\s()]+(?:\([^\s()]*\)[^\s()]*)*)(?:\s+"[^"\n]*")?\)/.source,
-  ].join('|'), 'g');
+  const pattern = new RegExp(
+    [
+      /\\(?<escaped>[\\`*_[\]()#!+>.~-])/.source,
+      /(?<ticks>`+)(?<code>.+?)\k<ticks>(?!`)/.source,
+      /(?<boldMark>\*\*|__)(?=\S)(?<bold>.+?\S|\S)\k<boldMark>/.source,
+      /(?<!!)\[(?<label>[^\]\n]+)\]\((?<destination><[^>\n]+>|[^\s()]+(?:\([^\s()]*\)[^\s()]*)*)(?:\s+"[^"\n]*")?\)/
+        .source,
+    ].join('|'),
+    'g'
+  );
   const spans: Span[] = [];
   let offset = 0;
   for (const match of text.matchAll(pattern)) {
@@ -67,19 +74,25 @@ function inlineSpans(text: string, style?: Style, depth = 0): Span[] {
     } else if (groups.code) {
       spans.push({ text: groups.code, style: { type: 'code' } });
     } else if (groups.bold) {
-      const insideWord = groups.boldMark === '__' && (
-        /[\p{L}\p{N}_]/u.test(text[match.index - 1] ?? '') ||
-        /[\p{L}\p{N}_]/u.test(text[match.index + match[0].length] ?? '')
+      const insideWord =
+        groups.boldMark === '__' &&
+        (/[\p{L}\p{N}_]/u.test(text[match.index - 1] ?? '') ||
+          /[\p{L}\p{N}_]/u.test(text[match.index + match[0].length] ?? ''));
+      spans.push(
+        ...(insideWord
+          ? [{ text: match[0], style }]
+          : inlineSpans(groups.bold, { type: 'bold' }, depth + 1))
       );
-      spans.push(...(insideWord ? [{ text: match[0], style }]
-        : inlineSpans(groups.bold, { type: 'bold' }, depth + 1)));
     } else {
       const label = groups.label;
       const destination = groups.destination.replace(/^<|>$/g, '');
       if (isWebUrl(destination)) {
         spans.push(...inlineSpans(label, { type: 'text_link', url: destination }, depth + 1));
-      } else if (!/^[a-z][a-z\d+.-]*:/i.test(destination) || /^[a-z]:[\\/]/i.test(destination) ||
-        /^[^:\s]+\.[^:\s]+:\d+(?::\d+)?$/.test(destination)) {
+      } else if (
+        !/^[a-z][a-z\d+.-]*:/i.test(destination) ||
+        /^[a-z]:[\\/]/i.test(destination) ||
+        /^[^:\s]+\.[^:\s]+:\d+(?::\d+)?$/.test(destination)
+      ) {
         // Local editor links cannot be opened by Telegram; keep the actual path visible.
         if (label !== destination) {
           spans.push(...inlineSpans(label, style, depth + 1), { text: ' — ' });
@@ -93,7 +106,7 @@ function inlineSpans(text: string, style?: Style, depth = 0): Span[] {
   }
   spans.push({ text: text.slice(offset), style });
   // Each span has one style: Telegram forbids nesting code/pre within other entities.
-  return spans.filter(span => span.text.length > 0);
+  return spans.filter((span) => span.text.length > 0);
 }
 
 function isWebUrl(value: string): boolean {
@@ -106,10 +119,13 @@ function isWebUrl(value: string): boolean {
 }
 
 /** Split the displayed text, then rebase styles using Telegram's UTF-16 offsets. */
-export function splitTelegramMessage(text: string, entities: TelegramMessageEntity[] = []): TelegramTextMessage[] {
+export function splitTelegramMessage(
+  text: string,
+  entities: TelegramMessageEntity[] = []
+): TelegramTextMessage[] {
   const messages: TelegramTextMessage[] = [];
   const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text);
-  for (let start = 0; start < text.length;) {
+  for (let start = 0; start < text.length; ) {
     let end = Math.min(start + MESSAGE_LIMIT, text.length);
     if (end < text.length) {
       // Prefer a paragraph, line or word boundary without producing tiny messages.
@@ -130,8 +146,8 @@ export function splitTelegramMessage(text: string, entities: TelegramMessageEnti
     messages.push({
       text: text.slice(start, end),
       entities: entities
-        .filter(entity => entity.offset < end && entity.offset + entity.length > start)
-        .map(entity => ({
+        .filter((entity) => entity.offset < end && entity.offset + entity.length > start)
+        .map((entity) => ({
           ...entity,
           offset: Math.max(start, entity.offset) - start,
           length: Math.min(end, entity.offset + entity.length) - Math.max(start, entity.offset),
