@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { suite, test } from 'node:test';
-import childProcess = require('child_process');
+import childProcess = require('node:child_process');
 import { AntigravityService } from '../../antigravity/service';
 import { WorkspaceAntigravityModelPreferences } from '../../antigravity/model-preferences';
 import { WorkspaceAntigravitySessionPersistence } from '../../antigravity/persistence';
@@ -8,7 +8,7 @@ import { flush } from './helpers';
 import { FakeAntigravityProcess } from './antigravity-process';
 
 suite('Antigravity service lifecycle and session management', () => {
-  test('startSession creates a new session and persists it', async t => {
+  test('startSession creates a new session and persists it', async (t) => {
     let spawned: FakeAntigravityProcess | undefined;
     t.mock.method(childProcess, 'spawn', (_cmd: string, args: string[]) => {
       spawned = new FakeAntigravityProcess(args);
@@ -25,7 +25,7 @@ suite('Antigravity service lifecycle and session management', () => {
     const persistence = new WorkspaceAntigravitySessionPersistence(storage);
 
     const service = new AntigravityService(
-      async root => ({ root, git: { directory: `${root}/.git`, branch: 'main' } }),
+      async (root) => ({ root, git: { directory: `${root}/.git`, branch: 'main' } }),
       persistence
     );
     t.after(() => service.stop());
@@ -41,7 +41,7 @@ suite('Antigravity service lifecycle and session management', () => {
     assert.equal(saved?.workspace.git?.branch, 'main');
   });
 
-  test('newSession forces a new conversation and updates persistence', async t => {
+  test('newSession forces a new conversation and updates persistence', async (t) => {
     let counter = 0;
     t.mock.method(childProcess, 'spawn', (_cmd: string, args: string[]) => {
       counter++;
@@ -59,10 +59,7 @@ suite('Antigravity service lifecycle and session management', () => {
     };
     const persistence = new WorkspaceAntigravitySessionPersistence(storage);
 
-    const service = new AntigravityService(
-      async root => ({ root }),
-      persistence
-    );
+    const service = new AntigravityService(async (root) => ({ root }), persistence);
     t.after(() => service.stop());
 
     const id1 = await service.startSession('/workspace');
@@ -73,7 +70,7 @@ suite('Antigravity service lifecycle and session management', () => {
     assert.equal(persistence.load()?.id, 'conversation-2');
   });
 
-  test('sendPrompt executes a prompt through the active session and updates status', async t => {
+  test('sendPrompt executes a prompt through the active session and updates status', async (t) => {
     let spawned: FakeAntigravityProcess | undefined;
     t.mock.method(childProcess, 'spawn', (_cmd: string, args: string[]) => {
       spawned = new FakeAntigravityProcess(args);
@@ -103,7 +100,7 @@ suite('Antigravity service lifecycle and session management', () => {
     assert.equal(status.tokenUsage?.last.totalTokens, 400);
   });
 
-  test('cancelCurrentWork cancels active prompt execution', async t => {
+  test('cancelCurrentWork cancels active prompt execution', async (t) => {
     let spawned: FakeAntigravityProcess | undefined;
     t.mock.method(childProcess, 'spawn', (_cmd: string, args: string[]) => {
       spawned = new FakeAntigravityProcess(args);
@@ -124,11 +121,23 @@ suite('Antigravity service lifecycle and session management', () => {
     await assert.rejects(promptPromise);
   });
 
-  test('selectModel saves valid model preference from catalog', async t => {
-    t.mock.method(childProcess, 'execFile', (_cmd: string, _args: string[], _opts: unknown, cb: (err: Error | null, stdout: string) => void) => {
-      cb(null, `gemini-3.8-flash-high     Gemini 3.8 Flash (High)
-gemini-3.1-pro-high       Gemini 3.1 Pro (High)`);
-    });
+  test('selectModel saves valid model preference from catalog', async (t) => {
+    t.mock.method(
+      childProcess,
+      'execFile',
+      (
+        _cmd: string,
+        _args: string[],
+        _opts: unknown,
+        cb: (err: Error | null, stdout: string) => void
+      ) => {
+        cb(
+          null,
+          `gemini-3.8-flash-high     Gemini 3.8 Flash (High)
+gemini-3.1-pro-high       Gemini 3.1 Pro (High)`
+        );
+      }
+    );
 
     const memory = new Map<string, unknown>();
     const storage = {

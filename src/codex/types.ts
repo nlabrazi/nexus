@@ -32,8 +32,15 @@ export interface CodexModel {
   supportedReasoningEfforts: { reasoningEffort: string; description: string }[];
 }
 
-export interface ModelSelection { model: string; effort: string }
-export interface ModelMenu { models: CodexModel[]; selected?: ModelSelection; context: string }
+export interface ModelSelection {
+  model: string;
+  effort: string;
+}
+export interface ModelMenu {
+  models: CodexModel[];
+  selected?: ModelSelection;
+  context: string;
+}
 export interface ModelControls {
   list(): Promise<ModelMenu>;
   select(selection: ModelSelection, context: string): Promise<void>;
@@ -52,7 +59,11 @@ export interface ThreadTokenUsage {
   last: TokenBreakdown;
   modelContextWindow: number | null;
 }
-export interface RateLimitWindow { usedPercent: number; windowDurationMins?: number | null; resetsAt?: number | null }
+export interface RateLimitWindow {
+  usedPercent: number;
+  windowDurationMins?: number | null;
+  resetsAt?: number | null;
+}
 export interface RateLimitSnapshot {
   limitId?: string | null;
   limitName?: string | null;
@@ -96,11 +107,7 @@ export interface CodexServiceStatus extends CodexClientStatus, ThreadTelemetry {
   branchChanging?: boolean;
 }
 
-export type CodexTurnStatus =
-  | 'completed'
-  | 'interrupted'
-  | 'failed'
-  | 'inProgress';
+export type CodexTurnStatus = 'completed' | 'interrupted' | 'failed' | 'inProgress';
 
 export interface CodexTurn {
   id: string;

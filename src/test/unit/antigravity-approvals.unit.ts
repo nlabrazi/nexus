@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { suite, test } from 'node:test';
-import childProcess = require('child_process');
+import childProcess = require('node:child_process');
 import { AntigravityApprovals, isGuardRailTool } from '../../antigravity/approvals';
 import { AntigravityClient } from '../../antigravity/client';
 import { AntigravityApprovalRequest, ApprovalDecision } from '../../antigravity/types';
@@ -25,13 +25,17 @@ suite('Antigravity approvals logic', () => {
     const approvals = new AntigravityApprovals();
     approvals.beginTurn('conv-1');
 
-    const decision1 = await approvals.requestToolApproval('conv-1', 1, 'run_command', { CommandLine: 'ls' });
+    const decision1 = await approvals.requestToolApproval('conv-1', 1, 'run_command', {
+      CommandLine: 'ls',
+    });
     assert.equal(decision1, 'accept');
 
     const handled = new AntigravityApprovals(async () => 'decline');
     handled.beginTurn('conv-1');
 
-    const decision2 = await handled.requestToolApproval('conv-1', 1, 'view_file', { AbsolutePath: '/foo' });
+    const decision2 = await handled.requestToolApproval('conv-1', 1, 'view_file', {
+      AbsolutePath: '/foo',
+    });
     assert.equal(decision2, 'accept');
   });
 
@@ -43,7 +47,9 @@ suite('Antigravity approvals logic', () => {
     });
 
     approvals.beginTurn('conv-1');
-    const decision = await approvals.requestToolApproval('conv-1', 2, 'run_command', { CommandLine: 'cat /etc/passwd' });
+    const decision = await approvals.requestToolApproval('conv-1', 2, 'run_command', {
+      CommandLine: 'cat /etc/passwd',
+    });
 
     assert.equal(decision, 'accept');
     assert.equal(requests.length, 1);
@@ -59,22 +65,28 @@ suite('Antigravity approvals logic', () => {
     const approvals = new AntigravityApprovals(async () => 'decline');
     approvals.beginTurn('conv-1');
 
-    const decision = await approvals.requestToolApproval('conv-1', 1, 'write_to_file', { TargetFile: '/tmp/test.txt' });
+    const decision = await approvals.requestToolApproval('conv-1', 1, 'write_to_file', {
+      TargetFile: '/tmp/test.txt',
+    });
     assert.equal(decision, 'decline');
   });
 
   test('auto-declines on timeout and manages pending count', async () => {
     let resolvePending!: (decision: ApprovalDecision) => void;
-    const pending = new Promise<ApprovalDecision>(r => { resolvePending = r; });
+    const pending = new Promise<ApprovalDecision>((r) => {
+      resolvePending = r;
+    });
     const approvals = new AntigravityApprovals(async () => pending, 50);
 
     approvals.beginTurn('conv-1');
-    const decisionPromise = approvals.requestToolApproval('conv-1', 1, 'run_command', { CommandLine: 'sleep 10' });
+    const decisionPromise = approvals.requestToolApproval('conv-1', 1, 'run_command', {
+      CommandLine: 'sleep 10',
+    });
 
     assert.equal(approvals.getPendingCount(), 1);
 
     // Wait for timeout (50ms)
-    await new Promise(resolve => setTimeout(resolve, 80));
+    await new Promise((resolve) => setTimeout(resolve, 80));
 
     assert.equal(await decisionPromise, 'decline');
     assert.equal(approvals.getPendingCount(), 0);
@@ -99,7 +111,7 @@ suite('Antigravity approvals logic', () => {
 
   test('handles explicit approval_request events', async () => {
     const requests: AntigravityApprovalRequest[] = [];
-    const approvals = new AntigravityApprovals(async req => {
+    const approvals = new AntigravityApprovals(async (req) => {
       requests.push(req);
       return 'accept';
     });
@@ -123,7 +135,7 @@ suite('Antigravity approvals logic', () => {
 });
 
 suite('Antigravity client turn approval integration', () => {
-  test('turn proceeds when guard-rail tool is approved', async t => {
+  test('turn proceeds when guard-rail tool is approved', async (t) => {
     let spawned: FakeAntigravityProcess | undefined;
     t.mock.method(childProcess, 'spawn', (_cmd: string, args: string[]) => {
       spawned = new FakeAntigravityProcess(args);
@@ -131,7 +143,7 @@ suite('Antigravity client turn approval integration', () => {
     });
 
     const requests: AntigravityApprovalRequest[] = [];
-    const client = new AntigravityClient({}, async req => {
+    const client = new AntigravityClient({}, async (req) => {
       requests.push(req);
       return 'accept';
     });
@@ -160,7 +172,7 @@ suite('Antigravity client turn approval integration', () => {
     assert.equal(client.getStatus().pendingApprovals, 0);
   });
 
-  test('turn aborts with approval_declined when guard-rail tool is rejected', async t => {
+  test('turn aborts with approval_declined when guard-rail tool is rejected', async (t) => {
     let spawned: FakeAntigravityProcess | undefined;
     t.mock.method(childProcess, 'spawn', (_cmd: string, args: string[]) => {
       spawned = new FakeAntigravityProcess(args);
@@ -185,7 +197,7 @@ suite('Antigravity client turn approval integration', () => {
     assert.equal(spawned?.kills, 1);
   });
 
-  test('non-guard-rail tools do not trigger approval handler', async t => {
+  test('non-guard-rail tools do not trigger approval handler', async (t) => {
     let spawned: FakeAntigravityProcess | undefined;
     t.mock.method(childProcess, 'spawn', (_cmd: string, args: string[]) => {
       spawned = new FakeAntigravityProcess(args);
@@ -212,7 +224,7 @@ suite('Antigravity client turn approval integration', () => {
     assert.equal(calls, 0);
   });
 
-  test('dangerouslySkipPermissions bypasses approval handler', async t => {
+  test('dangerouslySkipPermissions bypasses approval handler', async (t) => {
     let spawned: FakeAntigravityProcess | undefined;
     t.mock.method(childProcess, 'spawn', (_cmd: string, args: string[]) => {
       spawned = new FakeAntigravityProcess(args);

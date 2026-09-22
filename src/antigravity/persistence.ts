@@ -1,4 +1,4 @@
-import { isAbsolute } from 'path';
+import { isAbsolute } from 'node:path';
 import { WorkspaceIdentity } from '../workspace/guard';
 
 export interface SavedSession {
@@ -23,17 +23,11 @@ const KEY = 'nexus.antigravity.session';
 export class WorkspaceAntigravitySessionPersistence implements AntigravitySessionPersistence {
   private pending: Promise<void> = Promise.resolve();
 
-  constructor(private readonly storage: WorkspaceStorage) { }
+  constructor(private readonly storage: WorkspaceStorage) {}
 
   load(): SavedSession | undefined {
     const value = this.storage.get(KEY) as Partial<SavedSession> | undefined;
-    if (
-      !value ||
-      value.version !== 1 ||
-      typeof value.id !== 'string' ||
-      !value.id ||
-      /\s/.test(value.id)
-    ) {
+    if (value?.version !== 1 || typeof value.id !== 'string' || !value.id || /\s/.test(value.id)) {
       return undefined;
     }
 
@@ -63,9 +57,11 @@ export class WorkspaceAntigravitySessionPersistence implements AntigravitySessio
 
   save(session: SavedSession): Promise<void> {
     const snapshot = structuredClone(session);
-    const write = this.pending.catch(() => { }).then(async () => {
-      await this.storage.update(KEY, snapshot);
-    });
+    const write = this.pending
+      .catch(() => {})
+      .then(async () => {
+        await this.storage.update(KEY, snapshot);
+      });
     this.pending = write;
     return write;
   }

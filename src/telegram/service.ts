@@ -1,21 +1,20 @@
 import type * as vscode from 'vscode';
-import { randomInt } from 'crypto';
+import { randomInt } from 'node:crypto';
 import { TelegramClient, TelegramVoiceDownloadError } from './client';
 import { TelegramUpdate, TelegramVoice, TelegramVoiceFile } from './types';
 import { SpeechError } from '../speech/errors';
-import { TelegramApprovals, TelegramPeer } from './approvals';
-import { ApprovalDecision, CodexApprovalRequest, ModelControls } from '../codex/types';
 import { ApprovalRequest, TelegramApprovals, TelegramPeer } from './approvals';
 import { ApprovalDecision, ModelControls } from '../codex/types';
 import { formatTelegramStatus, NexusStatusSnapshot, AgentBackendType } from './status';
 import { TELEGRAM_HELP } from './help';
 import { TelegramModels } from './models';
 
-export interface RemotePromptReply { text: string; fileSummary?: string }
+export interface RemotePromptReply {
+  text: string;
+  fileSummary?: string;
+}
 
-type RemotePromptHandler = (
-  prompt: string
-) => Promise<string | RemotePromptReply>;
+type RemotePromptHandler = (prompt: string) => Promise<string | RemotePromptReply>;
 
 export type RemoteSessionAction = { type: 'new' } | { type: 'resume'; sessionId: string };
 export type RemoteBranchAction = { type: 'list' } | { type: 'switch'; name: string };
@@ -61,7 +60,6 @@ export class TelegramService {
   private readonly onAntigravitySessionAction?: (action: RemoteSessionAction) => Promise<string>;
   private readonly onAntigravityStop?: () => boolean;
   private readonly customGetActiveBackend?: () => AgentBackendType;
-  private readonly customSetActiveBackend?: (backend: AgentBackendType) => Promise<void> | void;
   private activeBackend: AgentBackendType = 'codex';
 
   constructor(
@@ -113,7 +111,8 @@ export class TelegramService {
       this.customSetActiveBackend = setActiveBackend;
     }
 
-    this.activeBackend = this.context.globalState.get<AgentBackendType>('nexus.activeBackend') ?? 'codex';
+    this.activeBackend =
+      this.context.globalState.get<AgentBackendType>('nexus.activeBackend') ?? 'codex';
 
     this.approvals = new TelegramApprovals(client, () => this.getApprovalPeer());
     this.models = new TelegramModels(
@@ -138,27 +137,26 @@ export class TelegramService {
     if (this.customGetActiveBackend) {
       return this.customGetActiveBackend();
     }
-    return this.context.globalState.get<AgentBackendType>('nexus.activeBackend') ?? this.activeBackend;
+    return (
+      this.context.globalState.get<AgentBackendType>('nexus.activeBackend') ?? this.activeBackend
+    );
   }
 
   async setBackend(backend: AgentBackendType): Promise<void> {
     this.activeBackend = backend;
     await this.context.globalState.update('nexus.activeBackend', backend);
-    if (this.customSetActiveBackend) {
-      await this.customSetActiveBackend(backend);
-    }
   }
 
-  requestApproval(request: CodexApprovalRequest, signal: AbortSignal): Promise<ApprovalDecision> {
-    requestApproval(request: ApprovalRequest, signal: AbortSignal): Promise < ApprovalDecision > {
-      return this.approvals.request(request, signal);
-    }
+  requestApproval(request: ApprovalRequest, signal: AbortSignal): Promise<ApprovalDecision> {
+    return this.approvals.request(request, signal);
+  }
 
   private getApprovalPeer(): TelegramPeer | undefined {
     const userId = this.context.globalState.get<number>('nexus.telegram.allowedUserId');
     const chatId = this.context.globalState.get<number>('nexus.telegram.allowedChatId');
     return this.running && userId !== undefined && chatId !== undefined
-      ? { userId, chatId } : undefined;
+      ? { userId, chatId }
+      : undefined;
   }
 
   createPairingCode(): string {
@@ -178,18 +176,12 @@ export class TelegramService {
     const controller = new AbortController();
     this.abortController = controller;
 
-    let offset = this.context.globalState.get<number>(
-      'nexus.telegram.updateOffset',
-      0
-    );
+    let offset = this.context.globalState.get<number>('nexus.telegram.updateOffset', 0);
 
     try {
       while (!controller.signal.aborted) {
         try {
-          const data = await this.client.getUpdates(
-            offset,
-            controller.signal
-          );
+          const data = await this.client.getUpdates(offset, controller.signal);
 
           for (const update of data.result) {
             if (controller.signal.aborted) {
@@ -202,16 +194,13 @@ export class TelegramService {
             }
             offset = update.update_id + 1;
 
-            await this.context.globalState.update(
-              'nexus.telegram.updateOffset',
-              offset
-            );
+            await this.context.globalState.update('nexus.telegram.updateOffset', offset);
 
             if (!controller.signal.aborted) {
               await this.handleUpdate(update);
             }
           }
-        } catch (error) {
+        } catch (_error) {
           if (controller.signal.aborted) {
             break;
           }
@@ -221,9 +210,7 @@ export class TelegramService {
           this.antigravityModels.cancel();
           console.error('Telegram polling failed.');
 
-          await new Promise(resolve =>
-            setTimeout(resolve, 3000)
-          );
+          await new Promise((resolve) => setTimeout(resolve, 3000));
         }
       }
     } finally {
@@ -247,7 +234,9 @@ export class TelegramService {
   }
 
   private cancelVoiceOperation(): boolean {
-    if (!this.voiceOperation) { return false; }
+    if (!this.voiceOperation) {
+      return false;
+    }
     this.voiceOperation.abort();
     this.voiceOperation = undefined;
     this.operationGeneration++;
@@ -263,10 +252,13 @@ export class TelegramService {
         } else if (this.antigravityModels.hasActiveMenu()) {
           void this.antigravityModels.handleCallback(update.callback_query);
         } else {
-          const picker = this.getActiveBackend() === 'antigravity' ? this.antigravityModels : this.models;
+          const picker =
+            this.getActiveBackend() === 'antigravity' ? this.antigravityModels : this.models;
           void picker.handleCallback(update.callback_query);
         }
-      } else { await this.approvals.handleCallback(update.callback_query); }
+      } else {
+        await this.approvals.handleCallback(update.callback_query);
+      }
       return;
     }
     const text = update.message?.text;
@@ -275,11 +267,7 @@ export class TelegramService {
     const chatId = update.message?.chat.id;
     const chatType = update.message?.chat.type;
 
-    if (
-      (!text && !voice) ||
-      userId === undefined ||
-      chatId === undefined
-    ) {
+    if ((!text && !voice) || userId === undefined || chatId === undefined) {
       return;
     }
 
@@ -302,23 +290,14 @@ export class TelegramService {
       this.models.cancel();
       this.antigravityModels.cancel();
 
-      await this.context.globalState.update(
-        'nexus.telegram.allowedUserId',
-        userId
-      );
+      await this.context.globalState.update('nexus.telegram.allowedUserId', userId);
 
-      await this.context.globalState.update(
-        'nexus.telegram.allowedChatId',
-        chatId
-      );
+      await this.context.globalState.update('nexus.telegram.allowedChatId', chatId);
 
       this.pairingCode = undefined;
       this.pairingExpiresAt = 0;
 
-      await this.client.sendMessage(
-        chatId,
-        '✅ Nexus paired successfully.'
-      );
+      await this.client.sendMessage(chatId, '✅ Nexus paired successfully.');
 
       console.log('Telegram account paired.');
 
@@ -326,25 +305,20 @@ export class TelegramService {
     }
 
     // Authorization
-    const allowedUserId = this.context.globalState.get<number>(
-      'nexus.telegram.allowedUserId'
-    );
+    const allowedUserId = this.context.globalState.get<number>('nexus.telegram.allowedUserId');
 
-    const allowedChatId = this.context.globalState.get<number>(
-      'nexus.telegram.allowedChatId'
-    );
+    const allowedChatId = this.context.globalState.get<number>('nexus.telegram.allowedChatId');
 
-    if (
-      userId !== allowedUserId ||
-      chatId !== allowedChatId ||
-      chatType !== 'private'
-    ) {
+    if (userId !== allowedUserId || chatId !== allowedChatId || chatType !== 'private') {
       return;
     }
 
     if (voice) {
       if (this.remotePromptRunning || this.remoteSessionRunning || this.remoteBranchRunning) {
-        await this.client.sendMessage(chatId, 'Une requête est déjà en cours. Attendez sa fin avant d’envoyer un message vocal.');
+        await this.client.sendMessage(
+          chatId,
+          'Une requête est déjà en cours. Attendez sa fin avant d’envoyer un message vocal.'
+        );
         return;
       }
       const controller = new AbortController();
@@ -355,20 +329,28 @@ export class TelegramService {
       return;
     }
 
-    if (!text) { return; }
+    if (!text) {
+      return;
+    }
 
     // Commands
     const command = text.trim();
     if (/^\/model(?:\s|$)/.test(command)) {
-      if (command !== '/model') { await this.client.sendMessage(chatId, 'Usage : /model'); }
-      else {
-        const picker = this.getActiveBackend() === 'antigravity' ? this.antigravityModels : this.models;
+      if (command !== '/model') {
+        await this.client.sendMessage(chatId, 'Usage : /model');
+      } else {
+        const picker =
+          this.getActiveBackend() === 'antigravity' ? this.antigravityModels : this.models;
         void picker.open();
       }
       return;
     }
     if (/^\/help(?:\s|$)/.test(command)) {
-      await this.client.sendMessage(chatId, command === '/help' ? TELEGRAM_HELP : 'Usage : /help', 'markdown');
+      await this.client.sendMessage(
+        chatId,
+        command === '/help' ? TELEGRAM_HELP : 'Usage : /help',
+        'markdown'
+      );
       return;
     }
     if (/^\/backend(?:\s|$)/.test(command)) {
@@ -377,7 +359,10 @@ export class TelegramService {
         const current = this.getActiveBackend();
         const other = current === 'antigravity' ? 'codex' : 'antigravity';
         const label = current === 'antigravity' ? '✨ Gemini Antigravity' : '🤖 Codex';
-        await this.client.sendMessage(chatId, `Backend actif : ${label}.\nUtilisez /backend ${other} pour basculer.`);
+        await this.client.sendMessage(
+          chatId,
+          `Backend actif : ${label}.\nUtilisez /backend ${other} pour basculer.`
+        );
         return;
       }
       if (parts.length === 2) {
@@ -389,7 +374,10 @@ export class TelegramService {
         }
         if (target === 'antigravity' || target === 'agy' || target === 'gemini') {
           await this.setBackend('antigravity');
-          await this.client.sendMessage(chatId, '✅ Backend actif défini sur : ✨ Gemini Antigravity.');
+          await this.client.sendMessage(
+            chatId,
+            '✅ Backend actif défini sur : ✨ Gemini Antigravity.'
+          );
           return;
         }
       }
@@ -398,18 +386,29 @@ export class TelegramService {
     }
     if (/^\/(branches|switch)(?:\s|$)/.test(command)) {
       const [name, branch, ...extra] = command.split(/\s+/);
-      if ((name === '/branches' && branch !== undefined) ||
-        (name === '/switch' && (!branch || extra.length > 0))) {
-        await this.client.sendMessage(chatId, name === '/branches' ? 'Usage : /branches' : 'Usage : /switch <branche>');
+      if (
+        (name === '/branches' && branch !== undefined) ||
+        (name === '/switch' && (!branch || extra.length > 0))
+      ) {
+        await this.client.sendMessage(
+          chatId,
+          name === '/branches' ? 'Usage : /branches' : 'Usage : /switch <branche>'
+        );
         return;
       }
       if (!this.onBranchAction) {
         await this.client.sendMessage(chatId, 'La gestion des branches est indisponible.');
         return;
       }
-      if (this.remoteBranchRunning || (name === '/switch' && (this.remotePromptRunning || this.remoteSessionRunning))) {
+      if (
+        this.remoteBranchRunning ||
+        (name === '/switch' && (this.remotePromptRunning || this.remoteSessionRunning))
+      ) {
         const backendName = this.getActiveBackend() === 'antigravity' ? 'Antigravity' : 'Codex';
-        await this.client.sendMessage(chatId, `Une opération Git ou ${backendName} est en cours. Attendez sa fin.`);
+        await this.client.sendMessage(
+          chatId,
+          `Une opération Git ou ${backendName} est en cours. Attendez sa fin.`
+        );
         return;
       }
       this.remoteBranchRunning = true;
@@ -417,8 +416,11 @@ export class TelegramService {
         this.models.cancel();
         this.antigravityModels.cancel();
       }
-      void this.runBranchCommand(chatId, name === '/branches' ? { type: 'list' } : { type: 'switch', name: branch },
-        this.abortController!.signal);
+      void this.runBranchCommand(
+        chatId,
+        name === '/branches' ? { type: 'list' } : { type: 'switch', name: branch },
+        this.abortController!.signal
+      );
       return;
     }
     if (/^\/stop(?:\s|$)/.test(command)) {
@@ -437,10 +439,14 @@ export class TelegramService {
         const codexCancelled = this.onStop ? this.onStop() : false;
         const agyCancelled = this.onAntigravityStop ? this.onAntigravityStop() : false;
         agentCancelled = codexCancelled || agyCancelled;
-        cancelled = voiceCancelled || agentCancelled || this.remotePromptRunning || this.remoteSessionRunning;
+        cancelled =
+          voiceCancelled || agentCancelled || this.remotePromptRunning || this.remoteSessionRunning;
       } catch {
         const name = this.getActiveBackend() === 'antigravity' ? 'Antigravity' : 'Codex';
-        await this.client.sendMessage(chatId, `❌ Impossible de demander l’arrêt de ${name}. Vérifiez son état dans VS Code.`);
+        await this.client.sendMessage(
+          chatId,
+          `❌ Impossible de demander l’arrêt de ${name}. Vérifiez son état dans VS Code.`
+        );
         return;
       }
       this.operationGeneration++;
@@ -454,39 +460,63 @@ export class TelegramService {
         return;
       }
       const agentName = this.getActiveBackend() === 'antigravity' ? 'Antigravity' : 'Codex';
-      await this.client.sendMessage(chatId, cancelled
-        ? `⏹ Requête annulée côté Nexus. Si ${agentName} était lancé, la connexion a été fermée et son arrêt demandé.\nL’arrêt des commandes enfants n’est pas garanti : vérifiez les commandes et fichiers avant de continuer.\nL’identifiant de la session sélectionnée est conservé, s’il existe.`
-        : `⚪ Aucune requête ${agentName} en cours.`);
+      await this.client.sendMessage(
+        chatId,
+        cancelled
+          ? `⏹ Requête annulée côté Nexus. Si ${agentName} était lancé, la connexion a été fermée et son arrêt demandé.\nL’arrêt des commandes enfants n’est pas garanti : vérifiez les commandes et fichiers avant de continuer.\nL’identifiant de la session sélectionnée est conservé, s’il existe.`
+          : `⚪ Aucune requête ${agentName} en cours.`
+      );
       return;
     }
     if (/^\/(new|resume)(?:\s|$)/.test(command)) {
       const [name, id, ...extra] = command.split(/\s+/);
-      if ((name === '/new' && id !== undefined) ||
-        (name === '/resume' && (!id || extra.length > 0))) {
-        await this.client.sendMessage(chatId, name === '/new' ? 'Usage : /new' : 'Usage : /resume <id>');
+      if (
+        (name === '/new' && id !== undefined) ||
+        (name === '/resume' && (!id || extra.length > 0))
+      ) {
+        await this.client.sendMessage(
+          chatId,
+          name === '/new' ? 'Usage : /new' : 'Usage : /resume <id>'
+        );
         return;
       }
       const backend = this.getActiveBackend();
-      const handler = backend === 'antigravity' ? this.onAntigravitySessionAction : this.onSessionAction;
+      const handler =
+        backend === 'antigravity' ? this.onAntigravitySessionAction : this.onSessionAction;
       const backendName = backend === 'antigravity' ? 'Antigravity' : 'Codex';
       if (!handler) {
-        await this.client.sendMessage(chatId, `La gestion des sessions ${backendName} est indisponible.`);
+        await this.client.sendMessage(
+          chatId,
+          `La gestion des sessions ${backendName} est indisponible.`
+        );
         return;
       }
       if (this.remotePromptRunning || this.remoteSessionRunning || this.remoteBranchRunning) {
-        await this.client.sendMessage(chatId, `Une requête ${backendName} est déjà en cours. Attendez sa fin.`);
+        await this.client.sendMessage(
+          chatId,
+          `Une requête ${backendName} est déjà en cours. Attendez sa fin.`
+        );
         return;
       }
       this.remoteSessionRunning = true;
       this.models.cancel();
       this.antigravityModels.cancel();
-      const action: RemoteSessionAction = name === '/new' ? { type: 'new' } : { type: 'resume', sessionId: id };
-      void this.runSessionCommand(chatId, action, backendName, handler, this.abortController!.signal);
+      const action: RemoteSessionAction =
+        name === '/new' ? { type: 'new' } : { type: 'resume', sessionId: id };
+      void this.runSessionCommand(
+        chatId,
+        action,
+        backendName,
+        handler,
+        this.abortController!.signal
+      );
       return;
     }
 
     if (text.trim() === '/status') {
-      if (!this.statusRunning) { void this.runStatusCommand(chatId, this.abortController!.signal); }
+      if (!this.statusRunning) {
+        void this.runStatusCommand(chatId, this.abortController!.signal);
+      }
       return;
     }
 
@@ -495,10 +525,7 @@ export class TelegramService {
     }
 
     if (text === '/codex') {
-      await this.client.sendMessage(
-        chatId,
-        'Usage: /codex <instruction>'
-      );
+      await this.client.sendMessage(chatId, 'Usage: /codex <instruction>');
 
       return;
     }
@@ -507,19 +534,13 @@ export class TelegramService {
       const prompt = text.slice('/codex '.length).trim();
 
       if (!prompt) {
-        await this.client.sendMessage(
-          chatId,
-          'Usage: /codex <instruction>'
-        );
+        await this.client.sendMessage(chatId, 'Usage: /codex <instruction>');
 
         return;
       }
 
       if (!this.onRemotePrompt) {
-        await this.client.sendMessage(
-          chatId,
-          'Codex is unavailable.'
-        );
+        await this.client.sendMessage(chatId, 'Codex is unavailable.');
 
         return;
       }
@@ -542,18 +563,12 @@ export class TelegramService {
       const prompt = match?.[2]?.trim();
 
       if (!prompt) {
-        await this.client.sendMessage(
-          chatId,
-          `Usage: /${cmd} <instruction>`
-        );
+        await this.client.sendMessage(chatId, `Usage: /${cmd} <instruction>`);
         return;
       }
 
       if (!this.onRemoteAntigravityPrompt) {
-        await this.client.sendMessage(
-          chatId,
-          'Gemini Antigravity is unavailable.'
-        );
+        await this.client.sendMessage(chatId, 'Gemini Antigravity is unavailable.');
         return;
       }
 
@@ -569,42 +584,73 @@ export class TelegramService {
   }
 
   private async runVoiceTranscription(
-    chatId: number, voice: TelegramVoice, signal: AbortSignal, controller: AbortController,
+    chatId: number,
+    voice: TelegramVoice,
+    signal: AbortSignal,
+    controller: AbortController,
     generation = this.operationGeneration
   ): Promise<void> {
     let audio: TelegramVoiceFile | undefined;
     let phase: 'download' | 'transcription' | 'delivery' = 'delivery';
     try {
-      if (!this.transcribeVoice) { throw new SpeechError('not_configured'); }
+      if (!this.transcribeVoice) {
+        throw new SpeechError('not_configured');
+      }
       await this.client.sendMessage(chatId, '⏳ Téléchargement du message vocal…', 'plain', signal);
-      if (signal.aborted || generation !== this.operationGeneration) { return; }
+      if (signal.aborted || generation !== this.operationGeneration) {
+        return;
+      }
       phase = 'download';
       audio = await this.client.downloadVoice(voice, signal);
-      if (signal.aborted || generation !== this.operationGeneration) { return; }
+      if (signal.aborted || generation !== this.operationGeneration) {
+        return;
+      }
       phase = 'delivery';
-      await this.client.sendMessage(chatId, '⏳ Transcription locale du message vocal…', 'plain', signal);
-      if (signal.aborted || generation !== this.operationGeneration) { return; }
+      await this.client.sendMessage(
+        chatId,
+        '⏳ Transcription locale du message vocal…',
+        'plain',
+        signal
+      );
+      if (signal.aborted || generation !== this.operationGeneration) {
+        return;
+      }
       phase = 'transcription';
       const transcript = await this.transcribeVoice(audio, signal);
-      if (signal.aborted || generation !== this.operationGeneration) { return; }
-      if (typeof transcript !== 'string') { throw new SpeechError('invalid_response'); }
+      if (signal.aborted || generation !== this.operationGeneration) {
+        return;
+      }
+      if (typeof transcript !== 'string') {
+        throw new SpeechError('invalid_response');
+      }
       const text = transcript.trim();
-      if (!text) { throw new SpeechError('empty_transcript'); }
+      if (!text) {
+        throw new SpeechError('empty_transcript');
+      }
       phase = 'delivery';
       await this.client.sendMessage(chatId, `🎙 Transcription :\n\n${text}`, 'plain', signal);
     } catch (error) {
       if (!signal.aborted && generation === this.operationGeneration) {
-        const message = error instanceof TelegramVoiceDownloadError || error instanceof SpeechError ? error.message :
-          phase === 'download' ? 'Impossible de récupérer le message vocal. Réessayez.' :
-            phase === 'transcription' ? new SpeechError('transcription_failed').message :
-              'Impossible d’envoyer la réponse du message vocal. Réessayez.';
-        await this.client.sendMessage(chatId, `❌ ${message}`, 'plain', signal)
+        const message =
+          error instanceof TelegramVoiceDownloadError || error instanceof SpeechError
+            ? error.message
+            : phase === 'download'
+              ? 'Impossible de récupérer le message vocal. Réessayez.'
+              : phase === 'transcription'
+                ? new SpeechError('transcription_failed').message
+                : 'Impossible d’envoyer la réponse du message vocal. Réessayez.';
+        await this.client
+          .sendMessage(chatId, `❌ ${message}`, 'plain', signal)
           .catch(() => console.error('[Telegram] Voice response delivery failed.'));
       }
     } finally {
       audio?.data.fill(0);
-      if (this.voiceOperation === controller) { this.voiceOperation = undefined; }
-      if (generation === this.operationGeneration) { this.remotePromptRunning = false; }
+      if (this.voiceOperation === controller) {
+        this.voiceOperation = undefined;
+      }
+      if (generation === this.operationGeneration) {
+        this.remotePromptRunning = false;
+      }
     }
   }
 
@@ -621,25 +667,44 @@ export class TelegramService {
         } else {
           status = 'Statut indisponible.';
         }
-      } catch { status = 'Impossible de lire le statut de Nexus.'; }
+      } catch {
+        status = 'Impossible de lire le statut de Nexus.';
+      }
       const current = this.getApprovalPeer();
-      if (!signal.aborted && peer && current?.userId === peer.userId && current.chatId === peer.chatId) {
+      if (
+        !signal.aborted &&
+        peer &&
+        current?.userId === peer.userId &&
+        current.chatId === peer.chatId
+      ) {
         await this.client.sendMessage(chatId, status, 'markdown');
       }
-    } catch { console.warn('[Telegram] Status delivery failed.'); }
-    finally { this.statusRunning = false; }
+    } catch {
+      console.warn('[Telegram] Status delivery failed.');
+    } finally {
+      this.statusRunning = false;
+    }
   }
 
-  private async runBranchCommand(chatId: number, action: RemoteBranchAction, signal: AbortSignal): Promise<void> {
+  private async runBranchCommand(
+    chatId: number,
+    action: RemoteBranchAction,
+    signal: AbortSignal
+  ): Promise<void> {
     try {
       const response = await this.onBranchAction!(action);
-      if (!signal.aborted) { await this.client.sendMessage(chatId, response); }
+      if (!signal.aborted) {
+        await this.client.sendMessage(chatId, response);
+      }
     } catch (error) {
       if (!signal.aborted) {
-        await this.client.sendMessage(chatId, `❌ ${error instanceof Error ? error.message : String(error)}`)
+        await this.client
+          .sendMessage(chatId, `❌ ${error instanceof Error ? error.message : String(error)}`)
           .catch(() => console.error('[Telegram] Branch response delivery failed.'));
       }
-    } finally { this.remoteBranchRunning = false; }
+    } finally {
+      this.remoteBranchRunning = false;
+    }
   }
 
   private async runSessionCommand(
@@ -653,21 +718,30 @@ export class TelegramService {
     try {
       const id = await handler(action);
       if (!signal.aborted && generation === this.operationGeneration) {
-        await this.client.sendMessage(chatId,
-          `✅ Session ${backendName} ${action.type === 'new' ? 'créée' : 'reprise'}.\nID session : ${id}`);
+        await this.client.sendMessage(
+          chatId,
+          `✅ Session ${backendName} ${action.type === 'new' ? 'créée' : 'reprise'}.\nID session : ${id}`
+        );
       }
     } catch (error) {
       if (!signal.aborted && generation === this.operationGeneration) {
-        await this.client.sendMessage(chatId,
-          `❌ ${error instanceof Error ? error.message : String(error)}`
-        ).catch(() => console.error('[Telegram] Session response delivery failed.'));
+        await this.client
+          .sendMessage(chatId, `❌ ${error instanceof Error ? error.message : String(error)}`)
+          .catch(() => console.error('[Telegram] Session response delivery failed.'));
       }
     } finally {
-      if (generation === this.operationGeneration) { this.remoteSessionRunning = false; }
+      if (generation === this.operationGeneration) {
+        this.remoteSessionRunning = false;
+      }
     }
   }
 
-  private async runRemotePrompt(chatId: number, prompt: string, signal: AbortSignal, generation = this.operationGeneration): Promise<void> {
+  private async runRemotePrompt(
+    chatId: number,
+    prompt: string,
+    signal: AbortSignal,
+    generation = this.operationGeneration
+  ): Promise<void> {
     try {
       await this.client.sendMessage(chatId, '⏳ Codex is working...');
       if (signal.aborted || generation !== this.operationGeneration) {
@@ -675,23 +749,39 @@ export class TelegramService {
       }
       const response = await this.onRemotePrompt!(prompt);
       if (!signal.aborted && generation === this.operationGeneration) {
-        await this.client.sendMessage(chatId, typeof response === 'string' ? response : response.text, 'markdown');
-        if (!signal.aborted && generation === this.operationGeneration && typeof response !== 'string' && response.fileSummary) {
+        await this.client.sendMessage(
+          chatId,
+          typeof response === 'string' ? response : response.text,
+          'markdown'
+        );
+        if (
+          !signal.aborted &&
+          generation === this.operationGeneration &&
+          typeof response !== 'string' &&
+          response.fileSummary
+        ) {
           await this.client.sendMessage(chatId, response.fileSummary, 'markdown');
         }
       }
     } catch (error) {
       if (!signal.aborted && generation === this.operationGeneration) {
-        await this.client.sendMessage(chatId,
-          `❌ ${error instanceof Error ? error.message : String(error)}`
-        ).catch(() => console.error('[Telegram] Codex response delivery failed.'));
+        await this.client
+          .sendMessage(chatId, `❌ ${error instanceof Error ? error.message : String(error)}`)
+          .catch(() => console.error('[Telegram] Codex response delivery failed.'));
       }
     } finally {
-      if (generation === this.operationGeneration) { this.remotePromptRunning = false; }
+      if (generation === this.operationGeneration) {
+        this.remotePromptRunning = false;
+      }
     }
   }
 
-  private async runRemoteAntigravityPrompt(chatId: number, prompt: string, signal: AbortSignal, generation = this.operationGeneration): Promise<void> {
+  private async runRemoteAntigravityPrompt(
+    chatId: number,
+    prompt: string,
+    signal: AbortSignal,
+    generation = this.operationGeneration
+  ): Promise<void> {
     try {
       await this.client.sendMessage(chatId, '⏳ Gemini Antigravity is working...');
       if (signal.aborted || generation !== this.operationGeneration) {
@@ -699,19 +789,30 @@ export class TelegramService {
       }
       const response = await this.onRemoteAntigravityPrompt!(prompt);
       if (!signal.aborted && generation === this.operationGeneration) {
-        await this.client.sendMessage(chatId, typeof response === 'string' ? response : response.text, 'markdown');
-        if (!signal.aborted && generation === this.operationGeneration && typeof response !== 'string' && response.fileSummary) {
+        await this.client.sendMessage(
+          chatId,
+          typeof response === 'string' ? response : response.text,
+          'markdown'
+        );
+        if (
+          !signal.aborted &&
+          generation === this.operationGeneration &&
+          typeof response !== 'string' &&
+          response.fileSummary
+        ) {
           await this.client.sendMessage(chatId, response.fileSummary, 'markdown');
         }
       }
     } catch (error) {
       if (!signal.aborted && generation === this.operationGeneration) {
-        await this.client.sendMessage(chatId,
-          `❌ ${error instanceof Error ? error.message : String(error)}`
-        ).catch(() => console.error('[Telegram] Antigravity response delivery failed.'));
+        await this.client
+          .sendMessage(chatId, `❌ ${error instanceof Error ? error.message : String(error)}`)
+          .catch(() => console.error('[Telegram] Antigravity response delivery failed.'));
       }
     } finally {
-      if (generation === this.operationGeneration) { this.remotePromptRunning = false; }
+      if (generation === this.operationGeneration) {
+        this.remotePromptRunning = false;
+      }
     }
   }
 }

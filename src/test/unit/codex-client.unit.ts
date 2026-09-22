@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { suite, test } from 'node:test';
-import childProcess = require('child_process');
+import childProcess = require('node:child_process');
 import { CodexClient } from '../../codex/client';
 import { CodexService } from '../../codex/service';
 import { ApprovalDecision } from '../../codex/types';
@@ -8,7 +8,7 @@ import { deferred, flush } from './helpers';
 import { FakeProcess } from './codex-process';
 
 suite('Codex process approval lifecycle', () => {
-  test('routes a server request and writes an accept-once RPC response', async t => {
+  test('routes a server request and writes an accept-once RPC response', async (t) => {
     const child = new FakeProcess();
     t.mock.method(childProcess, 'spawn', () => child);
     const client = new CodexClient(async () => 'accept');
@@ -18,16 +18,18 @@ suite('Codex process approval lifecycle', () => {
     await flush();
     child.approve('rpc-approval');
     await flush();
-    assert.deepEqual(child.written.find(message => message.id === 'rpc-approval')?.result, { decision: 'accept' });
+    assert.deepEqual(child.written.find((message) => message.id === 'rpc-approval')?.result, {
+      decision: 'accept',
+    });
     child.complete();
     assert.equal(await turn, 'Done');
   });
 
-  test('a process crash invalidates approval; its delayed exit cannot cancel the next process approval', async t => {
+  test('a process crash invalidates approval; its delayed exit cannot cancel the next process approval', async (t) => {
     const first = new FakeProcess();
     const second = new FakeProcess();
     let starts = 0;
-    t.mock.method(childProcess, 'spawn', () => starts++ === 0 ? first : second);
+    t.mock.method(childProcess, 'spawn', () => (starts++ === 0 ? first : second));
     const decisions = [deferred<ApprovalDecision>(), deferred<ApprovalDecision>()];
     const signals: AbortSignal[] = [];
     const client = new CodexClient(async (_request, signal) => {
@@ -55,19 +57,27 @@ suite('Codex process approval lifecycle', () => {
     decisions[0].resolve('accept');
     decisions[1].resolve('accept');
     await flush();
-    assert.equal(second.written.some(message => message.id === 'old'), false);
-    assert.deepEqual(second.written.find(message => message.id === 'new')?.result, { decision: 'accept' });
+    assert.equal(
+      second.written.some((message) => message.id === 'old'),
+      false
+    );
+    assert.deepEqual(second.written.find((message) => message.id === 'new')?.result, {
+      decision: 'accept',
+    });
     second.complete();
     assert.equal(await secondTurn, 'Done');
   });
 
-  test('the existing turn timeout cancels any outstanding approval', async t => {
+  test('the existing turn timeout cancels any outstanding approval', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
     const child = new FakeProcess();
     t.mock.method(childProcess, 'spawn', () => child);
     let signal!: AbortSignal;
     const decision = deferred<ApprovalDecision>();
-    const client = new CodexClient(async (_request, value) => { signal = value; return decision.promise; });
+    const client = new CodexClient(async (_request, value) => {
+      signal = value;
+      return decision.promise;
+    });
     t.after(() => client.stop());
     await client.start();
     const turn = client.runTurn('thread', 'Run tests');
@@ -81,12 +91,17 @@ suite('Codex process approval lifecycle', () => {
     assert.equal(signal.aborted, true);
     decision.resolve('accept');
     await flush();
-    assert.deepEqual(child.written.filter(message => message.id === 'late-approval').map(message => message.result), [{ decision: 'decline' }]);
+    assert.deepEqual(
+      child.written
+        .filter((message) => message.id === 'late-approval')
+        .map((message) => message.result),
+      [{ decision: 'decline' }]
+    );
   });
 });
 
 suite('Codex status snapshots', () => {
-  test('reading status is passive and follows session, turn and approval lifecycle', async t => {
+  test('reading status is passive and follows session, turn and approval lifecycle', async (t) => {
     t.mock.timers.enable({ apis: ['Date'], now: 1000 });
     const child = new FakeProcess();
     const spawn = t.mock.method(childProcess, 'spawn', () => child);
@@ -113,8 +128,10 @@ suite('Codex status snapshots', () => {
     await flush();
     const starting = service.getStatus();
     assert.deepEqual(starting.turn, { startedAt: 1000 });
-    child.receive({ id: child.written.find(message => message.method === 'turn/start')!.id,
-      result: { turn: { id: 'turn' } } });
+    child.receive({
+      id: child.written.find((message) => message.method === 'turn/start')!.id,
+      result: { turn: { id: 'turn' } },
+    });
     await flush();
     const running = service.getStatus();
     assert.equal(running.turn?.id, 'turn');
@@ -134,7 +151,7 @@ suite('Codex status snapshots', () => {
     assert.deepEqual(service.getStatus(), initial);
   });
 
-  test('a process exit removes live activity but preserves the known session in the status', async t => {
+  test('a process exit removes live activity but preserves the known session in the status', async (t) => {
     const child = new FakeProcess();
     t.mock.method(childProcess, 'spawn', () => child);
     const service = new CodexService();

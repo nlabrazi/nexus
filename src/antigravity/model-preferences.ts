@@ -11,10 +11,12 @@ export class WorkspaceAntigravityModelPreferences implements AntigravityModelPre
       get(key: string): unknown;
       update(key: string, value: unknown): PromiseLike<void>;
     }
-  ) { }
+  ) {}
 
   load(): ModelSelection | undefined {
-    const value = this.storage.get('nexus.antigravity.model') as Partial<ModelSelection> | undefined;
+    const value = this.storage.get('nexus.antigravity.model') as
+      | Partial<ModelSelection>
+      | undefined;
     return value &&
       typeof value.model === 'string' &&
       value.model.trim() &&

@@ -1,4 +1,4 @@
-import { isAbsolute, resolve } from 'path';
+import { isAbsolute, resolve } from 'node:path';
 import { assertSameWorkspace, WorkspaceIdentity, WorkspaceValidator } from '../workspace/guard';
 import { AntigravityClient, AntigravityClientOptions } from './client';
 import { AntigravityError } from './errors';
@@ -7,7 +7,6 @@ import { AntigravitySessionPersistence } from './persistence';
 import {
   AntigravityApprovalHandler,
   AntigravityServiceStatus,
-  AntigravitySession,
   ModelMenu,
   ModelSelection,
 } from './types';
@@ -32,9 +31,6 @@ export class AntigravityService {
   private sessionOperation?: { key: string; promise: Promise<string> };
 
   constructor(
-    private readonly validateWorkspace?: WorkspaceValidator,
-    private readonly persistence?: AntigravitySessionPersistence,
-    private readonly modelPreferences?: AntigravityModelPreferences,
     approvalHandler: AntigravityApprovalHandler,
     validateWorkspace?: WorkspaceValidator,
     persistence?: AntigravitySessionPersistence,
@@ -67,7 +63,10 @@ export class AntigravityService {
       persistence = persistenceOrModelPrefs as AntigravitySessionPersistence;
       modelPreferences = modelPreferencesOrOptions as AntigravityModelPreferences;
       clientOptions = options;
-    } else if (typeof approvalHandlerOrValidator === 'function' && approvalHandlerOrValidator.length === 2) {
+    } else if (
+      typeof approvalHandlerOrValidator === 'function' &&
+      approvalHandlerOrValidator.length === 2
+    ) {
       approvalHandler = approvalHandlerOrValidator as AntigravityApprovalHandler;
       persistence = validateWorkspaceOrPersistence as AntigravitySessionPersistence;
       modelPreferences = persistenceOrModelPrefs as AntigravityModelPreferences;
@@ -110,7 +109,12 @@ export class AntigravityService {
   }
 
   async withWorkspaceOperation<T>(operation: () => Promise<T>): Promise<T> {
-    if (this.workspaceOperation || this.turnRunning || this.sessionOperation || this.modelChanging) {
+    if (
+      this.workspaceOperation ||
+      this.turnRunning ||
+      this.sessionOperation ||
+      this.modelChanging
+    ) {
       throw new Error(
         'Une opération Git ou Antigravity est en cours. Attendez sa fin avant de changer de branche.'
       );
@@ -156,8 +160,15 @@ export class AntigravityService {
   }
 
   async selectModel(path: string, selection: ModelSelection, context: string): Promise<void> {
-    if (this.turnRunning || this.sessionOperation || this.workspaceOperation || this.modelChanging) {
-      throw new Error('Une opération Git ou Antigravity est en cours. Attendez sa fin puis rouvrez /model.');
+    if (
+      this.turnRunning ||
+      this.sessionOperation ||
+      this.workspaceOperation ||
+      this.modelChanging
+    ) {
+      throw new Error(
+        'Une opération Git ou Antigravity est en cours. Attendez sa fin puis rouvrez /model.'
+      );
     }
     if (context !== this.modelContext(path)) {
       throw new Error('Le contexte a changé. Rouvrez /model.');
@@ -168,10 +179,9 @@ export class AntigravityService {
       if (menu.context !== context) {
         throw new Error('Le contexte a changé. Rouvrez /model.');
       }
-      const model = menu.models.find(m => m.model === selection.model);
+      const model = menu.models.find((m) => m.model === selection.model);
       if (
-        !model ||
-        !model.supportedReasoningEfforts.some(opt => opt.reasoningEffort === selection.effort)
+        !model?.supportedReasoningEfforts.some((opt) => opt.reasoningEffort === selection.effort)
       ) {
         throw new Error('Ce modèle ou cet effort n’est plus disponible. Rouvrez /model.');
       }
@@ -200,7 +210,9 @@ export class AntigravityService {
       throw new Error('Indiquez un identifiant de session valide : /resume <id>.');
     }
     if (this.turnRunning) {
-      throw new Error('Un turn Antigravity est en cours. Attendez sa fin avant de changer de session.');
+      throw new Error(
+        'Un turn Antigravity est en cours. Attendez sa fin avant de changer de session.'
+      );
     }
     const key = JSON.stringify([action, path, id]);
     if (this.sessionOperation) {
@@ -326,7 +338,12 @@ export class AntigravityService {
       throw new Error('No active Antigravity session.');
     }
     const path = this.normalizeWorkspace(cwd);
-    if (this.turnRunning || this.sessionOperation || this.workspaceOperation || this.modelChanging) {
+    if (
+      this.turnRunning ||
+      this.sessionOperation ||
+      this.workspaceOperation ||
+      this.modelChanging
+    ) {
       throw new Error('An Antigravity turn or session operation is already running.');
     }
 

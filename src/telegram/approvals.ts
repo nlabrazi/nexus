@@ -1,4 +1,4 @@
-import { randomBytes } from 'crypto';
+import { randomBytes } from 'node:crypto';
 import { ApprovalDecision, CodexApprovalRequest } from '../codex/types';
 import { TelegramClient } from './client';
 import { TelegramCallbackQuery } from './types';
@@ -28,40 +28,43 @@ export class TelegramApprovals {
   constructor(
     private readonly client: TelegramClient,
     private readonly getPeer: () => TelegramPeer | undefined
-  ) { }
+  ) {}
 
-  request(request: CodexApprovalRequest, signal: AbortSignal): Promise<ApprovalDecision> {
-    request(request: ApprovalRequest, signal: AbortSignal): Promise < ApprovalDecision > {
-      const peer = this.getPeer();
-      if(!peer || signal.aborted || Date.now() >= request.expiresAt) {
+  request(request: ApprovalRequest, signal: AbortSignal): Promise<ApprovalDecision> {
+    const peer = this.getPeer();
+    if (!peer || signal.aborted || Date.now() >= request.expiresAt) {
       return Promise.resolve('decline');
     }
 
     const agentName = request.agentName ?? 'Codex';
     const seconds = Math.ceil((request.expiresAt - Date.now()) / 1000);
     const text = [
-      `🔐 Codex — ${request.kind === 'command' ? 'commande' : 'modification de fichiers'}`,
       `🔐 ${agentName} — ${request.kind === 'command' ? 'commande' : 'modification de fichiers'}`,
       `Sans réponse sous ${seconds} s : refus automatique.`,
       request.details,
     ].join('\n\n');
     // Never authorize an action after showing only a truncated preview.
     if (text.length > 4000) {
-      void this.client.sendMessage(peer.chatId,
-        '⛔ Approbation refusée : les détails sont trop longs pour être affichés intégralement.'
-      ).catch(() => console.warn('[Telegram] Approval notice failed.'));
+      void this.client
+        .sendMessage(
+          peer.chatId,
+          '⛔ Approbation refusée : les détails sont trop longs pour être affichés intégralement.'
+        )
+        .catch(() => console.warn('[Telegram] Approval notice failed.'));
       return Promise.resolve('decline');
     }
 
     // Random per-request identifiers also invalidate buttons after a restart.
     const token = randomBytes(16).toString('hex');
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       let closedStatus: string | undefined;
-      const onAbort = () => approval.settle('decline',
-        Date.now() >= request.expiresAt
-          ? '⌛ Approbation expirée — refusée.'
-          : '⛔ Approbation annulée — aucune autorisation.'
-      );
+      const onAbort = () =>
+        approval.settle(
+          'decline',
+          Date.now() >= request.expiresAt
+            ? '⌛ Approbation expirée — refusée.'
+            : '⛔ Approbation annulée — aucune autorisation.'
+        );
       const approval: PendingApproval = {
         agentName,
         peer,
@@ -82,28 +85,37 @@ export class TelegramApprovals {
       };
       this.pending.set(token, approval);
       signal.addEventListener('abort', onAbort, { once: true });
-      void this.client.sendApprovalMessage(peer.chatId, text, {
-        inline_keyboard: [[
-          { text: 'Autoriser une fois', callback_data: `approval:${token}:accept` },
-          { text: 'Refuser', callback_data: `approval:${token}:decline` },
-        ]],
-      }).then(message => {
-        approval.messageId = message.message_id;
-        // Delivery can finish after cancellation/timeout; remove those buttons too.
-        if (closedStatus) {
-          this.close(peer.chatId, message.message_id, closedStatus);
-        }
-      }).catch(() => {
-        approval.settle('decline', '⛔ Envoi impossible — approbation refusée.');
-      });
+      void this.client
+        .sendApprovalMessage(peer.chatId, text, {
+          inline_keyboard: [
+            [
+              { text: 'Autoriser une fois', callback_data: `approval:${token}:accept` },
+              { text: 'Refuser', callback_data: `approval:${token}:decline` },
+            ],
+          ],
+        })
+        .then((message) => {
+          approval.messageId = message.message_id;
+          // Delivery can finish after cancellation/timeout; remove those buttons too.
+          if (closedStatus) {
+            this.close(peer.chatId, message.message_id, closedStatus);
+          }
+        })
+        .catch(() => {
+          approval.settle('decline', '⛔ Envoi impossible — approbation refusée.');
+        });
     });
   }
 
   async handleCallback(query: TelegramCallbackQuery): Promise<void> {
     const peer = this.getPeer();
     const message = query.message;
-    if (!peer || query.from.id !== peer.userId ||
-      message?.chat.id !== peer.chatId || message.chat.type !== 'private') {
+    if (
+      !peer ||
+      query.from.id !== peer.userId ||
+      message?.chat.id !== peer.chatId ||
+      message.chat.type !== 'private'
+    ) {
       await this.answer(query.id, 'Non autorisé.');
       return;
     }
@@ -117,8 +129,11 @@ export class TelegramApprovals {
       await this.answer(query.id, 'Approbation expirée ou déjà traitée.');
       return;
     }
-    if (approval.peer.userId !== peer.userId || approval.peer.chatId !== peer.chatId ||
-      approval.messageId !== message.message_id) {
+    if (
+      approval.peer.userId !== peer.userId ||
+      approval.peer.chatId !== peer.chatId ||
+      approval.messageId !== message.message_id
+    ) {
       await this.answer(query.id, 'Bouton invalide.');
       return;
     }
@@ -129,8 +144,9 @@ export class TelegramApprovals {
     }
 
     const decision = match[2] as ApprovalDecision;
-    approval.settle(decision, decision === 'accept'
-      ? '✅ Autorisation ponctuelle transmise à Codex.'
+    approval.settle(
+      decision,
+      decision === 'accept'
         ? `✅ Autorisation ponctuelle transmise à ${approval.agentName}.`
         : '⛔ Approbation refusée.'
     );
@@ -144,7 +160,8 @@ export class TelegramApprovals {
   }
 
   private close(chatId: number, messageId: number, status: string): void {
-    void this.client.closeApprovalMessage(chatId, messageId, status)
+    void this.client
+      .closeApprovalMessage(chatId, messageId, status)
       .catch(() => console.warn('[Telegram] Unable to remove approval buttons.'));
   }
 

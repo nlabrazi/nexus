@@ -12,34 +12,41 @@ import { formatTelegramResponse, splitTelegramMessage } from './formatting';
 export const TELEGRAM_VOICE_MAX_BYTES = 20_000_000;
 
 export class TelegramVoiceDownloadError extends Error {
-  constructor(readonly code: 'too_large' | 'invalid_file' | 'timeout' | 'cancelled' | 'download_failed') {
-    super({
-      too_large: 'Le message vocal dépasse la limite de 20 Mo.',
-      invalid_file: 'Le fichier vocal reçu est invalide ou vide.',
-      timeout: 'Le téléchargement du message vocal a expiré. Réessayez.',
-      cancelled: 'Téléchargement du message vocal annulé.',
-      download_failed: 'Impossible de télécharger le message vocal. Réessayez.',
-    }[code]);
+  constructor(
+    readonly code: 'too_large' | 'invalid_file' | 'timeout' | 'cancelled' | 'download_failed'
+  ) {
+    super(
+      {
+        too_large: 'Le message vocal dépasse la limite de 20 Mo.',
+        invalid_file: 'Le fichier vocal reçu est invalide ou vide.',
+        timeout: 'Le téléchargement du message vocal a expiré. Réessayez.',
+        cancelled: 'Téléchargement du message vocal annulé.',
+        download_failed: 'Impossible de télécharger le message vocal. Réessayez.',
+      }[code]
+    );
     this.name = 'TelegramVoiceDownloadError';
   }
 }
 
 function checkVoiceSize(size: number | undefined): void {
-  if (size === undefined) { return; }
-  if (!Number.isSafeInteger(size) || size < 0) { throw new TelegramVoiceDownloadError('invalid_file'); }
-  if (size > TELEGRAM_VOICE_MAX_BYTES) { throw new TelegramVoiceDownloadError('too_large'); }
+  if (size === undefined) {
+    return;
+  }
+  if (!Number.isSafeInteger(size) || size < 0) {
+    throw new TelegramVoiceDownloadError('invalid_file');
+  }
+  if (size > TELEGRAM_VOICE_MAX_BYTES) {
+    throw new TelegramVoiceDownloadError('too_large');
+  }
 }
 
 export class TelegramClient {
-  constructor(private readonly token: string) { }
+  constructor(private readonly token: string) {}
 
   async getMe(): Promise<TelegramGetMeResponse> {
-    const response = await fetch(
-      `https://api.telegram.org/bot${this.token}/getMe`
-    );
+    const response = await fetch(`https://api.telegram.org/bot${this.token}/getMe`);
 
-    const data =
-      await response.json() as TelegramGetMeResponse;
+    const data = (await response.json()) as TelegramGetMeResponse;
 
     if (!response.ok || !data.ok) {
       throw new Error('Telegram getMe failed');
@@ -48,30 +55,21 @@ export class TelegramClient {
     return data;
   }
 
-  async getUpdates(
-    offset: number,
-    signal?: AbortSignal
-  ): Promise<TelegramUpdatesResponse> {
+  async getUpdates(offset: number, signal?: AbortSignal): Promise<TelegramUpdatesResponse> {
     const query = new URLSearchParams({
       offset: String(offset),
       timeout: '20',
       allowed_updates: JSON.stringify(['message', 'callback_query']),
     });
-    const response = await fetch(
-      `https://api.telegram.org/bot${this.token}/getUpdates?${query}`,
-      { signal: AbortSignal.any([
-        ...(signal ? [signal] : []),
-        AbortSignal.timeout(30_000),
-      ]) }
-    );
+    const response = await fetch(`https://api.telegram.org/bot${this.token}/getUpdates?${query}`, {
+      signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(30_000)]),
+    });
 
     if (!response.ok) {
-      throw new Error(
-        `Telegram getUpdates failed: ${response.status}`
-      );
+      throw new Error(`Telegram getUpdates failed: ${response.status}`);
     }
 
-    const data = await response.json() as TelegramUpdatesResponse;
+    const data = (await response.json()) as TelegramUpdatesResponse;
     if (!data.ok || !Array.isArray(data.result)) {
       throw new Error('Telegram getUpdates failed');
     }
@@ -80,7 +78,8 @@ export class TelegramClient {
 
   async downloadVoice(voice: TelegramVoice, signal?: AbortSignal): Promise<TelegramVoiceFile> {
     const requestSignal = AbortSignal.any([
-      ...(signal ? [signal] : []), AbortSignal.timeout(30_000),
+      ...(signal ? [signal] : []),
+      AbortSignal.timeout(30_000),
     ]);
     try {
       requestSignal.throwIfAborted();
@@ -89,35 +88,53 @@ export class TelegramClient {
       }
       checkVoiceSize(voice.file_size);
       // Request a fresh path for each download; Telegram file links expire.
-      const file = await this.call<TelegramFile>('getFile', { file_id: voice.file_id }, requestSignal);
+      const file = await this.call<TelegramFile>(
+        'getFile',
+        { file_id: voice.file_id },
+        requestSignal
+      );
       requestSignal.throwIfAborted();
       const path = file?.file_path;
-      if (typeof path !== 'string' || !/^[A-Za-z0-9_./-]+$/.test(path) ||
-        path.split('/').some(segment => !segment || segment === '.' || segment === '..')) {
+      if (
+        typeof path !== 'string' ||
+        !/^[A-Za-z0-9_./-]+$/.test(path) ||
+        path.split('/').some((segment) => !segment || segment === '.' || segment === '..')
+      ) {
         throw new TelegramVoiceDownloadError('invalid_file');
       }
       checkVoiceSize(file.file_size);
       const response = await fetch(`https://api.telegram.org/file/bot${this.token}/${path}`, {
-        signal: requestSignal, redirect: 'error',
+        signal: requestSignal,
+        redirect: 'error',
       });
-      if (!response.body) { throw new TelegramVoiceDownloadError('invalid_file'); }
+      if (!response.body) {
+        throw new TelegramVoiceDownloadError('invalid_file');
+      }
       const reader = response.body.getReader();
       try {
         requestSignal.throwIfAborted();
-        if (!response.ok) { throw new TelegramVoiceDownloadError('download_failed'); }
+        if (!response.ok) {
+          throw new TelegramVoiceDownloadError('download_failed');
+        }
         const length = response.headers.get('content-length');
-        if (length !== null) { checkVoiceSize(Number(length)); }
+        if (length !== null) {
+          checkVoiceSize(Number(length));
+        }
         const chunks: Uint8Array[] = [];
         let size = 0;
         while (true) {
           const { done, value } = await reader.read();
           requestSignal.throwIfAborted();
-          if (done) { break; }
+          if (done) {
+            break;
+          }
           size += value.byteLength;
           checkVoiceSize(size);
           chunks.push(value);
         }
-        if (size === 0) { throw new TelegramVoiceDownloadError('invalid_file'); }
+        if (size === 0) {
+          throw new TelegramVoiceDownloadError('invalid_file');
+        }
         return {
           data: Buffer.concat(chunks, size),
           fileName: path.split('/').at(-1)!,
@@ -131,9 +148,13 @@ export class TelegramClient {
     } catch (error) {
       if (requestSignal.aborted || (error instanceof Error && error.name === 'TimeoutError')) {
         const reason = requestSignal.reason ?? error;
-        throw new TelegramVoiceDownloadError(reason?.name === 'TimeoutError' ? 'timeout' : 'cancelled');
+        throw new TelegramVoiceDownloadError(
+          reason?.name === 'TimeoutError' ? 'timeout' : 'cancelled'
+        );
       }
-      if (error instanceof TelegramVoiceDownloadError) { throw error; }
+      if (error instanceof TelegramVoiceDownloadError) {
+        throw error;
+      }
       // Download URLs contain the bot token. Never expose raw transport errors.
       throw new TelegramVoiceDownloadError('download_failed');
     }
@@ -146,16 +167,21 @@ export class TelegramClient {
     signal?: AbortSignal
   ): Promise<void> {
     signal?.throwIfAborted();
-    const chunks = format === 'markdown' ? formatTelegramResponse(text) : splitTelegramMessage(text);
+    const chunks =
+      format === 'markdown' ? formatTelegramResponse(text) : splitTelegramMessage(text);
 
     for (const chunk of chunks) {
       signal?.throwIfAborted();
-      await this.call('sendMessage', {
-        chat_id: chatId,
-        text: chunk.text,
-        ...(chunk.entities.length > 0 ? { entities: chunk.entities } : {}),
-        link_preview_options: { is_disabled: true },
-      }, signal);
+      await this.call(
+        'sendMessage',
+        {
+          chat_id: chatId,
+          text: chunk.text,
+          ...(chunk.entities.length > 0 ? { entities: chunk.entities } : {}),
+          link_preview_options: { is_disabled: true },
+        },
+        signal
+      );
     }
   }
 
@@ -167,7 +193,11 @@ export class TelegramClient {
     return this.sendKeyboardMessage(chatId, text, keyboard);
   }
 
-  async sendKeyboardMessage(chatId: number, text: string, keyboard: TelegramInlineKeyboard): Promise<TelegramSentMessage> {
+  async sendKeyboardMessage(
+    chatId: number,
+    text: string,
+    keyboard: TelegramInlineKeyboard
+  ): Promise<TelegramSentMessage> {
     const result = await this.call<TelegramSentMessage>('sendMessage', {
       chat_id: chatId,
       text,
@@ -180,8 +210,18 @@ export class TelegramClient {
     return result;
   }
 
-  async editKeyboardMessage(chatId: number, messageId: number, text: string, keyboard: TelegramInlineKeyboard): Promise<void> {
-    await this.call('editMessageText', { chat_id: chatId, message_id: messageId, text, reply_markup: keyboard });
+  async editKeyboardMessage(
+    chatId: number,
+    messageId: number,
+    text: string,
+    keyboard: TelegramInlineKeyboard
+  ): Promise<void> {
+    await this.call('editMessageText', {
+      chat_id: chatId,
+      message_id: messageId,
+      text,
+      reply_markup: keyboard,
+    });
   }
 
   async answerCallbackQuery(id: string, text: string): Promise<void> {
@@ -204,7 +244,7 @@ export class TelegramClient {
       body: JSON.stringify(body),
       signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(15_000)]),
     });
-    const data = await response.json() as { ok: boolean; result: T };
+    const data = (await response.json()) as { ok: boolean; result: T };
     if (!response.ok || !data.ok) {
       throw new Error(`Telegram ${method} failed: ${response.status}`);
     }

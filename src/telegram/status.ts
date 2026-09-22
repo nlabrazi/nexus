@@ -17,26 +17,23 @@ export function formatTelegramStatus(
   now = Date.now()
 ): string {
   const { workspace, workspaceCount, activeBackend, codex, antigravity } = snapshot;
-  const lines = [
-    '📍 **Nexus — statut**',
-    '🟢 Telegram : connecté et appairé',
-  ];
+  const lines = ['📍 **Nexus — statut**', '🟢 Telegram : connecté et appairé'];
 
   if (activeBackend) {
-    lines.push(`Backend actif : ${activeBackend === 'antigravity' ? '✨ Gemini Antigravity' : '🤖 Codex'}`);
+    lines.push(
+      `Backend actif : ${activeBackend === 'antigravity' ? '✨ Gemini Antigravity' : '🤖 Codex'}`
+    );
   }
 
-  lines.push(
-    '',
-    '📁 **Projet**',
-    `Workspace ciblé : ${literal(workspace?.name ?? 'aucun')}`
-  );
+  lines.push('', '📁 **Projet**', `Workspace ciblé : ${literal(workspace?.name ?? 'aucun')}`);
   if (workspace) {
     lines.push(`Chemin : ${literal(workspace.path)}`);
   }
   if (workspaceCount > 1) {
     const agentLabel = activeBackend === 'antigravity' ? 'Antigravity' : 'Codex';
-    lines.push(`Dossiers ouverts : ${workspaceCount} (actions ${agentLabel} bloquées : cible ambiguë)`);
+    lines.push(
+      `Dossiers ouverts : ${workspaceCount} (actions ${agentLabel} bloquées : cible ambiguë)`
+    );
   }
 
   // Section Codex
@@ -79,7 +76,8 @@ function formatCodexSection(
     const active = codex.sessionActive ?? codex.processRunning;
     const indicator = active ? '🟢' : codex.processRunning ? '🟠' : '🔴';
     lines.push(
-      `${indicator} Session Codex : ${active ? 'active' : codex.processRunning ? 'à reprendre' : 'indisponible (processus arrêté)'
+      `${indicator} Session Codex : ${
+        active ? 'active' : codex.processRunning ? 'à reprendre' : 'indisponible (processus arrêté)'
       }`
     );
     lines.push(`ID session : ${literal(codex.sessionId)}`);
@@ -165,7 +163,8 @@ function formatCodexSection(
   if (codex.rateLimits?.length) {
     for (const limit of codex.rateLimits) {
       lines.push(
-        `${literal(limit.limitName ?? limit.limitId ?? 'Codex')}${limit.planType ? ` · ${literal(limit.planType)}` : ''
+        `${literal(limit.limitName ?? limit.limitId ?? 'Codex')}${
+          limit.planType ? ` · ${literal(limit.planType)}` : ''
         }`
       );
       let windows = 0;
@@ -235,7 +234,7 @@ function formatAntigravitySection(
   lines: string[],
   agy: AntigravityServiceStatus,
   workspace: { name: string; path: string } | undefined,
-  remotePromptRunning: boolean,
+  _remotePromptRunning: boolean,
   now: number
 ): void {
   lines.push(`Processus Antigravity : ${agy.processRunning ? 'lancé' : 'arrêté'}`);
@@ -252,7 +251,8 @@ function formatAntigravitySection(
     const active = agy.sessionActive ?? agy.processRunning;
     const indicator = active ? '🟢' : agy.processRunning ? '🟠' : '🔴';
     lines.push(
-      `${indicator} Session Antigravity : ${active ? 'active' : agy.processRunning ? 'à reprendre' : 'indisponible (processus arrêté)'
+      `${indicator} Session Antigravity : ${
+        active ? 'active' : agy.processRunning ? 'à reprendre' : 'indisponible (processus arrêté)'
       }`
     );
     lines.push(`ID session : ${literal(agy.sessionId)}`);
@@ -323,15 +323,11 @@ function formatAntigravitySection(
     const pending = agy.pendingApprovals ?? 0;
     const activity = agy.turn.interrupting
       ? 'interruption en cours'
-      : agy.turn.id
-        ? 'en cours'
-        : 'démarrage';
-    lines.push(`⏳ Turn Antigravity : ${activity} (${elapsed} s)`);
       : pending > 0
-      ? 'en attente d’approbation'
-      : agy.turn.id
-        ? 'en cours'
-        : 'démarrage';
+        ? 'en attente d’approbation'
+        : agy.turn.id
+          ? 'en cours'
+          : 'démarrage';
     lines.push(`${pending > 0 ? '🟠' : '⏳'} Turn Antigravity : ${activity} (${elapsed} s)`);
   } else {
     lines.push('⚪ Turn Antigravity : aucun en cours');
@@ -352,5 +348,8 @@ function date(value: number): string {
 }
 
 function literal(value: string): string {
-  return value.replace(/[\\`*_[\]]/g, '\\$&').replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+  return value
+    .replace(/[\\`*_[\]]/g, '\\$&')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n');
 }

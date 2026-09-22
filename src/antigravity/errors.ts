@@ -12,7 +12,11 @@ export type AntigravityErrorCode =
   | 'protocol_error';
 
 export class AntigravityError extends Error {
-  constructor(readonly code: AntigravityErrorCode, message: string, options?: ErrorOptions) {
+  constructor(
+    readonly code: AntigravityErrorCode,
+    message: string,
+    options?: ErrorOptions
+  ) {
     super(message, options);
     this.name = 'AntigravityError';
   }

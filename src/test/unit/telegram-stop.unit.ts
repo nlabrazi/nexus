@@ -1,14 +1,21 @@
 import * as assert from 'node:assert/strict';
 import { suite, test, TestContext } from 'node:test';
-import childProcess = require('child_process');
+import childProcess = require('node:child_process');
 import { CodexService } from '../../codex/service';
 import { TelegramService } from '../../telegram/service';
 import { TelegramUpdate } from '../../telegram/types';
 import { FakeProcess } from './codex-process';
 import { context, deferred, FakeTelegram, flush } from './helpers';
 
-const message = (id: number, text: string, user = 10, chat = 20, type = 'private'): TelegramUpdate => ({
-  update_id: id, message: { text, from: { id: user }, chat: { id: chat, type } },
+const message = (
+  id: number,
+  text: string,
+  user = 10,
+  chat = 20,
+  type = 'private'
+): TelegramUpdate => ({
+  update_id: id,
+  message: { text, from: { id: user }, chat: { id: chat, type } },
 });
 function setup(t: TestContext) {
   const child = new FakeProcess();
@@ -16,17 +23,28 @@ function setup(t: TestContext) {
   let telegram!: TelegramService;
   const codex = new CodexService((request, signal) => telegram.requestApproval(request, signal));
   const client = new FakeTelegram();
-  telegram = new TelegramService(context(), client, prompt => codex.sendPrompt(prompt, '/project'),
+  telegram = new TelegramService(
+    context(),
+    client,
+    (prompt) => codex.sendPrompt(prompt, '/project'),
     () => ({ workspaceCount: 1, codex: codex.getStatus() }),
-    action => action.type === 'new' ? codex.newSession('/project') : codex.resumeSession('/project', action.sessionId),
-    () => codex.cancelCurrentWork());
+    (action) =>
+      action.type === 'new'
+        ? codex.newSession('/project')
+        : codex.resumeSession('/project', action.sessionId),
+    () => codex.cancelCurrentWork()
+  );
   const polling = telegram.start();
-  t.after(async () => { telegram.stop(); codex.stop(); await polling; });
+  t.after(async () => {
+    telegram.stop();
+    codex.stop();
+    await polling;
+  });
   return { child, spawn, codex, client };
 }
 
 suite('Telegram /stop', () => {
-  test('idle stop and invalid arguments never spawn or remove a selected session', async t => {
+  test('idle stop and invalid arguments never spawn or remove a selected session', async (t) => {
     const { client, spawn, codex, child } = setup(t);
     client.push(message(1, '/stop'), message(2, '/stop now'));
     await flush();
@@ -40,11 +58,15 @@ suite('Telegram /stop', () => {
     assert.equal(child.kills, 0);
   });
 
-  test('only the paired user in the paired private chat can stop work', async t => {
+  test('only the paired user in the paired private chat can stop work', async (t) => {
     const { client, child, codex } = setup(t);
     client.push(message(1, '/codex wait'));
     await flush();
-    client.push(message(2, '/stop', 99), message(3, '/stop', 10, 99), message(4, '/stop', 10, 20, 'group'));
+    client.push(
+      message(2, '/stop', 99),
+      message(3, '/stop', 10, 99),
+      message(4, '/stop', 10, 20, 'group')
+    );
     await flush();
     assert.equal(child.kills, 0);
     assert.equal(codex.isTurnRunning(), true);
@@ -52,11 +74,15 @@ suite('Telegram /stop', () => {
     await flush();
     assert.equal(child.kills, 1);
     assert.equal(codex.isTurnRunning(), false);
-    assert.equal(client.messages.filter(text => text.startsWith('⏹')).length, 1);
-    assert.equal(client.messages.some(text => text.startsWith('❌')), false, 'no duplicate cancellation error');
+    assert.equal(client.messages.filter((text) => text.startsWith('⏹')).length, 1);
+    assert.equal(
+      client.messages.some((text) => text.startsWith('❌')),
+      false,
+      'no duplicate cancellation error'
+    );
   });
 
-  test('stops pending approvals and resumes the same session on an explicit next prompt', async t => {
+  test('stops pending approvals and resumes the same session on an explicit next prompt', async (t) => {
     const { client, child, codex, spawn } = setup(t);
     client.push(message(1, '/codex wait'));
     await flush();
@@ -80,16 +106,19 @@ suite('Telegram /stop', () => {
     next.complete();
     await flush();
     assert.equal(client.messages.at(-1), 'Done');
-    assert.equal(next.written.some(item => item.method === 'thread/start'), false);
-    assert.equal(next.written.filter(item => item.method === 'thread/resume').length, 1);
+    assert.equal(
+      next.written.some((item) => item.method === 'thread/start'),
+      false
+    );
+    assert.equal(next.written.filter((item) => item.method === 'thread/resume').length, 1);
   });
 
-  test('cancels session startup and ignores its late reply', async t => {
+  test('cancels session startup and ignores its late reply', async (t) => {
     const { client, child, codex } = setup(t);
     child.blockedMethods.add('thread/start');
     client.push(message(1, '/new'));
     await flush();
-    const request = child.written.find(item => item.method === 'thread/start')!;
+    const request = child.written.find((item) => item.method === 'thread/start')!;
     client.push(message(2, '/stop'));
     await flush();
     child.receive({ id: request.id, result: { thread: { id: 'late', cwd: '/project' } } });
@@ -100,15 +129,26 @@ suite('Telegram /stop', () => {
     assert.match(client.messages[0], /Requête annulée/);
   });
 
-  test('an old completion cannot release a newer prompt reservation or deliver stale text', async t => {
+  test('an old completion cannot release a newer prompt reservation or deliver stale text', async (t) => {
     const client = new FakeTelegram();
     const old = deferred<string>();
     const next = deferred<string>();
     let calls = 0;
-    const service = new TelegramService(context(), client, () => ++calls === 1 ? old.promise : next.promise,
-      undefined, undefined, () => true);
+    const service = new TelegramService(
+      context(),
+      client,
+      () => (++calls === 1 ? old.promise : next.promise),
+      undefined,
+      undefined,
+      () => true
+    );
     const polling = service.start();
-    t.after(async () => { service.stop(); old.resolve('Old'); next.resolve('New'); await polling; });
+    t.after(async () => {
+      service.stop();
+      old.resolve('Old');
+      next.resolve('New');
+      await polling;
+    });
     client.push(message(1, '/codex old'));
     await flush();
     client.push(message(2, '/stop'), message(3, '/codex next'));
@@ -125,18 +165,33 @@ suite('Telegram /stop', () => {
     assert.equal(client.messages.at(-1), 'New');
   });
 
-  test('stop before the working message is delivered prevents starting Codex', async t => {
+  test('stop before the working message is delivered prevents starting Codex', async (t) => {
     const client = new FakeTelegram();
     const delivery = deferred<void>();
     t.mock.method(client, 'sendMessage', async (_chat: number, text: string) => {
       client.messages.push(text);
-      if (text.startsWith('⏳')) { await delivery.promise; }
+      if (text.startsWith('⏳')) {
+        await delivery.promise;
+      }
     });
     let prompts = 0;
-    const service = new TelegramService(context(), client, async () => { prompts++; return 'Unexpected'; },
-      undefined, undefined, () => false);
+    const service = new TelegramService(
+      context(),
+      client,
+      async () => {
+        prompts++;
+        return 'Unexpected';
+      },
+      undefined,
+      undefined,
+      () => false
+    );
     const polling = service.start();
-    t.after(async () => { service.stop(); delivery.resolve(); await polling; });
+    t.after(async () => {
+      service.stop();
+      delivery.resolve();
+      await polling;
+    });
     client.push(message(1, '/codex pending'));
     await flush();
     client.push(message(2, '/stop'));
@@ -147,10 +202,13 @@ suite('Telegram /stop', () => {
     assert.match(client.messages.at(-1)!, /Requête annulée/);
   });
 
-  test('cancels workspace validation without spawning Codex', async t => {
+  test('cancels workspace validation without spawning Codex', async (t) => {
     const ready = deferred<void>();
     const spawn = t.mock.method(childProcess, 'spawn', () => assert.fail('must not spawn'));
-    const codex = new CodexService(undefined, async () => { await ready.promise; return { root: '/project' }; });
+    const codex = new CodexService(undefined, async () => {
+      await ready.promise;
+      return { root: '/project' };
+    });
     t.after(() => codex.stop());
     const pending = codex.sendPrompt('wait', '/project');
     const cancelled = assert.rejects(pending, /annulée/);

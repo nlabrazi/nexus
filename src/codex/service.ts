@@ -1,6 +1,12 @@
-import { isAbsolute, resolve } from 'path';
+import { isAbsolute, resolve } from 'node:path';
 import { CodexClient } from './client';
-import { CodexApprovalHandler, CodexServiceStatus, CodexThread, ModelMenu, ModelSelection } from './types';
+import {
+  CodexApprovalHandler,
+  CodexServiceStatus,
+  CodexThread,
+  ModelMenu,
+  ModelSelection,
+} from './types';
 import { CodexError } from './errors';
 import { assertSameWorkspace, WorkspaceIdentity, WorkspaceValidator } from '../workspace/guard';
 import { SessionPersistence } from './persistence';
@@ -22,8 +28,12 @@ export class CodexService {
   private generation = 0;
   private sessionOperation?: { key: string; promise: Promise<string> };
 
-  constructor(approvalHandler?: CodexApprovalHandler, private readonly validateWorkspace?: WorkspaceValidator,
-    private readonly persistence?: SessionPersistence, private readonly modelPreferences?: ModelPreferences) {
+  constructor(
+    approvalHandler?: CodexApprovalHandler,
+    private readonly validateWorkspace?: WorkspaceValidator,
+    private readonly persistence?: SessionPersistence,
+    private readonly modelPreferences?: ModelPreferences
+  ) {
     this.client = new CodexClient(approvalHandler);
     this.modelSelection = modelPreferences?.load();
     const saved = persistence?.load();
@@ -47,16 +57,32 @@ export class CodexService {
   }
 
   async withWorkspaceOperation<T>(operation: () => Promise<T>): Promise<T> {
-    if (this.workspaceOperation || this.turnRunning || this.sessionOperation || this.modelChanging) {
-      throw new Error('Une opération Git ou Codex est en cours. Attendez sa fin avant de changer de branche.');
+    if (
+      this.workspaceOperation ||
+      this.turnRunning ||
+      this.sessionOperation ||
+      this.modelChanging
+    ) {
+      throw new Error(
+        'Une opération Git ou Codex est en cours. Attendez sa fin avant de changer de branche.'
+      );
     }
     this.workspaceOperation = true;
-    try { return await operation(); }
-    finally { this.workspaceOperation = false; }
+    try {
+      return await operation();
+    } finally {
+      this.workspaceOperation = false;
+    }
   }
 
   private modelContext(path: string): string {
-    return JSON.stringify([this.normalizeWorkspace(path), this.generation, this.sessionId, this.workspaceIdentity, this.modelRevision]);
+    return JSON.stringify([
+      this.normalizeWorkspace(path),
+      this.generation,
+      this.sessionId,
+      this.workspaceIdentity,
+      this.modelRevision,
+    ]);
   }
 
   async listModels(path: string): Promise<ModelMenu> {
@@ -66,39 +92,73 @@ export class CodexService {
     this.assertCurrent(generation);
     const models = await this.client.listModels();
     this.assertCurrent(generation);
-    if (context !== this.modelContext(path)) { throw new Error('Le contexte a changé. Rouvrez /model.'); }
+    if (context !== this.modelContext(path)) {
+      throw new Error('Le contexte a changé. Rouvrez /model.');
+    }
     const telemetry = this.sessionId ? this.client.getThreadTelemetry(this.sessionId) : undefined;
-    return { models, context, selected: this.modelSelection ? { ...this.modelSelection }
-      : telemetry?.model ? { model: telemetry.model, effort: telemetry.reasoningEffort ?? '' } : undefined };
+    return {
+      models,
+      context,
+      selected: this.modelSelection
+        ? { ...this.modelSelection }
+        : telemetry?.model
+          ? { model: telemetry.model, effort: telemetry.reasoningEffort ?? '' }
+          : undefined,
+    };
   }
 
   async selectModel(path: string, selection: ModelSelection, context: string): Promise<void> {
-    if (this.turnRunning || this.sessionOperation || this.workspaceOperation || this.modelChanging) {
-      throw new Error('Une opération Git ou Codex est en cours. Attendez sa fin puis rouvrez /model.');
+    if (
+      this.turnRunning ||
+      this.sessionOperation ||
+      this.workspaceOperation ||
+      this.modelChanging
+    ) {
+      throw new Error(
+        'Une opération Git ou Codex est en cours. Attendez sa fin puis rouvrez /model.'
+      );
     }
-    if (context !== this.modelContext(path)) { throw new Error('Le contexte a changé. Rouvrez /model.'); }
+    if (context !== this.modelContext(path)) {
+      throw new Error('Le contexte a changé. Rouvrez /model.');
+    }
     this.modelChanging = true;
     try {
       const menu = await this.listModels(path);
-      if (menu.context !== context) { throw new Error('Le contexte a changé. Rouvrez /model.'); }
-      const model = menu.models.find(model => model.model === selection.model);
-      if (!model || !model.supportedReasoningEfforts.some(option => option.reasoningEffort === selection.effort)) {
+      if (menu.context !== context) {
+        throw new Error('Le contexte a changé. Rouvrez /model.');
+      }
+      const model = menu.models.find((model) => model.model === selection.model);
+      if (
+        !model?.supportedReasoningEfforts.some(
+          (option) => option.reasoningEffort === selection.effort
+        )
+      ) {
         throw new Error('Ce modèle ou cet effort n’est plus disponible. Rouvrez /model.');
       }
       // Store only a validated catalog choice. It is sent on the next explicit prompt.
       await this.modelPreferences?.save(selection);
       this.modelSelection = { ...selection };
       this.modelRevision++;
-    } finally { this.modelChanging = false; }
+    } finally {
+      this.modelChanging = false;
+    }
   }
 
   async refreshStatus(): Promise<void> {
     await this.client.refreshRateLimits();
   }
 
-  private async changeSession(action: SessionAction, cwd: string, sessionId?: string): Promise<string> {
-    if (this.modelChanging) { throw new Error('Un changement de modèle est en cours. Attendez sa fin.'); }
-    if (this.workspaceOperation) { throw new Error('Un changement de branche est en cours. Attendez sa fin.'); }
+  private async changeSession(
+    action: SessionAction,
+    cwd: string,
+    sessionId?: string
+  ): Promise<string> {
+    if (this.modelChanging) {
+      throw new Error('Un changement de modèle est en cours. Attendez sa fin.');
+    }
+    if (this.workspaceOperation) {
+      throw new Error('Un changement de branche est en cours. Attendez sa fin.');
+    }
     const path = this.normalizeWorkspace(cwd);
     const id = sessionId?.trim();
     if (action === 'resume' && (!id || /\s/.test(id))) {
@@ -130,13 +190,20 @@ export class CodexService {
     }
   }
 
-  private async selectSession(action: SessionAction, path: string, generation: number, id?: string): Promise<string> {
+  private async selectSession(
+    action: SessionAction,
+    path: string,
+    generation: number,
+    id?: string
+  ): Promise<string> {
     this.assertCurrent(generation);
     const workspace = this.validateWorkspace ? await this.validateWorkspace(path) : undefined;
     this.assertCurrent(generation);
     path = workspace?.root ?? path;
     if (action === 'ensure' && this.sessionId && this.workspacePath !== path) {
-      throw new Error('La session appartient à un autre workspace. Utilisez /new ou /resume <id> explicitement.');
+      throw new Error(
+        'La session appartient à un autre workspace. Utilisez /new ou /resume <id> explicitement.'
+      );
     }
     if (action === 'ensure' && this.sessionId) {
       assertSameWorkspace(this.workspaceIdentity, workspace);
@@ -164,7 +231,11 @@ export class CodexService {
         this.checkThread(metadata.thread, path, targetId);
         thread = (await this.client.resumeSession(targetId, path, this.modelSelection)).thread;
       } catch (error) {
-        if (targetId === this.sessionId && error instanceof CodexError && error.code === 'session_lost') {
+        if (
+          targetId === this.sessionId &&
+          error instanceof CodexError &&
+          error.code === 'session_lost'
+        ) {
           this.sessionConnection = undefined;
         }
         throw error;
@@ -188,26 +259,41 @@ export class CodexService {
   }
 
   private async persistSelection(generation: number): Promise<void> {
-    if (!this.persistence || !this.sessionId || !this.workspaceIdentity) { return; }
+    if (!this.persistence || !this.sessionId || !this.workspaceIdentity) {
+      return;
+    }
     try {
-      await this.persistence.save({ version: 1, id: this.sessionId, workspace: this.workspaceIdentity });
+      await this.persistence.save({
+        version: 1,
+        id: this.sessionId,
+        workspace: this.workspaceIdentity,
+      });
     } catch (error) {
       this.assertCurrent(generation);
-      throw new Error('La session est sélectionnée, mais sa sauvegarde a échoué. Aucun nouveau prompt n’a été lancé. Vérifiez le stockage de VS Code puis réessayez.', { cause: error });
+      throw new Error(
+        'La session est sélectionnée, mais sa sauvegarde a échoué. Aucun nouveau prompt n’a été lancé. Vérifiez le stockage de VS Code puis réessayez.',
+        { cause: error }
+      );
     }
     this.assertCurrent(generation, this.sessionConnection);
   }
 
   private checkThread(thread: CodexThread, path: string, expectedId?: string): void {
-    if (!thread || typeof thread.id !== 'string' || !thread.id.trim() ||
-      (expectedId !== undefined && thread.id !== expectedId)) {
+    if (
+      !thread ||
+      typeof thread.id !== 'string' ||
+      !thread.id.trim() ||
+      (expectedId !== undefined && thread.id !== expectedId)
+    ) {
       throw new Error('Codex a renvoyé une session invalide.');
     }
     if (typeof thread.cwd !== 'string' || !isAbsolute(thread.cwd) || resolve(thread.cwd) !== path) {
       throw new Error('Le workspace de cette session ne correspond pas au workspace ciblé.');
     }
     if (thread.status?.type === 'active' || thread.status?.type === 'systemError') {
-      throw new Error('Cette session Codex est occupée ou en erreur ; elle ne peut pas être reprise.');
+      throw new Error(
+        'Cette session Codex est occupée ou en erreur ; elle ne peut pas être reprise.'
+      );
     }
   }
 
@@ -219,13 +305,19 @@ export class CodexService {
   }
 
   private assertCurrent(generation: number, connection?: number): void {
-    if (this.generation !== generation ||
-      (connection !== undefined && this.client.getConnectionId() !== connection)) {
+    if (
+      this.generation !== generation ||
+      (connection !== undefined && this.client.getConnectionId() !== connection)
+    ) {
       throw new Error('Opération Codex annulée : le processus a été arrêté ou remplacé.');
     }
   }
 
-  async sendPrompt(prompt: string, cwd = this.workspacePath, onFilesChanged?: (paths: readonly string[]) => void): Promise<string> {
+  async sendPrompt(
+    prompt: string,
+    cwd = this.workspacePath,
+    onFilesChanged?: (paths: readonly string[]) => void
+  ): Promise<string> {
     if (!prompt.trim()) {
       throw new Error('Codex prompt cannot be empty');
     }
@@ -233,7 +325,12 @@ export class CodexService {
       throw new Error('No active Codex session.');
     }
     const path = this.normalizeWorkspace(cwd);
-    if (this.turnRunning || this.sessionOperation || this.workspaceOperation || this.modelChanging) {
+    if (
+      this.turnRunning ||
+      this.sessionOperation ||
+      this.workspaceOperation ||
+      this.modelChanging
+    ) {
       throw new Error('A Codex turn or session operation is already running.');
     }
     // Reserve the whole request, including session startup, before the first await.
@@ -248,7 +345,11 @@ export class CodexService {
       }
       return await this.client.runTurn(id, prompt, onFilesChanged, this.modelSelection);
     } catch (error) {
-      if (this.generation === generation && error instanceof CodexError && error.code === 'session_lost') {
+      if (
+        this.generation === generation &&
+        error instanceof CodexError &&
+        error.code === 'session_lost'
+      ) {
         this.sessionConnection = undefined;
       }
       throw error;
@@ -264,8 +365,11 @@ export class CodexService {
   }
 
   isSessionActive(): boolean {
-    return this.sessionId !== undefined && this.sessionConnection !== undefined &&
-      this.sessionConnection === this.client.getConnectionId();
+    return (
+      this.sessionId !== undefined &&
+      this.sessionConnection !== undefined &&
+      this.sessionConnection === this.client.getConnectionId()
+    );
   }
 
   isTurnRunning(): boolean {
@@ -288,7 +392,9 @@ export class CodexService {
   }
 
   cancelCurrentWork(): boolean {
-    if (!this.turnRunning && !this.sessionOperation) { return false; }
+    if (!this.turnRunning && !this.sessionOperation) {
+      return false;
+    }
     this.generation++;
     this.sessionOperation = undefined;
     this.client.stop();

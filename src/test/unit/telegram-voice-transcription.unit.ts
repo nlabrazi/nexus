@@ -11,21 +11,32 @@ type TranscribeVoice = NonNullable<TelegramServiceOptions['transcribeVoice']>;
 const voice = (id: number): TelegramUpdate => ({
   update_id: id,
   message: {
-    from: { id: 10 }, chat: { id: 20, type: 'private' },
-    voice: { file_id: `voice-${id}`, file_unique_id: `unique-${id}`, duration: 5, mime_type: 'audio/ogg' },
+    from: { id: 10 },
+    chat: { id: 20, type: 'private' },
+    voice: {
+      file_id: `voice-${id}`,
+      file_unique_id: `unique-${id}`,
+      duration: 5,
+      mime_type: 'audio/ogg',
+    },
   },
 });
 
 const message = (id: number, text: string): TelegramUpdate => ({
-  update_id: id, message: { text, from: { id: 10 }, chat: { id: 20, type: 'private' } },
+  update_id: id,
+  message: { text, from: { id: 10 }, chat: { id: 20, type: 'private' } },
 });
 
-const audio = (): TelegramVoiceFile => ({ data: Buffer.from('recorded voice'), fileName: 'voice.oga', mimeType: 'audio/ogg' });
+const audio = (): TelegramVoiceFile => ({
+  data: Buffer.from('recorded voice'),
+  fileName: 'voice.oga',
+  mimeType: 'audio/ogg',
+});
 const hasTranscript = (text: string) => text.startsWith('🎙 Transcription :');
-const isCleared = (file: TelegramVoiceFile) => file.data.every(byte => byte === 0);
+const isCleared = (file: TelegramVoiceFile) => file.data.every((byte) => byte === 0);
 
 suite('Telegram local voice transcription', () => {
-  test('passes intact downloaded audio and its signal to STT and returns literal text without invoking agents', async t => {
+  test('passes intact downloaded audio and its signal to STT and returns literal text without invoking agents', async (t) => {
     const client = new FakeTelegram();
     const sent = t.mock.method(client as TelegramClient, 'sendMessage');
     const file = audio();
@@ -35,10 +46,16 @@ suite('Telegram local voice transcription', () => {
     const codex = t.mock.fn(async () => 'Unexpected Codex response');
     const antigravity = t.mock.fn(async () => 'Unexpected Antigravity response');
     const service = new TelegramService(context(), client, {
-      transcribeVoice: transcribe, onRemotePrompt: codex, onRemoteAntigravityPrompt: antigravity,
+      transcribeVoice: transcribe,
+      onRemotePrompt: codex,
+      onRemoteAntigravityPrompt: antigravity,
     });
     const polling = service.start();
-    t.after(async () => { service.stop(); pending.resolve(''); await polling; });
+    t.after(async () => {
+      service.stop();
+      pending.resolve('');
+      await polling;
+    });
 
     client.push(voice(1), voice(1));
     await flush();
@@ -48,7 +65,10 @@ suite('Telegram local voice transcription', () => {
     assert.equal(transcribe.mock.calls[0].arguments[0], file);
     assert.equal(transcribe.mock.calls[0].arguments[1], download.mock.calls[0].arguments[1]);
     assert.equal(file.data.toString(), 'recorded voice');
-    assert.deepEqual(client.messages, ['⏳ Téléchargement du message vocal…', '⏳ Transcription locale du message vocal…']);
+    assert.deepEqual(client.messages, [
+      '⏳ Téléchargement du message vocal…',
+      '⏳ Transcription locale du message vocal…',
+    ]);
 
     const text = '/codex **bonjour** <tag> & `code` 😀\n/stop\n/agy bonjour';
     pending.resolve(text);
@@ -62,10 +82,12 @@ suite('Telegram local voice transcription', () => {
   });
 
   for (const error of [
-    new SpeechError('empty_transcript'), new SpeechError('unavailable'),
-    new SpeechError('timeout'), new Error('secret path /private/SECRET and private transcript'),
+    new SpeechError('empty_transcript'),
+    new SpeechError('unavailable'),
+    new SpeechError('timeout'),
+    new Error('secret path /private/SECRET and private transcript'),
   ]) {
-    test(`clears audio, reports safe ${error instanceof SpeechError ? error.code : 'unexpected error'}, and permits retry`, async t => {
+    test(`clears audio, reports safe ${error instanceof SpeechError ? error.code : 'unexpected error'}, and permits retry`, async (t) => {
       const client = new FakeTelegram();
       const files: TelegramVoiceFile[] = [];
       t.mock.method(client, 'downloadVoice', async () => {
@@ -73,10 +95,15 @@ suite('Telegram local voice transcription', () => {
         files.push(file);
         return file;
       });
-      const transcribe = t.mock.fn<TranscribeVoice>(async () => { throw error; });
+      const transcribe = t.mock.fn<TranscribeVoice>(async () => {
+        throw error;
+      });
       const service = new TelegramService(context(), client, { transcribeVoice: transcribe });
       const polling = service.start();
-      t.after(async () => { service.stop(); await polling; });
+      t.after(async () => {
+        service.stop();
+        await polling;
+      });
 
       client.push(voice(1));
       await flush();
@@ -85,8 +112,13 @@ suite('Telegram local voice transcription', () => {
       assert.equal(isCleared(files[0]), true);
       assert.equal(client.messages.some(hasTranscript), false);
       assert.ok(client.messages.at(-1)!.startsWith('❌'));
-      if (error instanceof SpeechError) { assert.equal(client.messages.at(-1), `❌ ${error.message}`); }
-      assert.equal(client.messages.some(text => /SECRET|private transcript/.test(text)), false);
+      if (error instanceof SpeechError) {
+        assert.equal(client.messages.at(-1), `❌ ${error.message}`);
+      }
+      assert.equal(
+        client.messages.some((text) => /SECRET|private transcript/.test(text)),
+        false
+      );
 
       transcribe.mock.mockImplementation(async () => 'Deuxième essai');
       client.push(voice(2));
@@ -98,7 +130,7 @@ suite('Telegram local voice transcription', () => {
     });
   }
 
-  test('keeps polling and excludes concurrent agent or voice work during STT; only an authorized stop cancels it', async t => {
+  test('keeps polling and excludes concurrent agent or voice work during STT; only an authorized stop cancels it', async (t) => {
     const client = new FakeTelegram();
     const file = audio();
     t.mock.method(client, 'downloadVoice', async () => file);
@@ -107,23 +139,35 @@ suite('Telegram local voice transcription', () => {
     const codex = t.mock.fn(async () => 'Unexpected');
     const antigravity = t.mock.fn(async () => 'Unexpected');
     const service = new TelegramService(context(), client, {
-      transcribeVoice: transcribe, onRemotePrompt: codex, onRemoteAntigravityPrompt: antigravity,
+      transcribeVoice: transcribe,
+      onRemotePrompt: codex,
+      onRemoteAntigravityPrompt: antigravity,
       getStatus: () => ({ workspaceCount: 1 }),
     });
     const polling = service.start();
-    t.after(async () => { service.stop(); pending.resolve('Late'); await polling; });
+    t.after(async () => {
+      service.stop();
+      pending.resolve('Late');
+      await polling;
+    });
     client.push(voice(1));
     await flush();
     const signal = transcribe.mock.calls[0].arguments[1];
 
-    client.push(voice(2), message(3, '/codex wait'), message(4, '/agy wait'), message(5, '/ping'), message(6, '/status'));
+    client.push(
+      voice(2),
+      message(3, '/codex wait'),
+      message(4, '/agy wait'),
+      message(5, '/ping'),
+      message(6, '/status')
+    );
     await flush();
     assert.equal(transcribe.mock.callCount(), 1);
     assert.equal(codex.mock.callCount(), 0);
     assert.equal(antigravity.mock.callCount(), 0);
     assert.ok(client.messages.includes('pong'));
-    assert.ok(client.messages.some(text => text.includes('Nexus — statut')));
-    assert.ok(client.messages.some(text => text.includes('Une requête est déjà en cours')));
+    assert.ok(client.messages.some((text) => text.includes('Nexus — statut')));
+    assert.ok(client.messages.some((text) => text.includes('Une requête est déjà en cours')));
 
     const unauthorized = message(7, '/stop');
     unauthorized.message!.from!.id = 99;
@@ -139,22 +183,31 @@ suite('Telegram local voice transcription', () => {
     await flush();
     assert.equal(isCleared(file), true);
     assert.equal(client.messages.some(hasTranscript), false);
-    assert.equal(client.messages.some(text => text.startsWith('❌')), false);
+    assert.equal(
+      client.messages.some((text) => text.startsWith('❌')),
+      false
+    );
   });
 
-  test('stop while the transcription progress message is pending prevents STT and clears the downloaded audio', async t => {
+  test('stop while the transcription progress message is pending prevents STT and clears the downloaded audio', async (t) => {
     const client = new FakeTelegram();
     const file = audio();
     t.mock.method(client, 'downloadVoice', async () => file);
     const delivery = deferred<void>();
     t.mock.method(client, 'sendMessage', async (_chat: number, text: string) => {
       client.messages.push(text);
-      if (text === '⏳ Transcription locale du message vocal…') { await delivery.promise; }
+      if (text === '⏳ Transcription locale du message vocal…') {
+        await delivery.promise;
+      }
     });
     const transcribe = t.mock.fn<TranscribeVoice>(async () => 'Unexpected');
     const service = new TelegramService(context(), client, { transcribeVoice: transcribe });
     const polling = service.start();
-    t.after(async () => { service.stop(); delivery.resolve(); await polling; });
+    t.after(async () => {
+      service.stop();
+      delivery.resolve();
+      await polling;
+    });
 
     client.push(voice(1));
     await flush();
@@ -169,15 +222,23 @@ suite('Telegram local voice transcription', () => {
     assert.equal(client.messages.at(-1), '⏹ Traitement du message vocal annulé.');
   });
 
-  test('a late cancelled transcript cannot release a newer agent request or send a reply', async t => {
+  test('a late cancelled transcript cannot release a newer agent request or send a reply', async (t) => {
     const client = new FakeTelegram();
     const old = deferred<string>();
     const transcribe = t.mock.fn<TranscribeVoice>(() => old.promise);
     const next = deferred<string>();
     const codex = t.mock.fn(() => next.promise);
-    const service = new TelegramService(context(), client, { transcribeVoice: transcribe, onRemotePrompt: codex });
+    const service = new TelegramService(context(), client, {
+      transcribeVoice: transcribe,
+      onRemotePrompt: codex,
+    });
     const polling = service.start();
-    t.after(async () => { service.stop(); old.resolve('Old'); next.resolve('New'); await polling; });
+    t.after(async () => {
+      service.stop();
+      old.resolve('Old');
+      next.resolve('New');
+      await polling;
+    });
 
     client.push(voice(1));
     await flush();
@@ -197,7 +258,7 @@ suite('Telegram local voice transcription', () => {
   });
 
   for (const action of ['restart', 're-pair'] as const) {
-    test(`${action} cancels STT, suppresses old results, and permits a fresh voice`, async t => {
+    test(`${action} cancels STT, suppresses old results, and permits a fresh voice`, async (t) => {
       const client = new FakeTelegram();
       const sent = t.mock.method(client as TelegramClient, 'sendMessage');
       const file = audio();
@@ -206,7 +267,11 @@ suite('Telegram local voice transcription', () => {
       const transcribe = t.mock.fn<TranscribeVoice>(() => pending.promise);
       const service = new TelegramService(context(), client, { transcribeVoice: transcribe });
       let polling = service.start();
-      t.after(async () => { service.stop(); pending.resolve('Old'); await polling; });
+      t.after(async () => {
+        service.stop();
+        pending.resolve('Old');
+        await polling;
+      });
       client.push(voice(1));
       await flush();
       const signal = transcribe.mock.calls[0].arguments[1];

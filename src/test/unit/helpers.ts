@@ -1,16 +1,25 @@
 import type * as vscode from 'vscode';
 import { TelegramClient } from '../../telegram/client';
-import { TelegramInlineKeyboard, TelegramUpdate, TelegramUpdatesResponse, TelegramVoice, TelegramVoiceFile } from '../../telegram/types';
+import {
+  TelegramInlineKeyboard,
+  TelegramUpdate,
+  TelegramUpdatesResponse,
+  TelegramVoice,
+  TelegramVoiceFile,
+} from '../../telegram/types';
 
 export function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: Error) => void;
-  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
   return { promise, resolve, reject };
 }
 
 export async function flush(): Promise<void> {
-  await new Promise<void>(resolve => setImmediate(resolve));
+  await new Promise<void>((resolve) => setImmediate(resolve));
 }
 
 export function context(): vscode.ExtensionContext {
@@ -21,7 +30,9 @@ export function context(): vscode.ExtensionContext {
   return {
     globalState: {
       get: (key: string, fallback?: unknown) => values.get(key) ?? fallback,
-      update: async (key: string, value: unknown) => { values.set(key, value); },
+      update: async (key: string, value: unknown) => {
+        values.set(key, value);
+      },
     },
   } as unknown as vscode.ExtensionContext;
 }
@@ -38,7 +49,9 @@ export class FakeTelegram extends TelegramClient {
   private batches: TelegramUpdate[][] = [];
   private waiting?: ReturnType<typeof deferred<TelegramUpdatesResponse>>;
 
-  constructor() { super('fake-token'); }
+  constructor() {
+    super('fake-token');
+  }
 
   push(...updates: TelegramUpdate[]): void {
     if (this.waiting) {
@@ -49,7 +62,10 @@ export class FakeTelegram extends TelegramClient {
     }
   }
 
-  override async getUpdates(_offset: number, signal?: AbortSignal): Promise<TelegramUpdatesResponse> {
+  override async getUpdates(
+    _offset: number,
+    signal?: AbortSignal
+  ): Promise<TelegramUpdatesResponse> {
     signal?.throwIfAborted();
     const batch = this.batches.shift();
     if (batch) {
@@ -63,45 +79,83 @@ export class FakeTelegram extends TelegramClient {
       return await waiting.promise;
     } finally {
       signal?.removeEventListener('abort', abort);
-      if (this.waiting === waiting) { this.waiting = undefined; }
+      if (this.waiting === waiting) {
+        this.waiting = undefined;
+      }
     }
   }
 
-  override async sendMessage(_chatId: number, text: string, _format: 'plain' | 'markdown' = 'plain', signal?: AbortSignal): Promise<void> {
+  override async sendMessage(
+    _chatId: number,
+    text: string,
+    _format: 'plain' | 'markdown' = 'plain',
+    signal?: AbortSignal
+  ): Promise<void> {
     signal?.throwIfAborted();
     this.messages.push(text);
   }
 
-  override async downloadVoice(voice: TelegramVoice, signal?: AbortSignal): Promise<TelegramVoiceFile> {
+  override async downloadVoice(
+    voice: TelegramVoice,
+    signal?: AbortSignal
+  ): Promise<TelegramVoiceFile> {
     signal?.throwIfAborted();
     return { data: Buffer.from('fake-audio'), fileName: 'voice.oga', mimeType: voice.mime_type };
   }
 
-  override async sendApprovalMessage(_chatId: number, text: string, keyboard: TelegramInlineKeyboard) {
+  override async sendApprovalMessage(
+    _chatId: number,
+    text: string,
+    keyboard: TelegramInlineKeyboard
+  ) {
     const messageId = this.approvals.length + 1;
     this.approvals.push({ text, keyboard, messageId });
-    if (this.failSend) { throw new Error('Offline'); }
+    if (this.failSend) {
+      throw new Error('Offline');
+    }
     await this.delivery;
     return { message_id: messageId };
   }
 
-  override async sendKeyboardMessage(chatId: number, text: string, keyboard: TelegramInlineKeyboard) {
+  override async sendKeyboardMessage(
+    chatId: number,
+    text: string,
+    keyboard: TelegramInlineKeyboard
+  ) {
     return this.sendApprovalMessage(chatId, text, keyboard);
   }
 
-  override async editKeyboardMessage(_chatId: number, messageId: number, text: string, keyboard: TelegramInlineKeyboard): Promise<void> {
-    if (this.failEdit) { throw new Error('Offline'); }
-    const sent = this.approvals.find(message => message.messageId === messageId);
-    if (sent) { sent.text = text; sent.keyboard = keyboard; }
+  override async editKeyboardMessage(
+    _chatId: number,
+    messageId: number,
+    text: string,
+    keyboard: TelegramInlineKeyboard
+  ): Promise<void> {
+    if (this.failEdit) {
+      throw new Error('Offline');
+    }
+    const sent = this.approvals.find((message) => message.messageId === messageId);
+    if (sent) {
+      sent.text = text;
+      sent.keyboard = keyboard;
+    }
   }
 
   override async answerCallbackQuery(_id: string, text: string): Promise<void> {
-    if (this.failAnswer) { throw new Error('Offline'); }
+    if (this.failAnswer) {
+      throw new Error('Offline');
+    }
     this.answers.push(text);
   }
 
-  override async closeApprovalMessage(_chatId: number, messageId: number, text: string): Promise<void> {
-    if (this.failEdit) { throw new Error('Offline'); }
+  override async closeApprovalMessage(
+    _chatId: number,
+    messageId: number,
+    text: string
+  ): Promise<void> {
+    if (this.failEdit) {
+      throw new Error('Offline');
+    }
     this.closed.push({ messageId, text });
   }
 }
