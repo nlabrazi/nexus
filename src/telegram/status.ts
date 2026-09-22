@@ -269,6 +269,8 @@ function formatAntigravitySection(
     }
   }
 
+  lines.push('', '🧠 **Modèle et configuration Antigravity**');
+  lines.push(`Modèle de la session : ${literal(agy.model ?? 'indisponible')}`);
   lines.push(`Effort de raisonnement : ${literal(agy.reasoningEffort ?? 'non communiqué')}`);
   if (agy.sandbox) {
     lines.push(`Sandbox : ${literal(agy.sandbox)}`);
