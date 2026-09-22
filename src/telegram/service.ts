@@ -60,6 +60,7 @@ export class TelegramService {
   private readonly onAntigravitySessionAction?: (action: RemoteSessionAction) => Promise<string>;
   private readonly onAntigravityStop?: () => boolean;
   private readonly customGetActiveBackend?: () => AgentBackendType;
+  private readonly customSetActiveBackend?: (backend: AgentBackendType) => Promise<void> | void;
   private activeBackend: AgentBackendType = 'codex';
 
   constructor(
@@ -145,6 +146,9 @@ export class TelegramService {
   async setBackend(backend: AgentBackendType): Promise<void> {
     this.activeBackend = backend;
     await this.context.globalState.update('nexus.activeBackend', backend);
+    if (this.customSetActiveBackend) {
+      await this.customSetActiveBackend(backend);
+    }
   }
 
   requestApproval(request: ApprovalRequest, signal: AbortSignal): Promise<ApprovalDecision> {
