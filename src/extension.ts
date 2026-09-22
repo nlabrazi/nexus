@@ -16,6 +16,7 @@ import { WorkspaceAntigravitySessionPersistence } from './antigravity/persistenc
 import { WorkspaceAntigravityModelPreferences } from './antigravity/model-preferences';
 import { AgentBackendType } from './telegram/status';
 import { registerSpeechTestCommand } from './speech/commands';
+import { createConfiguredSpeechService } from './speech/configuration';
 
 let telegramService: TelegramService | undefined;
 let codexService: CodexService | undefined;
@@ -476,6 +477,10 @@ function startTelegramService(
       client,
       {
         onRemotePrompt: handleRemoteCodexPrompt,
+        transcribeVoice: async (audio, signal) => {
+          const { service, language } = createConfiguredSpeechService(context);
+          return service.transcribe(audio, { signal, language });
+        },
         getStatus: async () => {
           await codexService?.refreshStatus();
           await antigravityService?.refreshStatus();

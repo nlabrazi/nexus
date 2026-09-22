@@ -153,19 +153,6 @@ export class TelegramModels {
     const navigation = [];
     if (menu.page > 0) { navigation.push(button('‹ Précédents', 'page', menu.page - 1)); }
     if (menu.page + 1 < pages) { navigation.push(button('Suivants ›', 'page', menu.page + 1)); }
-    const title = this.agentName === 'Antigravity'
-      ? `✨ Nexus — modèles Antigravity (${menu.page + 1}/${pages})`
-      : `🤖 Nexus — modèles (${menu.page + 1}/${pages})`;
-    return {
-      text: `${title}\n\nChoisissez un modèle, puis son effort de raisonnement.\n✓ Modèle sélectionné · ☆ Modèle par défaut\nCe choix sera conservé pour ce workspace.\nLe menu expire après 2 minutes.`,
-      keyboard: {
-        inline_keyboard: [
-          ...menu.data.models.slice(menu.page * PAGE_SIZE, (menu.page + 1) * PAGE_SIZE).map((model, index) => [button(
-            `${model.model === menu.data.selected?.model ? '✓ ' : ''}${model.isDefault ? '☆ ' : ''}${model.displayName}`, 'pick', menu.page * PAGE_SIZE + index)]),
-          ...(navigation.length ? [navigation] : []), [button('Annuler', 'cancel')],
-        ]
-      }
-    };
   }
 
   private close(menu: Menu, text: string): void {

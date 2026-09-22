@@ -16,6 +16,7 @@ const voiceMessage = (id: number, metadata: Partial<TelegramVoice> = {}): Telegr
 const message = (id: number, text: string): TelegramUpdate => ({
   update_id: id, message: { text, from: { id: 10 }, chat: { id: 20, type: 'private' } },
 });
+const transcribeVoice = async () => 'Bonjour';
 const audio = (): TelegramVoiceFile => ({ data: Buffer.from('audio'), fileName: 'voice.oga' });
 
 suite('Telegram voice reception', () => {
@@ -27,7 +28,7 @@ suite('Telegram voice reception', () => {
       const codex = t.mock.fn(async () => 'Codex response');
       const antigravity = t.mock.fn(async () => 'Antigravity response');
       const service = new TelegramService(context(), client, {
-        onRemotePrompt: codex, onRemoteAntigravityPrompt: antigravity,
+        transcribeVoice, onRemotePrompt: codex, onRemoteAntigravityPrompt: antigravity,
       });
       const polling = service.start();
       t.after(async () => { service.stop(); await polling; });
@@ -37,11 +38,11 @@ suite('Telegram voice reception', () => {
 
       assert.equal(download.mock.callCount(), 1);
       assert.equal(download.mock.calls[0].arguments[0].file_id, 'voice-file');
-      assert.equal(send.mock.callCount(), 2);
+      assert.equal(send.mock.callCount(), 3);
       assert.equal(send.mock.calls[0].arguments[0], 20);
       assert.match(client.messages[0], /Téléchargement du message vocal/);
-      assert.match(client.messages[1], /Message vocal téléchargé/);
-      assert.match(client.messages[1], /transcription n’est pas encore disponible/);
+      assert.match(client.messages[1], /Transcription locale du message vocal/);
+      assert.equal(client.messages[2], '🎙 Transcription :\n\nBonjour');
       assert.equal(codex.mock.callCount(), 0);
       assert.equal(antigravity.mock.callCount(), 0);
     });
@@ -64,7 +65,7 @@ suite('Telegram voice reception', () => {
       const codex = t.mock.fn(async () => 'Codex response');
       const antigravity = t.mock.fn(async () => 'Antigravity response');
       const service = new TelegramService(saved, client, {
-        onRemotePrompt: codex, onRemoteAntigravityPrompt: antigravity,
+        transcribeVoice, onRemotePrompt: codex, onRemoteAntigravityPrompt: antigravity,
       });
       const polling = service.start();
       t.after(async () => { service.stop(); await polling; });
@@ -83,7 +84,7 @@ suite('Telegram voice reception', () => {
   test('acknowledges a duplicate voice only once and continues handling text prompts', async t => {
     const client = new FakeTelegram();
     const codex = t.mock.fn(async (prompt: string) => `Réponse : ${prompt}`);
-    const service = new TelegramService(context(), client, { onRemotePrompt: codex });
+    const service = new TelegramService(context(), client, { transcribeVoice, onRemotePrompt: codex });
     const polling = service.start();
     t.after(async () => { service.stop(); await polling; });
 
@@ -92,7 +93,7 @@ suite('Telegram voice reception', () => {
     client.push(message(2, '/codex bonjour'));
     await flush();
 
-    assert.equal(client.messages.filter(text => text.includes('Message vocal téléchargé')).length, 1);
+    assert.equal(client.messages.filter(text => text.includes('🎙 Transcription :')).length, 1);
     assert.equal(codex.mock.callCount(), 1);
     assert.deepEqual(codex.mock.calls[0].arguments, ['bonjour']);
     assert.equal(client.messages.at(-1), 'Réponse : bonjour');
@@ -100,7 +101,7 @@ suite('Telegram voice reception', () => {
 
   test('ignores other messages without text and keeps polling', async t => {
     const client = new FakeTelegram();
-    const service = new TelegramService(context(), client);
+    const service = new TelegramService(context(), client, { transcribeVoice });
     const polling = service.start();
     t.after(async () => { service.stop(); await polling; });
 
@@ -120,7 +121,7 @@ suite('Telegram voice reception', () => {
     const download = t.mock.method(client, 'downloadVoice', () => pending.promise);
     const prompt = t.mock.fn(async () => 'Unexpected');
     const service = new TelegramService(context(), client, {
-      onRemotePrompt: prompt, getStatus: () => ({ workspaceCount: 1 }),
+      transcribeVoice, onRemotePrompt: prompt, getStatus: () => ({ workspaceCount: 1 }),
     });
     const polling = service.start();
     t.after(async () => { service.stop(); pending.resolve(audio()); await polling; });
@@ -143,10 +144,10 @@ suite('Telegram voice reception', () => {
     client.push(message(7, '/stop'));
     await flush();
     assert.equal(signal.aborted, true);
-    assert.match(client.messages.at(-1)!, /Téléchargement du message vocal annulé/);
+    assert.match(client.messages.at(-1)!, /Traitement du message vocal annulé/);
     pending.resolve(audio());
     await flush();
-    assert.equal(client.messages.some(text => text.includes('Message vocal téléchargé') || text.startsWith('❌')), false);
+    assert.equal(client.messages.some(text => text.includes('🎙 Transcription :') || text.startsWith('❌')), false);
   });
 
   test('a cancelled download cannot release a newer prompt or send a late reply', async t => {
@@ -155,7 +156,7 @@ suite('Telegram voice reception', () => {
     t.mock.method(client, 'downloadVoice', () => pending.promise);
     const next = deferred<string>();
     const prompt = t.mock.fn(() => next.promise);
-    const service = new TelegramService(context(), client, { onRemotePrompt: prompt });
+    const service = new TelegramService(context(), client, { transcribeVoice, onRemotePrompt: prompt });
     const polling = service.start();
     t.after(async () => { service.stop(); pending.resolve(audio()); next.resolve('Done'); await polling; });
     client.push(voiceMessage(1));
@@ -167,7 +168,7 @@ suite('Telegram voice reception', () => {
     client.push(message(4, '/codex duplicate'), voiceMessage(5));
     await flush();
     assert.equal(prompt.mock.callCount(), 1);
-    assert.equal(client.messages.some(text => text.includes('Message vocal téléchargé')), false);
+    assert.equal(client.messages.some(text => text.includes('🎙 Transcription :')), false);
     next.resolve('Done');
     await flush();
     assert.equal(client.messages.at(-1), 'Done');
@@ -181,7 +182,7 @@ suite('Telegram voice reception', () => {
       client.messages.push(text);
       if (text.startsWith('⏳')) { await delivery.promise; }
     });
-    const service = new TelegramService(context(), client);
+    const service = new TelegramService(context(), client, { transcribeVoice });
     const polling = service.start();
     t.after(async () => { service.stop(); delivery.resolve(); await polling; });
     client.push(voiceMessage(1));
@@ -199,7 +200,7 @@ suite('Telegram voice reception', () => {
       const client = new FakeTelegram();
       const pending = deferred<TelegramVoiceFile>();
       const download = t.mock.method(client, 'downloadVoice', () => pending.promise);
-      const service = new TelegramService(context(), client);
+      const service = new TelegramService(context(), client, { transcribeVoice });
       let polling = service.start();
       t.after(async () => { service.stop(); pending.resolve(audio()); await polling; });
       client.push(voiceMessage(1));
@@ -216,12 +217,12 @@ suite('Telegram voice reception', () => {
       assert.equal(signal.aborted, true);
       pending.resolve(audio());
       await flush();
-      assert.equal(client.messages.some(text => text.includes('Message vocal téléchargé')), false);
+      assert.equal(client.messages.some(text => text.includes('🎙 Transcription :')), false);
       download.mock.mockImplementation(async () => audio());
       client.push(voiceMessage(3));
       await flush();
       assert.equal(download.mock.callCount(), 2);
-      assert.equal(client.messages.filter(text => text.includes('Message vocal téléchargé')).length, 1);
+      assert.equal(client.messages.filter(text => text.includes('🎙 Transcription :')).length, 1);
     });
   }
 
@@ -229,7 +230,7 @@ suite('Telegram voice reception', () => {
     test(`reports a safe ${error.name} and releases the reservation for a retry`, async t => {
       const client = new FakeTelegram();
       const download = t.mock.method(client, 'downloadVoice', async () => { throw error; });
-      const service = new TelegramService(context(), client);
+      const service = new TelegramService(context(), client, { transcribeVoice });
       const polling = service.start();
       t.after(async () => { service.stop(); await polling; });
       client.push(voiceMessage(1));
@@ -239,7 +240,7 @@ suite('Telegram voice reception', () => {
       download.mock.mockImplementation(async () => audio());
       client.push(voiceMessage(2));
       await flush();
-      assert.match(client.messages.at(-1)!, /Message vocal téléchargé/);
+      assert.match(client.messages.at(-1)!, /🎙 Transcription :/);
     });
   }
 });

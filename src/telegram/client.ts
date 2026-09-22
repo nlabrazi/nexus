@@ -142,17 +142,20 @@ export class TelegramClient {
   async sendMessage(
     chatId: number,
     text: string,
-    format: 'plain' | 'markdown' = 'plain'
+    format: 'plain' | 'markdown' = 'plain',
+    signal?: AbortSignal
   ): Promise<void> {
+    signal?.throwIfAborted();
     const chunks = format === 'markdown' ? formatTelegramResponse(text) : splitTelegramMessage(text);
 
     for (const chunk of chunks) {
+      signal?.throwIfAborted();
       await this.call('sendMessage', {
         chat_id: chatId,
         text: chunk.text,
         ...(chunk.entities.length > 0 ? { entities: chunk.entities } : {}),
         link_preview_options: { is_disabled: true },
-      });
+      }, signal);
     }
   }
 

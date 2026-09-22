@@ -1,8 +1,8 @@
 # Transcription locale
 
-Cette étape ajoute le moteur de transcription et un test depuis VS Code. Le
-branchement aux messages vocaux Telegram sera effectué à l’étape suivante :
-Telegram confirme encore uniquement leur téléchargement.
+Le moteur de transcription peut être testé depuis VS Code ou directement avec
+un [vocal Telegram](telegram-voice.md). Telegram renvoie maintenant le texte
+reconnu. L’envoi de cette transcription à un agent viendra à l’étape suivante.
 
 Nexus lance [faster-whisper](https://github.com/SYSTRAN/faster-whisper) dans un
 processus Python local, avec le modèle multilingue `small`, sur CPU en `int8`.
@@ -47,7 +47,7 @@ machine ; ne pas les placer dans les paramètres du projet de test. Une langue
 vide active la détection automatique. `fr` force le français et `en` l’anglais.
 Utiliser un code de langue pris en charge par le modèle.
 
-## Test manuel
+## Test depuis VS Code
 
 1. Lancer Nexus avec F5 en suivant le [guide de développement](development.md).
 2. Dans la fenêtre **Extension Development Host**, ouvrir la palette de commandes.
@@ -81,3 +81,16 @@ transport binaire et l’annulation. Les tests Python utilisent un modèle simul
 pour vérifier le chargement local, le décodage et la consommation des segments
 de transcription. Ils ne nécessitent ni modèle téléchargé ni dépendances Python
 supplémentaires. Le test manuel vérifie, lui, la reconnaissance réelle de la voix.
+
+## Test depuis Telegram
+
+Après le test local, relancer la session F5 pour charger les changements de code,
+puis envoyer un vocal avec le microphone Telegram depuis le compte appairé.
+Aucun préfixe n’est nécessaire. Nexus confirme le téléchargement, annonce la
+transcription locale, puis renvoie le texte reconnu dans Telegram. Les paramètres
+sont les mêmes que pour le test VS Code ; aucune configuration supplémentaire
+n’est nécessaire.
+
+`/stop` annule le téléchargement ou la transcription en cours. `/ping` et
+`/status` restent disponibles. À ce stade, le vocal ne lance aucun agent et ne
+modifie aucun fichier du workspace.

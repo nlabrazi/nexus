@@ -1,19 +1,27 @@
 # Messages vocaux Telegram
 
 Nexus détecte les messages `message.voice` du compte appairé dans sa conversation
-privée, puis télécharge leur audio depuis Telegram. Aucun préfixe `/codex` ou
+privée, télécharge leur audio depuis Telegram, puis le transcrit localement.
+Aucun préfixe `/codex` ou
 `/agy` n’est nécessaire pour envoyer un vocal avec le microphone Telegram.
 
-Deux messages accompagnent la réception :
+Les messages suivants accompagnent le traitement :
 
 > ⏳ Téléchargement du message vocal…
 
-> 🎙 Message vocal téléchargé. La transcription n’est pas encore disponible. Utilisez `/codex <instruction>` pour envoyer votre demande par écrit.
+> ⏳ Transcription locale du message vocal…
 
-Le [service de transcription locale](speech-local.md) peut maintenant être testé
-depuis VS Code. Son branchement à Telegram et l’envoi à un agent viendront dans
-les étapes suivantes.
+> 🎙 Transcription :
+>
+> Le texte reconnu dans votre vocal.
+
+Le [service de transcription locale](speech-local.md) utilise les mêmes paramètres
+`nexus.speech.pythonPath`, `nexus.speech.modelPath` et `nexus.speech.language` que
+le test VS Code. Les réglages sont relus à chaque vocal ; ils doivent être définis
+sur la machine où Nexus tourne. Le workspace doit être approuvé dans VS Code.
 Aucun prompt n’est envoyé à Codex ou Antigravity à cette étape.
+Même si le texte reconnu contient `/codex`, `/agy` ou `/stop`, il est affiché
+littéralement et n’est jamais interprété comme une commande.
 
 ## Téléchargement
 
@@ -27,26 +35,42 @@ Aucun prompt n’est envoyé à Codex ou Antigravity à cette étape.
 - La résolution du fichier et la lecture de son contenu disposent ensemble de
   **30 secondes maximum** ; l’appel `getFile` garde aussi le timeout HTTP de
   15 secondes du client Telegram.
-- L’audio reste en mémoire ; aucun fichier temporaire n’est écrit. À cette étape,
-  le buffer final est effacé après téléchargement. Le format reste celui reçu,
+- L’audio reste en mémoire ; aucun fichier temporaire n’est écrit. Le buffer
+  téléchargé est effacé à la fin du traitement, y compris en cas d’échec ou
+  d’annulation. Le format reste celui reçu,
   sans conversion, avec le nom fourni par Telegram et le MIME type du vocal.
 - Les erreurs affichées ne contiennent ni le token du bot ni l’URL de téléchargement.
 
+## Transcription
+
+Le moteur Python local dispose de **120 secondes maximum**, chargement du modèle
+compris, après le téléchargement. Il n’utilise aucune API de transcription distante.
+Le texte reconnu est ensuite envoyé dans votre conversation Telegram appairée.
+Les transcriptions longues sont découpées en plusieurs messages en texte brut.
+
+Un silence, un modèle indisponible ou une configuration manquante produit un
+message d’erreur explicite. Corriger les paramètres dans VS Code si nécessaire,
+puis envoyer un nouveau vocal pour réessayer.
+
 ## Annulation et concurrence
 
-Le polling reste actif pendant le téléchargement : `/ping`, `/status`, `/stop`
+Le polling reste actif pendant le téléchargement et la transcription : `/ping`, `/status`, `/stop`
 et les boutons Telegram continuent à fonctionner. Une autre demande de vocal ou
 de prompt est refusée pendant l’opération ; elle n’est pas mise en attente.
 
-`/stop`, l’arrêt de l’extension et un nouvel appairage annulent le téléchargement.
+`/stop`, l’arrêt de l’extension et un nouvel appairage annulent le traitement vocal,
+y compris le processus Python et les envois de texte encore en attente.
+Un message déjà reçu par Telegram ne peut pas être rappelé par cette annulation.
 Un résultat arrivé après annulation est ignoré. Un nouvel envoi explicite permet
 de réessayer après une erreur ou une annulation.
 
 ## Vérification
 
-Les tests de `src/test/unit/telegram-voice.unit.ts` et
-`src/test/unit/telegram-voice-download.unit.ts` couvrent les autorisations, le
-transport HTTP, les limites, les erreurs, l’annulation et les réponses tardives.
+Les tests de `src/test/unit/telegram-voice.unit.ts`,
+`src/test/unit/telegram-voice-download.unit.ts` et
+`src/test/unit/telegram-voice-transcription.unit.ts` couvrent les autorisations,
+le transport HTTP, les limites, la transcription, les erreurs, l’annulation et
+les réponses tardives.
 Ils utilisent des transports simulés et ne contactent aucun bot réel.
 
 ```sh
@@ -58,7 +82,8 @@ npm run compile
    une seule instance doit utiliser le bot. `/status` doit indiquer le workspace
    `project` et le chemin `.nexus-dev/project`.
 2. Envoyer un vocal au bot avec le microphone Telegram, depuis le compte appairé.
-3. Vérifier le message de téléchargement, puis « Message vocal téléchargé ».
+3. Vérifier le message de téléchargement, puis celui de transcription locale,
+   puis « 🎙 Transcription : » suivi des paroles reconnues.
 4. Envoyer `/ping` : le bot doit répondre `pong`.
-5. Si un téléchargement est encore en cours, envoyer `/stop` : Nexus doit répondre
-   « Téléchargement du message vocal annulé », sans confirmation de réussite tardive.
+5. Si le téléchargement ou la transcription est encore en cours, envoyer `/stop` :
+   Nexus doit répondre « Traitement du message vocal annulé », sans résultat tardif.

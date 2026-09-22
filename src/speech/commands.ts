@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 import { basename } from 'node:path';
 import { SpeechError } from './errors';
-import { LocalSpeechToTextProvider } from './local-provider';
-import { SPEECH_MAX_AUDIO_BYTES, SpeechToTextService } from './service';
+import { createConfiguredSpeechService } from './configuration';
+import { SPEECH_MAX_AUDIO_BYTES } from './service';
 
 export function registerSpeechTestCommand(context: vscode.ExtensionContext): vscode.Disposable {
   let active: AbortController | undefined;
@@ -28,9 +28,7 @@ export function registerSpeechTestCommand(context: vscode.ExtensionContext): vsc
         );
         return;
       }
-      const service = new SpeechToTextService(new LocalSpeechToTextProvider({
-        pythonPath, modelPath, scriptPath: context.asAbsolutePath('runtime/speech/transcribe.py'),
-      }));
+      const { service, language } = createConfiguredSpeechService(context);
       const selected = await vscode.window.showOpenDialog({
         canSelectMany: false, canSelectFolders: false,
         title: 'Nexus : choisir un audio à transcrire localement',
@@ -51,7 +49,7 @@ export function registerSpeechTestCommand(context: vscode.ExtensionContext): vsc
           data = await vscode.workspace.fs.readFile(uri);
           if (!vscode.workspace.isTrusted) { throw new SpeechError('cancelled'); }
           const text = await service.transcribe({ data, fileName: basename(uri.path) }, {
-            signal: controller.signal, language: config.get<string>('language', '').trim() || undefined,
+            signal: controller.signal, language,
           });
           if (controller.signal.aborted) { return; }
           const document = await vscode.workspace.openTextDocument({ content: text, language: 'plaintext' });

@@ -2,8 +2,42 @@ import * as assert from 'node:assert/strict';
 import { suite, test } from 'node:test';
 import { TelegramClient } from '../../telegram/client';
 import { TelegramTextMessage } from '../../telegram/types';
+import { flush } from './helpers';
 
 suite('Telegram response HTTP API', () => {
+  test('does not start delivery when already cancelled', async t => {
+    const fetchMock = t.mock.method(globalThis, 'fetch');
+    await assert.rejects(new TelegramClient('fake-token').sendMessage(20, 'voice transcript', 'plain', AbortSignal.abort()));
+    assert.equal(fetchMock.mock.callCount(), 0);
+  });
+
+  test('stops a long literal transcript between chunks when cancelled', async t => {
+    const controller = new AbortController();
+    const fetchMock = t.mock.method(globalThis, 'fetch', async (_input: string, init: RequestInit) => {
+      assert.equal(JSON.parse(String(init.body)).entities, undefined);
+      controller.abort();
+      return new Response(JSON.stringify({ ok: true, result: {} }));
+    });
+    await assert.rejects(new TelegramClient('fake-token').sendMessage(20, '**literal** <tag> 😀 '.repeat(500), 'plain', controller.signal));
+    assert.equal(fetchMock.mock.callCount(), 1);
+  });
+
+  test('cancels an in-flight transcript HTTP request', async t => {
+    const controller = new AbortController();
+    const fetchMock = t.mock.method(globalThis, 'fetch', async (_input: string, init: RequestInit) => {
+      const signal = init.signal!;
+      return new Promise<Response>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    });
+    const delivery = new TelegramClient('fake-token').sendMessage(20, 'a'.repeat(9000), 'plain', controller.signal);
+    const rejected = assert.rejects(delivery);
+    await flush();
+    controller.abort();
+    await rejected;
+    assert.equal(fetchMock.mock.callCount(), 1);
+  });
+
   test('sends formatted chunks in order with entities and no link previews', async t => {
     const calls: (TelegramTextMessage & { chat_id: number; parse_mode?: string; link_preview_options: unknown })[] = [];
     t.mock.method(globalThis, 'fetch', async (_input: string, init: RequestInit) => {

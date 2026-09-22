@@ -1,9 +1,10 @@
-export type SpeechErrorCode = 'not_configured' | 'invalid_audio' | 'audio_too_large' |
+export type SpeechErrorCode = 'not_configured' | 'untrusted_workspace' | 'invalid_audio' | 'audio_too_large' |
   'invalid_configuration' | 'unavailable' | 'invalid_response' | 'empty_transcript' |
   'timeout' | 'cancelled' | 'transcription_failed';
 
 const messages: Record<SpeechErrorCode, string> = {
   not_configured: 'Le service de transcription n’est pas configuré.',
+  untrusted_workspace: 'Le workspace doit être approuvé dans VS Code pour lancer la transcription locale.',
   invalid_audio: 'Le fichier audio est invalide ou vide.',
   audio_too_large: 'Le fichier audio dépasse la limite de 20 Mo.',
   invalid_configuration: 'La configuration du service de transcription est invalide.',

@@ -1,7 +1,8 @@
 import type * as vscode from 'vscode';
 import { randomInt } from 'crypto';
 import { TelegramClient, TelegramVoiceDownloadError } from './client';
-import { TelegramUpdate, TelegramVoice } from './types';
+import { TelegramUpdate, TelegramVoice, TelegramVoiceFile } from './types';
+import { SpeechError } from '../speech/errors';
 import { TelegramApprovals, TelegramPeer } from './approvals';
 import { ApprovalDecision, CodexApprovalRequest, ModelControls } from '../codex/types';
 import { formatTelegramStatus, NexusStatusSnapshot, AgentBackendType } from './status';
@@ -18,6 +19,7 @@ export type RemoteSessionAction = { type: 'new' } | { type: 'resume'; sessionId:
 export type RemoteBranchAction = { type: 'list' } | { type: 'switch'; name: string };
 
 export interface TelegramServiceOptions {
+  transcribeVoice?: (audio: TelegramVoiceFile, signal: AbortSignal) => Promise<string>;
   onRemotePrompt?: RemotePromptHandler;
   getStatus?: () => NexusStatusSnapshot | Promise<NexusStatusSnapshot>;
   onSessionAction?: (action: RemoteSessionAction) => Promise<string>;
@@ -37,7 +39,7 @@ export class TelegramService {
   private pairingExpiresAt = 0;
   private running = false;
   private abortController?: AbortController;
-  private voiceDownload?: AbortController;
+  private voiceOperation?: AbortController;
   private remotePromptRunning = false;
   private remoteSessionRunning = false;
   private remoteBranchRunning = false;
@@ -48,6 +50,7 @@ export class TelegramService {
   private statusRunning = false;
 
   private readonly onRemotePrompt?: RemotePromptHandler;
+  private readonly transcribeVoice?: TelegramServiceOptions['transcribeVoice'];
   private readonly getStatus?: () => NexusStatusSnapshot | Promise<NexusStatusSnapshot>;
   private readonly onSessionAction?: (action: RemoteSessionAction) => Promise<string>;
   private readonly onStop?: () => boolean;
@@ -80,6 +83,7 @@ export class TelegramService {
 
     if (typeof onRemotePromptOrOptions === 'object' && onRemotePromptOrOptions !== null) {
       const opts = onRemotePromptOrOptions;
+      this.transcribeVoice = opts.transcribeVoice;
       this.onRemotePrompt = opts.onRemotePrompt;
       this.getStatus = opts.getStatus;
       this.onSessionAction = opts.onSessionAction;
@@ -231,7 +235,7 @@ export class TelegramService {
   }
 
   stop(): void {
-    this.cancelVoiceDownload();
+    this.cancelVoiceOperation();
     this.models.cancel();
     this.antigravityModels.cancel();
     this.running = false;
@@ -239,10 +243,10 @@ export class TelegramService {
     this.approvals.cancelAll();
   }
 
-  private cancelVoiceDownload(): boolean {
-    if (!this.voiceDownload) { return false; }
-    this.voiceDownload.abort();
-    this.voiceDownload = undefined;
+  private cancelVoiceOperation(): boolean {
+    if (!this.voiceOperation) { return false; }
+    this.voiceOperation.abort();
+    this.voiceOperation = undefined;
     this.operationGeneration++;
     this.remotePromptRunning = false;
     return true;
@@ -290,7 +294,7 @@ export class TelegramService {
         return;
       }
 
-      this.cancelVoiceDownload();
+      this.cancelVoiceOperation();
       this.approvals.cancelAll();
       this.models.cancel();
       this.antigravityModels.cancel();
@@ -341,10 +345,10 @@ export class TelegramService {
         return;
       }
       const controller = new AbortController();
-      this.voiceDownload = controller;
+      this.voiceOperation = controller;
       this.remotePromptRunning = true;
       const signal = AbortSignal.any([controller.signal, this.abortController!.signal]);
-      void this.runVoiceDownload(chatId, voice, signal, controller);
+      void this.runVoiceTranscription(chatId, voice, signal, controller);
       return;
     }
 
@@ -419,11 +423,11 @@ export class TelegramService {
         await this.client.sendMessage(chatId, 'Usage : /stop');
         return;
       }
-      if (!this.onStop && !this.onAntigravityStop && !this.voiceDownload) {
+      if (!this.onStop && !this.onAntigravityStop && !this.voiceOperation) {
         await this.client.sendMessage(chatId, 'L’arrêt de Codex est indisponible.');
         return;
       }
-      const voiceCancelled = this.cancelVoiceDownload();
+      const voiceCancelled = this.cancelVoiceOperation();
       let cancelled: boolean;
       let agentCancelled: boolean;
       try {
@@ -443,7 +447,7 @@ export class TelegramService {
       this.remoteSessionRunning = false;
       this.approvals.cancelAll();
       if (voiceCancelled && !agentCancelled) {
-        await this.client.sendMessage(chatId, '⏹ Téléchargement du message vocal annulé.');
+        await this.client.sendMessage(chatId, '⏹ Traitement du message vocal annulé.');
         return;
       }
       const agentName = this.getActiveBackend() === 'antigravity' ? 'Antigravity' : 'Codex';
@@ -561,28 +565,42 @@ export class TelegramService {
     }
   }
 
-  private async runVoiceDownload(
+  private async runVoiceTranscription(
     chatId: number, voice: TelegramVoice, signal: AbortSignal, controller: AbortController,
     generation = this.operationGeneration
   ): Promise<void> {
+    let audio: TelegramVoiceFile | undefined;
+    let phase: 'download' | 'transcription' | 'delivery' = 'delivery';
     try {
-      await this.client.sendMessage(chatId, '⏳ Téléchargement du message vocal…');
+      if (!this.transcribeVoice) { throw new SpeechError('not_configured'); }
+      await this.client.sendMessage(chatId, '⏳ Téléchargement du message vocal…', 'plain', signal);
       if (signal.aborted || generation !== this.operationGeneration) { return; }
-      const audio = await this.client.downloadVoice(voice, signal);
-      // No transcription yet: clear the downloaded buffer instead of retaining audio.
-      audio.data.fill(0);
-      if (!signal.aborted && generation === this.operationGeneration) {
-        await this.client.sendMessage(chatId,
-          '🎙 Message vocal téléchargé. La transcription n’est pas encore disponible. Utilisez /codex <instruction> pour envoyer votre demande par écrit.');
-      }
+      phase = 'download';
+      audio = await this.client.downloadVoice(voice, signal);
+      if (signal.aborted || generation !== this.operationGeneration) { return; }
+      phase = 'delivery';
+      await this.client.sendMessage(chatId, '⏳ Transcription locale du message vocal…', 'plain', signal);
+      if (signal.aborted || generation !== this.operationGeneration) { return; }
+      phase = 'transcription';
+      const transcript = await this.transcribeVoice(audio, signal);
+      if (signal.aborted || generation !== this.operationGeneration) { return; }
+      if (typeof transcript !== 'string') { throw new SpeechError('invalid_response'); }
+      const text = transcript.trim();
+      if (!text) { throw new SpeechError('empty_transcript'); }
+      phase = 'delivery';
+      await this.client.sendMessage(chatId, `🎙 Transcription :\n\n${text}`, 'plain', signal);
     } catch (error) {
       if (!signal.aborted && generation === this.operationGeneration) {
-        const message = error instanceof TelegramVoiceDownloadError ? error.message : 'Impossible de récupérer le message vocal. Réessayez.';
-        await this.client.sendMessage(chatId, `❌ ${message}`)
+        const message = error instanceof TelegramVoiceDownloadError || error instanceof SpeechError ? error.message :
+          phase === 'download' ? 'Impossible de récupérer le message vocal. Réessayez.' :
+            phase === 'transcription' ? new SpeechError('transcription_failed').message :
+              'Impossible d’envoyer la réponse du message vocal. Réessayez.';
+        await this.client.sendMessage(chatId, `❌ ${message}`, 'plain', signal)
           .catch(() => console.error('[Telegram] Voice response delivery failed.'));
       }
     } finally {
-      if (this.voiceDownload === controller) { this.voiceDownload = undefined; }
+      audio?.data.fill(0);
+      if (this.voiceOperation === controller) { this.voiceOperation = undefined; }
       if (generation === this.operationGeneration) { this.remotePromptRunning = false; }
     }
   }

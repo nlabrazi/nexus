@@ -67,7 +67,8 @@ export class FakeTelegram extends TelegramClient {
     }
   }
 
-  override async sendMessage(_chatId: number, text: string): Promise<void> {
+  override async sendMessage(_chatId: number, text: string, _format: 'plain' | 'markdown' = 'plain', signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
     this.messages.push(text);
   }
 
