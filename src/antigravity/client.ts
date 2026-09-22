@@ -1,6 +1,6 @@
 import { ChildProcessWithoutNullStreams, execFile, spawn } from 'node:child_process';
 import { workspaceEnvironment } from '../workspace/environment';
-import { AntigravityError, processError, turnTimeoutError } from './errors';
+import { AntigravityError, emptyResponseError, processError, turnTimeoutError } from './errors';
 import {
   convertRawUsage,
   isInitEvent,
@@ -41,6 +41,14 @@ export class AntigravityClient {
   private conversationId?: string;
   private readonly binaryPath: string;
   private readonly approvals: AntigravityApprovals;
+  private readonly recentStderr: string[] = [];
+
+  private pushStderr(line: string): void {
+    this.recentStderr.push(line);
+    if (this.recentStderr.length > 50) {
+      this.recentStderr.shift();
+    }
+  }
 
   constructor(
     private readonly options: AntigravityClientOptions = {},
@@ -212,9 +220,11 @@ export class AntigravityClient {
 
     child.on('error', (error) => this.disconnect(child, processError(error)));
     child.on('exit', (code, signal) => {
+      const recent = this.recentStderr.slice(-5);
+      const extra = recent.length > 0 ? `\nLogs stderr :\n${recent.join('\n')}` : '';
       this.disconnect(
         child,
-        processError(new Error(`Antigravity exited: code=${code}, signal=${signal}`)),
+        processError(new Error(`Antigravity exited: code=${code}, signal=${signal}${extra}`)),
         false
       );
     });
@@ -223,6 +233,18 @@ export class AntigravityClient {
     }
     child.stdout.on('end', () => {
       this.disconnect(child, processError(new Error('Antigravity stdout closed')));
+    });
+
+    child.stderr.on('data', (chunk: Buffer | string) => {
+      const text = chunk.toString();
+      const lines = text
+        .split('\n')
+        .map((l: string) => l.trim())
+        .filter((l: string) => Boolean(l));
+      for (const line of lines) {
+        console.warn(`[Antigravity stderr] ${line}`);
+        this.pushStderr(line);
+      }
     });
 
     child.stdout.on('data', (chunk) => this.handleStdout(chunk));
@@ -288,8 +310,14 @@ export class AntigravityClient {
     this.currentTurn = currentTurn;
     this.approvals.beginTurn(conversationId);
 
+    const stderrStartIdx = this.recentStderr.length;
+    const toolsCalled: Array<{ name: string; state: string; error?: string }> = [];
     const changedFiles = new Set<string>();
     let collectedResponse = '';
+
+    console.log(
+      `[Antigravity] Starting turn in conversation ${conversationId}: "${trimmedPrompt.slice(0, 100)}${trimmedPrompt.length > 100 ? '...' : ''}"`
+    );
 
     return await new Promise<string>((resolve, reject) => {
       let settled = false;
@@ -297,6 +325,7 @@ export class AntigravityClient {
       let interruptTimeout: ReturnType<typeof setTimeout> | undefined;
 
       const cleanup = () => {
+        this.eventListeners.delete(onNotification);
         if (this.currentTurn === currentTurn) {
           this.currentTurn = undefined;
         }
@@ -354,6 +383,34 @@ export class AntigravityClient {
           }
 
           if (step.step_type === 'tool') {
+            const toolName = step.tool_name ?? 'unknown';
+            const toolState = step.state ?? 'UNKNOWN';
+            const toolError = step.tool_info?.error
+              ? `${step.tool_info.error.type ? `[${step.tool_info.error.type}] ` : ''}${step.tool_info.error.message}`
+              : undefined;
+
+            console.log(
+              `[Antigravity] Tool ${toolName} [${toolState}]${toolError ? ` Error: ${toolError}` : ''}`
+            );
+
+            let existingIdx = -1;
+            for (let i = toolsCalled.length - 1; i >= 0; i--) {
+              if (toolsCalled[i].name === toolName) {
+                existingIdx = i;
+                break;
+              }
+            }
+
+            if (existingIdx >= 0 && toolsCalled[existingIdx].state !== 'COMPLETED') {
+              toolsCalled[existingIdx] = { name: toolName, state: toolState, error: toolError };
+            } else {
+              toolsCalled.push({ name: toolName, state: toolState, error: toolError });
+            }
+
+            if (toolError) {
+              console.warn(`[Antigravity] Tool error on ${toolName}: ${toolError}`);
+            }
+
             if (step.tool_info?.parameters) {
               const params = step.tool_info.parameters;
               for (const key of ['TargetFile', 'file_path', 'path']) {
@@ -401,10 +458,21 @@ export class AntigravityClient {
           }
 
           if (res.status !== 'SUCCESS') {
+            const turnStderr = this.recentStderr.slice(stderrStartIdx);
+            console.error(
+              `[Antigravity] Turn ended with non-success status: ${res.status}, error: ${res.error}`
+            );
             fail(
               new AntigravityError(
                 'turn_failed',
-                `Le turn Antigravity a échoué : ${res.error ?? 'erreur inconnue'}.`
+                `Le turn Antigravity a échoué : ${res.error ?? 'erreur inconnue'}.`,
+                undefined,
+                {
+                  toolsCalled,
+                  changedFiles: [...changedFiles],
+                  recentStderr: turnStderr,
+                  pendingApprovals: this.approvals.getPendingCount(),
+                }
               )
             );
             return;
@@ -412,10 +480,22 @@ export class AntigravityClient {
 
           const responseText = (res.response || collectedResponse).trim();
           if (!responseText) {
+            const turnStderr = this.recentStderr.slice(stderrStartIdx);
+            console.warn('[Antigravity] Turn completed with empty response.', {
+              toolsCalled,
+              changedFiles: [...changedFiles],
+              recentStderr: turnStderr,
+              pendingApprovals: this.approvals.getPendingCount(),
+            });
             fail(
-              new AntigravityError(
-                'empty_response',
-                'Antigravity a terminé sans réponse textuelle finale.'
+              emptyResponseError(
+                {
+                  toolsCalled,
+                  changedFiles: [...changedFiles],
+                  recentStderr: turnStderr,
+                  pendingApprovals: this.approvals.getPendingCount(),
+                },
+                { dangerouslySkipPermissions: this.options.dangerouslySkipPermissions }
               )
             );
             return;
@@ -527,7 +607,9 @@ export class AntigravityClient {
           listener(parsed);
         }
       } catch {
-        // Ignore unparseable non-JSON lines
+        // Non-JSON output from child process (e.g. startup banner, progress info, debug logs)
+        console.log(`[Antigravity stdout] ${line}`);
+        this.pushStderr(`[stdout] ${line}`);
       }
     }
   }

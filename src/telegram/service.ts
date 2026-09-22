@@ -808,6 +808,7 @@ export class TelegramService {
         }
       }
     } catch (error) {
+      console.error('[Telegram] Antigravity turn error:', error);
       if (!signal.aborted && generation === this.operationGeneration) {
         await this.client
           .sendMessage(chatId, `❌ ${error instanceof Error ? error.message : String(error)}`)

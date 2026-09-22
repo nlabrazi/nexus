@@ -2,7 +2,7 @@ import * as assert from 'node:assert/strict';
 import { suite, test } from 'node:test';
 import { ModelMenu, ModelSelection } from '../../codex/types';
 import { ApprovalRequest } from '../../telegram/approvals';
-import { TelegramService } from '../../telegram/service';
+import { RemoteSessionAction, TelegramService } from '../../telegram/service';
 import { TelegramUpdate } from '../../telegram/types';
 import { context, deferred, FakeTelegram, flush } from './helpers';
 
@@ -197,8 +197,8 @@ suite('Telegram Antigravity & Multi-Backend Integration', () => {
 
   test('/new and /resume route to Antigravity when it is the active backend', async (t) => {
     const client = new FakeTelegram();
-    const codexSessions: any[] = [];
-    const agySessions: any[] = [];
+    const codexSessions: RemoteSessionAction[] = [];
+    const agySessions: RemoteSessionAction[] = [];
 
     const service = new TelegramService(
       context(),

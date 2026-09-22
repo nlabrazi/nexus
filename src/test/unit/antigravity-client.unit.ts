@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import { suite, test } from 'node:test';
 import childProcess = require('node:child_process');
 import { AntigravityClient } from '../../antigravity/client';
+import { AntigravityError } from '../../antigravity/errors';
 import { flush } from './helpers';
 import { FakeAntigravityProcess } from './antigravity-process';
 
@@ -133,11 +134,21 @@ suite('Antigravity client lifecycle and turn execution', () => {
     const turnPromise = client.runTurn(convId, 'Do empty');
 
     await flush();
+    spawned?.sendTool('write_to_file', { TargetFile: '/workspace/test.ts' });
+    spawned?.stderr.write('Warning: model produced no tokens\n');
+    await flush();
     spawned?.complete('   '); // Whitespace only
 
-    await assert.rejects(turnPromise, {
-      name: 'AntigravityError',
-      code: 'empty_response',
+    await assert.rejects(turnPromise, (err: unknown) => {
+      const error = err as AntigravityError;
+      assert.equal(error.name, 'AntigravityError');
+      assert.equal(error.code, 'empty_response');
+      assert.ok(error.message.includes('Antigravity a terminé sans réponse textuelle finale.'));
+      assert.ok(error.message.includes('/workspace/test.ts'));
+      assert.ok(error.message.includes('write_to_file'));
+      assert.ok(error.message.includes('Warning: model produced no tokens'));
+      assert.ok(error.message.includes('popin'));
+      return true;
     });
   });
 });
