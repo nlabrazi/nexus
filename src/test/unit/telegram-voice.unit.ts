@@ -45,13 +45,14 @@ suite('Telegram voice reception', () => {
 
       assert.equal(download.mock.callCount(), 1);
       assert.equal(download.mock.calls[0].arguments[0].file_id, 'voice-file');
-      assert.equal(send.mock.callCount(), 5);
+      assert.equal(send.mock.callCount(), 6);
       assert.equal(send.mock.calls[0].arguments[0], 20);
       assert.match(client.messages[0], /Téléchargement du message vocal/);
       assert.match(client.messages[1], /Transcription locale du message vocal/);
       assert.equal(client.messages[2], '🎙 Transcription :\n\nBonjour');
-      assert.equal(client.messages[3], '⏳ Codex is working...');
-      assert.equal(client.messages[4], 'Codex response');
+      assert.equal(client.messages[3], '✅ Bien compris. Je prends en charge votre demande.');
+      assert.equal(client.messages[4], '⏳ Codex is working...');
+      assert.equal(client.messages[5], 'Codex response');
       assert.equal(codex.mock.callCount(), 1);
       assert.deepEqual(codex.mock.calls[0].arguments, ['Bonjour']);
       assert.equal(antigravity.mock.callCount(), 0);
