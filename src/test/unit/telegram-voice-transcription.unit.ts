@@ -44,8 +44,13 @@ suite('Telegram local voice transcription', () => {
     const transcribe = t.mock.fn<TranscribeVoice>(() => pending.promise);
     const codex = t.mock.fn(async () => 'Codex response');
     const antigravity = t.mock.fn(async () => 'Antigravity response');
+    const sentAudio = t.mock.method(client, 'sendAcknowledgementAudio', async () => {
+      assert.ok(client.messages.includes('✅ Bien compris. Je prends en charge votre demande.'));
+      assert.equal(codex.mock.callCount(), 0);
+    });
     const service = new TelegramService(context(), client, {
       transcribeVoice: transcribe,
+      synthesizeAcknowledgement: async () => Buffer.from('wave'),
       onRemotePrompt: codex,
       onRemoteAntigravityPrompt: antigravity,
     });
@@ -74,6 +79,7 @@ suite('Telegram local voice transcription', () => {
     await flush();
 
     assert.ok(client.messages.includes(`🎙 Transcription :\n\n${text}`));
+    assert.equal(sentAudio.mock.callCount(), 1);
     assert.equal(codex.mock.callCount(), 1);
     assert.deepEqual(codex.mock.calls[0].arguments, [text]);
     assert.equal(antigravity.mock.callCount(), 0);

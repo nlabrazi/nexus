@@ -22,6 +22,7 @@ export type RemoteBranchAction = { type: 'list' } | { type: 'switch'; name: stri
 
 export interface TelegramServiceOptions {
   transcribeVoice?: (audio: TelegramVoiceFile, signal: AbortSignal) => Promise<string>;
+  synthesizeAcknowledgement?: (signal: AbortSignal) => Promise<Buffer>;
   onRemotePrompt?: RemotePromptHandler;
   getStatus?: () => NexusStatusSnapshot | Promise<NexusStatusSnapshot>;
   onSessionAction?: (action: RemoteSessionAction) => Promise<string>;
@@ -54,6 +55,7 @@ export class TelegramService {
 
   private readonly onRemotePrompt?: RemotePromptHandler;
   private readonly transcribeVoice?: TelegramServiceOptions['transcribeVoice'];
+  private readonly synthesizeAck?: TelegramServiceOptions['synthesizeAcknowledgement'];
   private readonly getStatus?: () => NexusStatusSnapshot | Promise<NexusStatusSnapshot>;
   private readonly onSessionAction?: (action: RemoteSessionAction) => Promise<string>;
   private readonly onStop?: () => boolean;
@@ -86,6 +88,7 @@ export class TelegramService {
 
     if (typeof onRemotePromptOrOptions === 'object' && onRemotePromptOrOptions !== null) {
       const opts = onRemotePromptOrOptions;
+      this.synthesizeAck = opts.synthesizeAcknowledgement;
       this.transcribeVoice = opts.transcribeVoice;
       this.onRemotePrompt = opts.onRemotePrompt;
       this.getStatus = opts.getStatus;
@@ -654,6 +657,21 @@ export class TelegramService {
       }
       phase = 'delivery';
       await this.client.sendMessage(chatId, `🎙 Transcription :\n\n${trimmed}`, 'plain', signal);
+      await this.client.sendMessage(
+        chatId,
+        '✅ Bien compris. Je prends en charge votre demande.',
+        'plain',
+        signal
+      );
+      // Audio is optional: a missing local synthesizer or Telegram error must not block the agent.
+      try {
+        const audioReply = await this.synthesizeAck?.(signal);
+        if (audioReply && !signal.aborted && generation === this.operationGeneration) {
+          await this.client.sendAcknowledgementAudio(chatId, audioReply, signal);
+        }
+      } catch {
+        // The text acknowledgement has already been delivered.
+      }
       text = trimmed;
     } catch (error) {
       text = undefined;

@@ -22,6 +22,7 @@ import { WorkspaceAntigravityModelPreferences } from './antigravity/model-prefer
 import { AgentBackendType } from './telegram/status';
 import { registerSpeechTestCommand } from './speech/commands';
 import { createConfiguredSpeechService } from './speech/configuration';
+import { synthesizeAcknowledgement } from './speech/acknowledgement';
 
 let telegramService: TelegramService | undefined;
 let codexService: CodexService | undefined;
@@ -437,6 +438,12 @@ function startTelegramService(context: vscode.ExtensionContext, token: string): 
 
   telegramService = new TelegramService(context, client, {
     onRemotePrompt: handleRemoteCodexPrompt,
+    synthesizeAcknowledgement: async (signal) => {
+      if (!vscode.workspace.isTrusted) {
+        throw new Error('Workspace is not trusted');
+      }
+      return synthesizeAcknowledgement(signal);
+    },
     transcribeVoice: async (audio, signal) => {
       const { service, language } = createConfiguredSpeechService(context);
       return service.transcribe(audio, { signal, language });
