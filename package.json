@@ -2,7 +2,7 @@
   "name": "nexus",
   "displayName": "Nexus",
   "description": "Private remote bridge for vscode coding agents",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "publisher": "nabster",
   "icon": "assets/icon.png",
   "repository": {
@@ -58,6 +58,25 @@
           "pattern": "^$|^[a-z]{2,3}$",
           "scope": "machine",
           "description": "Langue des audios, par exemple fr ou en. Vide : détection automatique."
+        },
+        "nexus.speech.tts.pythonPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Chemin absolu vers le Python contenant piper-tts pour l'acquittement vocal. À configurer sur la machine où Nexus s'exécute (WSL/SSH le cas échéant)."
+        },
+        "nexus.speech.tts.modelPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Chemin absolu vers fr_FR-upmc-medium.onnx (voix Jessica). Le fichier .onnx.json doit être à côté. Aucun téléchargement pendant la synthèse."
+        },
+        "nexus.speech.tts.speakerId": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "scope": "machine",
+          "description": "Identifiant de la voix dans le modèle Piper. Avec fr_FR-upmc-medium : 0 = Jessica, 1 = Pierre."
         },
         "nexus.antigravity.path": {
           "type": "string",

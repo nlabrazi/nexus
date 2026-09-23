@@ -471,6 +471,7 @@ Examples:
 Detailed documentation:
 
 - [Local speech-to-text setup and test](docs/speech-local.md)
+- [Local acknowledgement voice: Piper / Jessica](docs/speech-voice.md)
 - [Telegram voice transcription](docs/telegram-voice.md)
 - [Git branch selection](docs/workspace-safety.md#changer-de-branche)
 - [Telegram status](docs/telegram-status.md)
