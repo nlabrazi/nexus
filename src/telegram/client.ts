@@ -185,6 +185,29 @@ export class TelegramClient {
     }
   }
 
+  async sendAcknowledgementAudio(
+    chatId: number,
+    audio: Buffer,
+    signal?: AbortSignal
+  ): Promise<void> {
+    signal?.throwIfAborted();
+    const body = new FormData();
+    body.set('chat_id', String(chatId));
+    body.set(
+      'voice',
+      new Blob([new Uint8Array(audio)], { type: 'audio/ogg' }),
+      'acknowledgement.ogg'
+    );
+    const response = await fetch(`https://api.telegram.org/bot${this.token}/sendVoice`, {
+      method: 'POST',
+      body,
+      signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(15_000)]),
+    });
+    if (!response.ok || !((await response.json()) as { ok?: boolean }).ok) {
+      throw new Error('Telegram audio delivery failed');
+    }
+  }
+
   async sendApprovalMessage(
     chatId: number,
     text: string,
