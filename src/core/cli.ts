@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createCoreTelegramService } from '../telegram/core-bridge';
 import { NexusCore } from './nexus-core';
@@ -25,6 +27,7 @@ OPTIONS:
   -H, --host <host>        Adresse d'écoute (défaut: 127.0.0.1 ou NEXUS_CORE_HOST)
   -t, --token <token>      Jeton(s) d'authentification admis (ou NEXUS_CORE_AUTH_TOKENS)
   -T, --telegram-token <t> Jeton Telegram Bot pour démarrer le bot relié à Core (ou TELEGRAM_BOT_TOKEN)
+  --public-dir <dir>       Répertoire des fichiers statiques Web PWA (ou NEXUS_PUBLIC_DIR)
   -h, --help               Afficher cette aide
   -v, --version            Afficher la version
 
@@ -37,13 +40,14 @@ EXEMPLES:
 export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promise<number> {
   try {
     process.loadEnvFile?.();
-  } catch {}
+  } catch { }
 
   const optionsConfig = {
     port: { type: 'string' as const, short: 'p' },
     host: { type: 'string' as const, short: 'H' },
     token: { type: 'string' as const, short: 't' },
     'telegram-token': { type: 'string' as const, short: 'T' },
+    'public-dir': { type: 'string' as const },
     help: { type: 'boolean' as const, short: 'h', default: false },
     version: { type: 'boolean' as const, short: 'v', default: false },
   };
@@ -54,6 +58,7 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
       host?: string;
       token?: string;
       'telegram-token'?: string;
+      'public-dir'?: string;
       help?: boolean;
       version?: boolean;
     };
@@ -103,10 +108,22 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
   }
 
   try {
+    const publicDirCandidate =
+      values['public-dir'] ??
+      process.env.NEXUS_PUBLIC_DIR ??
+      (existsSync(join(__dirname, '../web/.output/public'))
+        ? join(__dirname, '../web/.output/public')
+        : existsSync(join(__dirname, 'web'))
+          ? join(__dirname, 'web')
+          : undefined);
+    const publicDir =
+      publicDirCandidate && existsSync(publicDirCandidate) ? publicDirCandidate : undefined;
+
     const core = new NexusCore({
       port,
       host,
       authTokens,
+      publicDir,
     });
 
     await core.start();
@@ -143,6 +160,9 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
     console.log(`  • URL HTTP       : http://${host}:${port}`);
     console.log(`  • Jetons admis   : ${authTokens.length} configuré(s)`);
     console.log('  • Heartbeat      : 15s (délai de grâce 45s)');
+    if (publicDir) {
+      console.log(`  • Web PWA Client : Actif (http://${host}:${port}/)`);
+    }
     if (telegramToken && telegram) {
       const allowedUser = telegram.context.globalState.get<number>('nexus.telegram.allowedUserId');
       if (allowedUser !== undefined) {
@@ -163,7 +183,7 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
         if (telegramPolling) {
           try {
             await telegramPolling;
-          } catch {}
+          } catch { }
         }
       }
       await core.stop();
@@ -175,7 +195,7 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
     process.on('SIGTERM', shutdown);
 
     // Keep running
-    await new Promise<void>(() => {});
+    await new Promise<void>(() => { });
     return 0;
   } catch (error) {
     console.error(

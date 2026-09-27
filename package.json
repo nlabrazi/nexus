@@ -176,6 +176,8 @@
   "scripts": {
     "desktop": "node dist/desktop.js",
     "core": "node dist/core.js",
+    "web:dev": "npm --prefix web run dev",
+    "web:build": "npm --prefix web run generate",
     "docker:build": "docker build -t nexus-core .",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",

@@ -24,6 +24,7 @@ export interface CoreConfig {
   readonly heartbeatIntervalMs?: number;
   readonly heartbeatTimeoutMs?: number;
   readonly defaultTaskTimeoutMs?: number;
+  readonly publicDir?: string;
 }
 
 export type RemoteTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
