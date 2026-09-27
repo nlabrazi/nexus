@@ -40,7 +40,7 @@ EXEMPLES:
 export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promise<number> {
   try {
     process.loadEnvFile?.();
-  } catch { }
+  } catch {}
 
   const optionsConfig = {
     port: { type: 'string' as const, short: 'p' },
@@ -183,7 +183,7 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
         if (telegramPolling) {
           try {
             await telegramPolling;
-          } catch { }
+          } catch {}
         }
       }
       await core.stop();
@@ -195,7 +195,7 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
     process.on('SIGTERM', shutdown);
 
     // Keep running
-    await new Promise<void>(() => { });
+    await new Promise<void>(() => {});
     return 0;
   } catch (error) {
     console.error(

@@ -106,4 +106,13 @@ suite('Nexus Core Web Client & CORS Support', () => {
     const res = await fetch(`${baseUrl}/../../../../etc/passwd`);
     assert.equal(res.status, 404);
   });
+
+  test('GET /api/tasks accepts query filters for status, backend, and projectId', async () => {
+    const res = await fetch(`${baseUrl}/api/tasks?backend=brain&status=pending&projectId=test-p`, {
+      headers: { Authorization: `Bearer ${validToken}` },
+    });
+    assert.equal(res.status, 200);
+    const tasks = (await res.json()) as unknown[];
+    assert.ok(Array.isArray(tasks));
+  });
 });

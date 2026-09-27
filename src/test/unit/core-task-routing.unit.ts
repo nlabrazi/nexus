@@ -66,7 +66,7 @@ suite('Nexus Core remote task routing, results, and cancellation', () => {
 
       const fakeConn = {
         isOpen: () => true,
-        send: () => {},
+        send: () => { },
       } as unknown as WebSocketServerConnection;
       const router = new TaskRouter(presence, () => fakeConn);
 
@@ -89,7 +89,7 @@ suite('Nexus Core remote task routing, results, and cancellation', () => {
 
       const fakeConn = {
         isOpen: () => true,
-        send: () => {},
+        send: () => { },
       } as unknown as WebSocketServerConnection;
       const router = new TaskRouter(presence, () => fakeConn);
 
@@ -145,7 +145,7 @@ suite('Nexus Core remote task routing, results, and cancellation', () => {
 
       const fakeConn = {
         isOpen: () => true,
-        send: () => {},
+        send: () => { },
       } as unknown as WebSocketServerConnection;
       const router = new TaskRouter(presence, () => fakeConn);
 
@@ -230,7 +230,7 @@ suite('Nexus Core remote task routing, results, and cancellation', () => {
 
       const fakeConn = {
         isOpen: () => true,
-        send: () => {},
+        send: () => { },
       } as unknown as WebSocketServerConnection;
       const router = new TaskRouter(presence, () => fakeConn);
 
@@ -249,6 +249,49 @@ suite('Nexus Core remote task routing, results, and cancellation', () => {
 
       assert.equal(task.status, 'failed');
       assert.equal(task.error?.code, 'NODE_OFFLINE');
+    });
+
+    test('filters listTasks by backend and projectId', async () => {
+      const presence = new NodePresenceManager({ authTokens: [validToken] });
+      presence.registerNode(mockHello);
+
+      const fakeConn = {
+        isOpen: () => true,
+        send: () => { },
+      } as unknown as WebSocketServerConnection;
+      const router = new TaskRouter(presence, () => fakeConn);
+
+      const t1 = await router.submitTask({
+        backend: 'brain',
+        prompt: 'Task Brain 1',
+        projectId: 'proj-1',
+      });
+      router.recordCompleted({ taskId: t1.taskId, text: 'done' });
+
+      const t2 = await router.submitTask({
+        backend: 'codex',
+        prompt: 'Task Codex 1',
+        projectId: 'proj-1',
+      });
+      router.recordCompleted({ taskId: t2.taskId, text: 'done' });
+
+      const t3 = await router.submitTask({
+        backend: 'brain',
+        prompt: 'Task Brain 2',
+        projectId: 'proj-2',
+      });
+      router.recordCompleted({ taskId: t3.taskId, text: 'done' });
+
+      const brainTasks = router.listTasks({ backend: 'brain' });
+      assert.equal(brainTasks.length, 2);
+      assert.ok(brainTasks.every((t) => t.backend === 'brain'));
+
+      const proj1Tasks = router.listTasks({ projectId: 'proj-1' });
+      assert.equal(proj1Tasks.length, 2);
+
+      const brainProj2 = router.listTasks({ backend: 'brain', projectId: 'proj-2' });
+      assert.equal(brainProj2.length, 1);
+      assert.equal(brainProj2[0]?.prompt, 'Task Brain 2');
     });
   });
 
@@ -416,7 +459,7 @@ suite('Nexus Core remote task routing, results, and cancellation', () => {
 
       const mockBrainModel: BrainModel = {
         decide: async () => {
-          return new Promise(() => {}); // never resolves
+          return new Promise(() => { }); // never resolves
         },
       };
 

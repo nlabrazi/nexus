@@ -28,7 +28,30 @@ Le client Web de Nexus est une Progressive Web App (PWA) construite avec **Nuxt 
 
 ---
 
-## 2. Déploiement et Accès
+## 2. Interface de conversation Brain (Commit 13)
+
+L'onglet **💬 Brain Chat** permet de converser directement avec l'IA Nexus Brain depuis n'importe quel smartphone ou tablette :
+
+- **Navigation par onglets** : bascule fluide entre la vue de monitoring (`📊 Nœud & Projets`) et la messagerie instantanée (`💬 Brain Chat`).
+- **Exécution distribuée asynchrone / synchrone** :
+  - La requête est transmise à Nexus Core via l'API REST `POST /api/tasks` avec `{ backend: 'brain', wait: true }`.
+  - Core route la tâche en WebSocket vers le Desktop Node connecté sur le poste de travail.
+  - Le Brain résout la réponse (analyse du projet, outils de diagnostic, résumé de fichiers) et la renvoie au client.
+- **Rendu conversationnel riche** :
+  - Bulles de message distinctes (Utilisateur / Nexus Brain) avec avatars et horodatage.
+  - Indicateur de frappe animé pendant l'exécution de la requête.
+  - Coloration et blocs de code avec bouton de copie rapide.
+- **Chips de requêtes rapides** :
+  - Actions en 1 clic pour les besoins récurrents : *"Statut du projet"*, *"Derniers commits"*, *"Fichiers modifiés"*, *"Aide"*.
+- **Persistance locale** :
+  - L'historique des échanges est conservé dans le `localStorage` du terminal mobile (`nexus_brain_messages`).
+  - Bouton d'effacement de l'historique disponible dans l'en-tête du chat.
+- **Gestion de la disponibilité du nœud** :
+  - Avertissement visuel immédiat si aucun Desktop Node n'est en ligne pour traiter les requêtes.
+
+---
+
+## 3. Déploiement et Accès
 
 ### Mode Production (Docker & VPS)
 Dans l'image Docker officielle, le client PWA est pré-généré et servi directement par le serveur HTTP intégré de Nexus Core sur le port 4040.
@@ -55,7 +78,7 @@ npm run web:dev
 
 ---
 
-## 3. Configuration de la connexion
+## 4. Configuration de la connexion
 
 Lorsque vous ouvrez l'application :
 1. Elle tente de se connecter à la même origine que la page (par défaut `http://<ip>:4040` en mode Docker).
