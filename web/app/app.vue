@@ -1578,6 +1578,50 @@ function appendTranscript(text: string) {
   interimTranscript.value = '';
 }
 
+async function runNativeSpeechPopup() {
+  try {
+    const avail = await SpeechRecognition.available();
+    if (!avail.available) {
+      console.warn('SpeechRecognition unavailable');
+      return;
+    }
+    const perm = await SpeechRecognition.checkPermissions();
+    if (perm.speechRecognition !== 'granted') {
+      const req = await SpeechRecognition.requestPermissions();
+      if (req.speechRecognition !== 'granted') {
+        return;
+      }
+    }
+    await triggerHaptic('press');
+    isListening.value = true;
+    const result = await SpeechRecognition.start({
+      language: 'fr-FR',
+      maxResults: 3,
+      prompt: 'Parlez au Brain Nexus...',
+      popup: true,
+      partialResults: false,
+    });
+    await triggerHaptic('success');
+    if (result?.matches && result.matches.length > 0) {
+      const text = result.matches[0].trim();
+      if (text) {
+        appendTranscript(text);
+        if (autoSendVoice.value) {
+          setTimeout(() => {
+            submitMessage();
+          }, 250);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn('SpeechRecognition popup error:', err);
+    await triggerHaptic('cancel');
+  } finally {
+    isListening.value = false;
+    isPressingMic = false;
+  }
+}
+
 async function onMicPointerDown(e: PointerEvent) {
   if (!isNodeReady.value || isSending.value) return;
   const target = e.currentTarget as HTMLElement;
@@ -1611,8 +1655,18 @@ async function onMicPointerUp(e: PointerEvent) {
   const pressDuration = Date.now() - speechRecordingStart;
   isPressingMic = false;
 
-  if (pressDuration < 250) {
-    // Tap court : bascule en mode toggle (reste en écoute jusqu'au prochain tap)
+  if (pressDuration < 280) {
+    // Tap court : sur mobile Android natif, ouvre la boîte de dialogue vocale Google
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await SpeechRecognition.stop();
+        await SpeechRecognition.removeAllListeners();
+      } catch { }
+      nativeSpeechActive = false;
+      isListening.value = false;
+      await runNativeSpeechPopup();
+      return;
+    }
     clickToggleActive = true;
     return;
   }
@@ -1640,7 +1694,7 @@ async function startPushToTalk() {
   await triggerHaptic('press');
 
   if (Capacitor.isNativePlatform()) {
-    // 1. Tenter la reconnaissance vocale native on-device (Google Speech Recognizer)
+    // 1. Tenter la reconnaissance vocale native on-device
     let speechAvailable = false;
     try {
       const avail = await SpeechRecognition.available();
@@ -1668,18 +1722,18 @@ async function startPushToTalk() {
         });
         await SpeechRecognition.start({
           language: 'fr-FR',
-          maxResults: 2,
+          maxResults: 3,
           partialResults: true,
           popup: false,
         });
         return;
       } catch (err) {
-        console.warn('SpeechRecognition.start failed, falling back to VoiceRecorder:', err);
+        console.warn('SpeechRecognition.start failed, will use popup on tap or recorder:', err);
         nativeSpeechActive = false;
       }
     }
 
-    // 2. Fallback vers enregistreur audio natif (AAC base64 pour backend Whisper/Vosk Nexus Core)
+    // 2. Fallback vers enregistreur audio natif
     try {
       const perm = await VoiceRecorder.hasAudioRecordingPermission();
       if (!perm.value) {
@@ -1742,11 +1796,15 @@ async function stopPushToTalk() {
   if (Capacitor.isNativePlatform()) {
     if (nativeSpeechActive) {
       try {
-        const res = await SpeechRecognition.stop();
+        await SpeechRecognition.stop();
         await SpeechRecognition.removeAllListeners();
-        const text = res?.matches?.[0] || interimTranscript.value;
-        if (text && text.trim()) {
-          appendTranscript(text.trim());
+        const text = interimTranscript.value.trim();
+        if (text) {
+          appendTranscript(text);
+        } else if (durationMs < 600) {
+          // Si rien n'a été capté pendant un court maintien, ouvrir la popup de reconnaissance vocale Google
+          await runNativeSpeechPopup();
+          return;
         }
       } catch (err) {
         console.warn('SpeechRecognition.stop failed:', err);
@@ -1780,6 +1838,7 @@ async function stopPushToTalk() {
     }
     return;
   }
+
 
   // Web Browser fallback
   if (recognitionInstance) {
