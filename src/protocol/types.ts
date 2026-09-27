@@ -28,6 +28,7 @@ export type NexusErrorCode =
   | 'APPROVAL_NOT_FOUND'
   | 'INVALID_MESSAGE'
   | 'PROTOCOL_VERSION_MISMATCH'
+  | 'SPEECH_NOT_CONFIGURED'
   | 'INTERNAL_ERROR';
 
 export interface NodeProjectSummary {

@@ -115,4 +115,53 @@ suite('Nexus Core Web Client & CORS Support', () => {
     const tasks = (await res.json()) as unknown[];
     assert.ok(Array.isArray(tasks));
   });
+
+  test('GET /api/approvals returns list of pending approvals with CORS headers', async () => {
+    const res = await fetch(`${baseUrl}/api/approvals`, {
+      headers: { Authorization: `Bearer ${validToken}` },
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('access-control-allow-origin'), '*');
+    const approvals = (await res.json()) as unknown[];
+    assert.ok(Array.isArray(approvals));
+  });
+
+  test('POST /api/approvals/:id/decide accepts decisions from web client', async () => {
+    const relay = core.getApprovalRelay();
+    relay.registerApproval('node-web-test', {
+      approvalId: 'appr-web-test-1',
+      taskId: 'task-web-1',
+      agentName: 'Codex',
+      kind: 'command',
+      details: 'npm run test',
+      expiresAt: Date.now() + 60_000,
+    });
+
+    const res = await fetch(`${baseUrl}/api/approvals/appr-web-test-1/decide`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${validToken}`,
+      },
+      body: JSON.stringify({
+        decision: 'accept',
+        decidedBy: 'mobile-web',
+      }),
+    });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('access-control-allow-origin'), '*');
+    const decided = (await res.json()) as { status: string; decision: string; decidedBy: string };
+    assert.equal(decided.status, 'approved');
+    assert.equal(decided.decision, 'accept');
+    assert.equal(decided.decidedBy, 'mobile-web');
+  });
+
+  test('GET /api/voice/status returns voice status with CORS headers', async () => {
+    const res = await fetch(`${baseUrl}/api/voice/status`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('access-control-allow-origin'), '*');
+    const data = (await res.json()) as { available: boolean };
+    assert.equal(typeof data.available, 'boolean');
+  });
 });

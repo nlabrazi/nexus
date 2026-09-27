@@ -18,6 +18,8 @@ import {
 import { ApprovalRelay } from './approval-relay';
 import { NodePresenceManager } from './presence';
 import { TaskRouter } from './task-router';
+import { SpeechAudio } from '../speech/types';
+import { SpeechToTextService } from '../speech/service';
 import {
   ApprovalCancelReason,
   ApprovalDecision,
@@ -193,6 +195,27 @@ export class NexusCore extends EventEmitter {
     taskId?: string;
   }): readonly PendingApproval[] {
     return this.approvalRelay.listApprovals(filter);
+  }
+
+  getSpeechService(): SpeechToTextService | undefined {
+    return this.config.speechService;
+  }
+
+  async transcribeAudio(
+    audio: SpeechAudio,
+    options?: { signal?: AbortSignal; language?: string }
+  ): Promise<string> {
+    if (!this.config.speechService) {
+      throw new NexusProtocolError(
+        'SPEECH_NOT_CONFIGURED',
+        'Aucun service de transcription vocale n’est configuré sur Nexus Core.'
+      );
+    }
+    const language = options?.language || this.config.speechLanguage;
+    return this.config.speechService.transcribe(audio, {
+      signal: options?.signal,
+      language,
+    });
   }
 
   async processMessage(
@@ -601,6 +624,106 @@ export class NexusCore extends EventEmitter {
       return;
     }
 
+    if (method === 'GET' && pathname === '/api/voice/status') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          available: Boolean(this.config.speechService),
+          engine: this.config.speechService ? 'faster-whisper' : undefined,
+          language: this.config.speechLanguage || undefined,
+        })
+      );
+      return;
+    }
+
+    if (method === 'POST' && pathname === '/api/voice/transcribe') {
+      const contentType = req.headers['content-type'] ?? '';
+      try {
+        if (!this.config.speechService) {
+          res.writeHead(501, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              error: 'Aucun service vocal n’est configuré sur Nexus Core.',
+              code: 'SPEECH_NOT_CONFIGURED',
+            })
+          );
+          return;
+        }
+
+        let audioData: Uint8Array;
+        let fileName = 'recording.webm';
+        let mimeType: string | undefined;
+        let language = url.searchParams.get('language') ?? undefined;
+
+        if (contentType.includes('application/json')) {
+          const raw = await this.readRequestBody(req);
+          let body: {
+            audioBase64?: string;
+            fileName?: string;
+            mimeType?: string;
+            language?: string;
+          } = {};
+          try {
+            body = JSON.parse(raw);
+          } catch {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Payload JSON invalide.', code: 'INVALID_JSON' }));
+            return;
+          }
+
+          if (!body.audioBase64) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(
+              JSON.stringify({
+                error: 'Champ obligatoire requis : audioBase64',
+                code: 'INVALID_AUDIO',
+              })
+            );
+            return;
+          }
+
+          audioData = Buffer.from(body.audioBase64, 'base64');
+          fileName = body.fileName || 'recording.webm';
+          mimeType = body.mimeType;
+          if (body.language) language = body.language;
+        } else {
+          // Binary audio payload
+          audioData = await this.readRequestBodyBuffer(req);
+          mimeType = contentType.split(';')[0].trim() || undefined;
+          if (mimeType?.includes('ogg')) fileName = 'recording.oga';
+          else if (mimeType?.includes('wav')) fileName = 'recording.wav';
+          else if (mimeType?.includes('mp4') || mimeType?.includes('m4a'))
+            fileName = 'recording.m4a';
+          else fileName = 'recording.webm';
+        }
+
+        if (audioData.byteLength === 0) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Contenu audio vide.', code: 'EMPTY_AUDIO' }));
+          return;
+        }
+
+        const text = await this.transcribeAudio(
+          { data: audioData, fileName, mimeType },
+          { language }
+        );
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ text }));
+      } catch (err) {
+        const statusCode =
+          err instanceof NexusProtocolError && err.code === 'SPEECH_NOT_CONFIGURED' ? 501 : 400;
+        res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            error: err instanceof Error ? err.message : String(err),
+            code: err instanceof NexusProtocolError ? err.code : 'TRANSCRIPTION_FAILED',
+          })
+        );
+      }
+      return;
+    }
+
     // Static file serving for PWA Web Client
     if (method === 'GET' && this.config.publicDir && existsSync(this.config.publicDir)) {
       const publicRoot = resolve(this.config.publicDir);
@@ -663,6 +786,17 @@ export class NexusCore extends EventEmitter {
         data += chunk;
       });
       req.on('end', () => resolve(data));
+      req.on('error', reject);
+    });
+  }
+
+  private readRequestBodyBuffer(req: IncomingMessage): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk) => {
+        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+      });
+      req.on('end', () => resolve(Buffer.concat(chunks)));
       req.on('error', reject);
     });
   }

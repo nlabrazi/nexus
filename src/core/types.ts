@@ -16,6 +16,7 @@ import {
   TaskFailedPayload,
   TaskStage,
 } from '../protocol/types';
+import { SpeechToTextService } from '../speech/service';
 
 export interface CoreConfig {
   readonly port?: number;
@@ -25,6 +26,8 @@ export interface CoreConfig {
   readonly heartbeatTimeoutMs?: number;
   readonly defaultTaskTimeoutMs?: number;
   readonly publicDir?: string;
+  readonly speechService?: SpeechToTextService;
+  readonly speechLanguage?: string;
 }
 
 export type RemoteTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';

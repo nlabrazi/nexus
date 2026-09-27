@@ -133,6 +133,16 @@
           class="input-field"
         />
       </div>
+      <div class="form-group checkbox-group">
+        <label class="checkbox-label">
+          <input
+            type="checkbox"
+            v-model="autoSendVoice"
+            class="checkbox-input"
+          />
+          <span>Envoyer automatiquement après la dictée vocale</span>
+        </label>
+      </div>
       <div class="settings-actions">
         <button type="button" class="btn-primary" @click="saveSettings">
           Enregistrer & Reconnecter
@@ -276,6 +286,24 @@
         <span>⚠️ Desktop Node déconnecté. Lancez <code>npm run desktop -- start</code> sur votre PC.</span>
       </div>
 
+      <!-- Voice Recording Wave Banner -->
+      <div v-if="isListening" class="voice-recording-banner">
+        <div class="voice-wave">
+          <span class="wave-bar"></span>
+          <span class="wave-bar"></span>
+          <span class="wave-bar"></span>
+          <span class="wave-bar"></span>
+          <span class="wave-bar"></span>
+        </div>
+        <div class="voice-status-text">
+          <span class="voice-caption">{{ interimTranscript ? interimTranscript : 'Écoute en cours... Parlez maintenant' }}</span>
+          <small class="voice-hint">Relâchez ou cliquez pour valider la saisie vocale</small>
+        </div>
+        <button type="button" class="btn-cancel-voice" title="Annuler la dictée" @click="cancelVoiceRecording">
+          Annuler ✕
+        </button>
+      </div>
+
       <!-- Chat Input Area -->
       <div class="chat-input-bar">
         <textarea
@@ -287,6 +315,28 @@
           :disabled="!isNodeReady || isSending"
           @keydown.enter.exact.prevent="submitMessage"
         ></textarea>
+        <!-- Push-to-Talk Mic Button -->
+        <button
+          type="button"
+          class="btn-mic"
+          :class="{
+            'is-listening': isListening,
+            'is-processing': isProcessingAudio
+          }"
+          :disabled="!isNodeReady || isSending"
+          :title="isListening ? 'Relâcher ou cliquer pour terminer' : 'Push-to-Talk : maintenir ou cliquer pour dicter'"
+          aria-label="Push-to-talk vocal"
+          @mousedown.prevent="startPushToTalk"
+          @mouseup.prevent="stopPushToTalk"
+          @mouseleave.prevent="onMicMouseLeave"
+          @touchstart.prevent="startPushToTalk"
+          @touchend.prevent="stopPushToTalk"
+          @touchcancel.prevent="stopPushToTalk"
+        >
+          <span v-if="isProcessingAudio" class="spinning">⏳</span>
+          <span v-else-if="isListening" class="mic-active-pulse">🔴</span>
+          <span v-else class="mic-icon">🎙️</span>
+        </button>
         <button
           type="button"
           class="btn-send"
@@ -951,6 +1001,21 @@ const isDecidingApproval = ref<boolean>(false);
 const approvalDecidingId = ref<string | null>(null);
 const activeApprovalIndex = ref<number>(0);
 
+// Voice / Push-to-Talk State
+const isListening = ref<boolean>(false);
+const isProcessingAudio = ref<boolean>(false);
+const interimTranscript = ref<string>('');
+const autoSendVoice = ref<boolean>(true);
+const voiceBackendStatus = ref<{ available: boolean; engine?: string; language?: string } | null>(null);
+
+let recognitionInstance: any = null;
+let mediaRecorderInstance: MediaRecorder | null = null;
+let mediaStreamInstance: MediaStream | null = null;
+let recordedAudioChunks: Blob[] = [];
+let speechRecordingStart = 0;
+let isPressingMic = false;
+let clickToggleActive = false;
+
 // Lifecycle
 onMounted(() => {
   if (typeof window !== 'undefined') {
@@ -971,8 +1036,16 @@ onMounted(() => {
     authTokenInput.value = savedToken;
     if (savedTab) activeTab.value = savedTab;
 
+    const savedAutoSend = localStorage.getItem('nexus_auto_send_voice');
+    if (savedAutoSend !== null) {
+      autoSendVoice.value = savedAutoSend === 'true';
+    }
+
     // Load persisted chat messages
     loadPersistedMessages();
+
+    // Initialize Voice / Speech Recognition
+    initSpeechRecognition();
 
     // Listen for PWA install prompt
     window.addEventListener('beforeinstallprompt', (e: Event) => {
@@ -984,6 +1057,7 @@ onMounted(() => {
   fetchStatus();
   fetchTasks(true);
   fetchApprovals(true);
+  fetchVoiceStatus();
 
   pollTimer = setInterval(() => {
     fetchStatus(true);
@@ -999,6 +1073,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer);
   if (clockTimer) clearInterval(clockTimer);
+  cancelVoiceRecording();
 });
 
 // Computed properties
@@ -1463,6 +1538,239 @@ function renderMarkdown(raw: string): string {
   return html;
 }
 
+function initSpeechRecognition() {
+  if (typeof window === 'undefined') return;
+  const SpeechRecognitionClass =
+    (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+  if (SpeechRecognitionClass) {
+    try {
+      const recognition = new SpeechRecognitionClass();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'fr-FR';
+
+      recognition.onresult = (event: any) => {
+        let finalChunk = '';
+        let interimChunk = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalChunk += event.results[i][0].transcript;
+          } else {
+            interimChunk += event.results[i][0].transcript;
+          }
+        }
+        if (interimChunk) {
+          interimTranscript.value = interimChunk;
+        }
+        if (finalChunk) {
+          const trimmed = finalChunk.trim();
+          if (trimmed) {
+            if (inputPrompt.value) {
+              inputPrompt.value += ' ' + trimmed;
+            } else {
+              inputPrompt.value = trimmed;
+            }
+          }
+          interimTranscript.value = '';
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('SpeechRecognition error:', event.error);
+        if (event.error !== 'no-speech') {
+          interimTranscript.value = '';
+        }
+      };
+
+      recognition.onend = () => {
+        if (isListening.value && !clickToggleActive) {
+          isListening.value = false;
+        }
+      };
+
+      recognitionInstance = recognition;
+    } catch (e) {
+      console.warn('Failed to initialize SpeechRecognition:', e);
+    }
+  }
+}
+
+async function fetchVoiceStatus() {
+  try {
+    const targetUrl = `${coreUrl.value.replace(/\/+$/, '')}/api/voice/status`;
+    const res = await fetch(targetUrl, {
+      method: 'GET',
+      headers: getRequestHeaders(),
+    });
+    if (res.ok) {
+      voiceBackendStatus.value = await res.json();
+    }
+  } catch {
+    // Non-blocking
+  }
+}
+
+async function startPushToTalk(event?: Event) {
+  if (!isNodeReady.value || isSending.value) return;
+
+  // Toggle behavior if clicked while already listening
+  if (isListening.value) {
+    clickToggleActive = false;
+    await stopPushToTalk();
+    return;
+  }
+
+  isPressingMic = true;
+  clickToggleActive = event?.type === 'click';
+  speechRecordingStart = Date.now();
+  interimTranscript.value = '';
+  isListening.value = true;
+
+  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    try { navigator.vibrate(40); } catch {}
+  }
+
+  if (recognitionInstance) {
+    try {
+      recognitionInstance.start();
+      return;
+    } catch {
+      // Continue to fallback if already running or rejected
+    }
+  }
+
+  // Fallback to MediaRecorder audio capture
+  if (typeof navigator !== 'undefined' && navigator.mediaDevices && typeof MediaRecorder !== 'undefined') {
+    try {
+      recordedAudioChunks = [];
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamInstance = stream;
+      const recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          recordedAudioChunks.push(e.data);
+        }
+      };
+      recorder.start(100);
+      mediaRecorderInstance = recorder;
+    } catch (err: any) {
+      console.warn('MediaRecorder error:', err);
+      isListening.value = false;
+      isPressingMic = false;
+    }
+  }
+}
+
+async function stopPushToTalk() {
+  if (!isListening.value && !isPressingMic) return;
+
+  const durationMs = Date.now() - speechRecordingStart;
+  isPressingMic = false;
+  isListening.value = false;
+
+  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    try { navigator.vibrate([20, 30, 20]); } catch {}
+  }
+
+  if (recognitionInstance) {
+    try {
+      recognitionInstance.stop();
+    } catch {}
+  }
+
+  if (mediaRecorderInstance && mediaRecorderInstance.state !== 'inactive') {
+    isProcessingAudio.value = true;
+    try {
+      const audioBlob = await new Promise<Blob>((resolve) => {
+        mediaRecorderInstance!.onstop = () => {
+          const blob = new Blob(recordedAudioChunks, {
+            type: mediaRecorderInstance!.mimeType || 'audio/webm',
+          });
+          resolve(blob);
+        };
+        mediaRecorderInstance!.stop();
+      });
+
+      if (mediaStreamInstance) {
+        for (const track of mediaStreamInstance.getTracks()) {
+          track.stop();
+        }
+        mediaStreamInstance = null;
+      }
+      mediaRecorderInstance = null;
+
+      if (audioBlob.size > 1000) {
+        await transcribeAudioBlob(audioBlob);
+      }
+    } catch (err: any) {
+      console.warn('Error processing audio recording:', err);
+    } finally {
+      isProcessingAudio.value = false;
+    }
+  }
+
+  if (autoSendVoice.value && inputPrompt.value.trim().length > 0 && durationMs > 400) {
+    setTimeout(() => {
+      submitMessage();
+    }, 250);
+  }
+}
+
+async function transcribeAudioBlob(blob: Blob) {
+  try {
+    const targetUrl = `${coreUrl.value.replace(/\/+$/, '')}/api/voice/transcribe`;
+    const headers = getRequestHeaders();
+    headers['Content-Type'] = blob.type || 'audio/webm';
+
+    const res = await fetch(targetUrl, {
+      method: 'POST',
+      headers,
+      body: blob,
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.text) {
+        if (inputPrompt.value) {
+          inputPrompt.value += ' ' + data.text.trim();
+        } else {
+          inputPrompt.value = data.text.trim();
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Backend transcription failed:', err);
+  }
+}
+
+function onMicMouseLeave() {
+  if (isPressingMic && !clickToggleActive) {
+    stopPushToTalk();
+  }
+}
+
+function cancelVoiceRecording() {
+  isListening.value = false;
+  isPressingMic = false;
+  clickToggleActive = false;
+  interimTranscript.value = '';
+
+  if (recognitionInstance) {
+    try { recognitionInstance.abort(); } catch {}
+  }
+  if (mediaRecorderInstance && mediaRecorderInstance.state !== 'inactive') {
+    try { mediaRecorderInstance.stop(); } catch {}
+  }
+  if (mediaStreamInstance) {
+    for (const track of mediaStreamInstance.getTracks()) {
+      track.stop();
+    }
+    mediaStreamInstance = null;
+  }
+  mediaRecorderInstance = null;
+}
+
 function saveSettings() {
   let cleaned = coreUrlInput.value.trim().replace(/\/+$/, '');
   if (!cleaned.startsWith('http://') && !cleaned.startsWith('https://')) {
@@ -1474,6 +1782,7 @@ function saveSettings() {
   if (typeof window !== 'undefined') {
     localStorage.setItem('nexus_core_url', coreUrl.value);
     localStorage.setItem('nexus_auth_token', authToken.value);
+    localStorage.setItem('nexus_auto_send_voice', autoSendVoice.value ? 'true' : 'false');
   }
 
   showSettings.value = false;
@@ -1484,6 +1793,7 @@ function resetSettings() {
   if (typeof window !== 'undefined') {
     coreUrlInput.value = window.location.origin;
     authTokenInput.value = '';
+    autoSendVoice.value = true;
     saveSettings();
   }
 }
@@ -2153,6 +2463,136 @@ body {
   background: rgba(0, 0, 0, 0.3);
   padding: 1px 4px;
   border-radius: 3px;
+}
+
+/* Voice Recording Wave Banner */
+.voice-recording-banner {
+  background: rgba(15, 23, 42, 0.95);
+  border-top: 1px solid rgba(239, 68, 68, 0.5);
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: slide-up 0.2s ease-out;
+}
+
+.voice-wave {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 24px;
+}
+
+.wave-bar {
+  width: 3px;
+  background: #ef4444;
+  border-radius: 2px;
+  animation: sound-wave 1.2s ease-in-out infinite;
+}
+
+.wave-bar:nth-child(1) { height: 8px; animation-delay: 0.1s; }
+.wave-bar:nth-child(2) { height: 16px; animation-delay: 0.25s; }
+.wave-bar:nth-child(3) { height: 22px; animation-delay: 0.4s; }
+.wave-bar:nth-child(4) { height: 14px; animation-delay: 0.15s; }
+.wave-bar:nth-child(5) { height: 10px; animation-delay: 0.3s; }
+
+@keyframes sound-wave {
+  0%, 100% { transform: scaleY(0.4); }
+  50% { transform: scaleY(1.2); }
+}
+
+.voice-status-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.voice-caption {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-hint {
+  font-size: 0.68rem;
+  color: #fca5a5;
+}
+
+.btn-cancel-voice {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* Push-to-Talk Mic Button */
+.btn-mic {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 1.15rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.btn-mic:hover:not(:disabled) {
+  border-color: var(--color-brand);
+  background: var(--bg-card-hover);
+}
+
+.btn-mic.is-listening {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: #ef4444;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.6);
+  animation: mic-pulse 1s infinite alternate;
+}
+
+@keyframes mic-pulse {
+  from { transform: scale(0.96); box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
+  to { transform: scale(1.06); box-shadow: 0 0 16px rgba(239, 68, 68, 0.8); }
+}
+
+.btn-mic:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.checkbox-group {
+  margin-top: 4px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.checkbox-input {
+  accent-color: var(--color-brand);
+  width: 16px;
+  height: 16px;
 }
 
 /* Chat Input Bar */
