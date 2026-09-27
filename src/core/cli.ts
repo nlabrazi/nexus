@@ -6,6 +6,8 @@ import { NexusCore } from './nexus-core';
 
 export * from './types';
 export * from './presence';
+export * from './ws-connection';
+export * from './task-router';
 export * from './nexus-core';
 
 const VERSION = '0.4.1';

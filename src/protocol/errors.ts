@@ -67,3 +67,23 @@ export function approvalNotFoundError(approvalId: string): NexusProtocolError {
     { approvalId }
   );
 }
+
+export function taskCancelledError(taskId: string, message?: string): NexusProtocolError {
+  return new NexusProtocolError('TASK_CANCELLED', message ?? `La tâche ${taskId} a été annulée.`, {
+    taskId,
+  });
+}
+
+export function taskExecutionFailedError(
+  taskId: string,
+  message: string,
+  details?: unknown
+): NexusProtocolError {
+  return new NexusProtocolError('TASK_EXECUTION_FAILED', message, { taskId, details });
+}
+
+export function projectNotFoundError(projectId: string): NexusProtocolError {
+  return new NexusProtocolError('PROJECT_NOT_FOUND', `Projet introuvable : ${projectId}.`, {
+    projectId,
+  });
+}

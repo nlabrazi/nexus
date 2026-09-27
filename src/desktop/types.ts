@@ -46,12 +46,14 @@ export interface DesktopNodeStatus {
 
 export interface DesktopTaskOptions {
   readonly projectId?: string;
+  readonly taskId?: string;
   readonly onFilesChanged?: (paths: readonly string[]) => void;
   readonly signal?: AbortSignal;
 }
 
 export interface DesktopBrainOptions {
   readonly projectId?: string;
+  readonly taskId?: string;
   readonly conversationId?: string;
 }
 

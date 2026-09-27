@@ -157,6 +157,12 @@ Lorsqu'une URL Core est configurée (`--core <url>` ou `NEXUS_CORE_URL`), le Des
 3. **Maintien de liaison (Heartbeat)** : Un battement de cœur périodique (`node:heartbeat`) est envoyé à la fréquence négociée dans le message de bienvenue (défaut : 15s). Core accuse réception via `node:heartbeat_ack`.
 4. **Reconnexion automatique avec backoff exponentiel** : En cas de coupure réseau ou de redémarrage de Nexus Core, le client bascule à l'état `reconnecting` et retente la connexion avec un délai initial (1s) multiplié par 1.5 à chaque échec (plafonné à 30s).
 5. **Protection contre les jetons invalides** : Si Core rejette la connexion avec l'erreur `UNAUTHENTICATED`, la reconnexion automatique est immédiatement interrompue pour éviter d'inonder le serveur.
+6. **Exécution des tâches distantes & Annulation** :
+   - Dès réception d'un message `task:start`, le Desktop Node passe à l'état `busy` et enregistre le `activeTaskId`.
+   - Il initialise un `AbortController` dédié à la tâche pour permettre une annulation réactive.
+   - Les étapes intermédiaires sont relayées en temps réel via `task:progress` (`starting`, `executing`, `synthesizing`).
+   - Lorsque la tâche se termine, le résultat est expédié à Core par `task:completed` et le nœud repasse à l'état `idle`.
+   - En cas de réception d'un message `task:cancel` (ou arrêt du daemon `stop()`), le signal d'annulation est déclenché immédiatement, interrompant le travail en cours et expédiant `task:failed` avec le code `TASK_CANCELLED`.
 
 ---
 
@@ -183,3 +189,8 @@ Les suites de tests unitaires couvrent l'intégralité du Desktop Node :
   - Détection du refus d'authentification (`UNAUTHENTICATED`).
   - Reconnexion automatique avec backoff après coupure du serveur.
   - Déconnexion ordonnée et mise à jour de présence sur Core.
+- [`src/test/unit/core-task-routing.unit.ts`](../src/test/unit/core-task-routing.unit.ts) :
+  - Exécution de bout en bout de tâches distantes envoyées par Core au Desktop Node.
+  - Émission de progression et capture des modifications de fichiers.
+  - Annulation à chaud d'une tâche longue via signal d'interruption.
+  - Basculement instantané en échec lors d'une déconnexion inopinée.

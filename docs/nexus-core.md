@@ -61,22 +61,59 @@ Lorsqu'un port est configuré (`port > 0` ou `port: 0` pour un port éphémère)
 | Méthode | Chemin | Description | Réponse |
 | --- | --- | --- | --- |
 | `GET` | `/health` | Vérification de vivacité du serveur | `200 { "status": "ok", "version": "0.4.1" }` |
-| `GET` | `/status` | Snapshot de statut global | `200 CoreStatusSnapshot` (uptime, nœuds, projets) |
+| `GET` | `/status` | Snapshot de statut global | `200 CoreStatusSnapshot` (uptime, nœuds, projets, tâches) |
 | `GET` | `/api/nodes` | Liste des nœuds connectés | `200 ConnectedNode[]` |
 | `GET` | `/api/projects` | Projets des nœuds en ligne | `200 NodeProjectSummary[]` |
+| `GET` | `/api/tasks` | Liste des tâches distantes enregistrées | `200 RemoteTask[]` |
+| `POST` | `/api/tasks` | Soumettre ou exécuter une tâche distante | `202 RemoteTask` (asynchrone) ou `200 TaskCompletedPayload` (si `wait: true`) |
+| `GET` | `/api/tasks/:id` | Détails et statut d'une tâche | `200 RemoteTask` (ou `404`) |
+| `POST` | `/api/tasks/:id/cancel` | Annuler une tâche en cours d'exécution | `200 { "taskId": "...", "cancelled": true }` |
 | `POST` | `/api/message` | Envoi d'un message protocole JSON | `200 AnyNexusMessage` ou `204 No Content` |
 | `GET` (Upgrade) | `/ws` | Canal bidirectionnel temps réel pour Desktop Nodes | Connexion WebSocket RFC 6455 |
 
-### 4.1 Canal WebSocket temps réel
+---
 
-- **RFC 6455 natif sans dépendance externe** : Implémenté dans [`src/core/ws-connection.ts`](../src/core/ws-connection.ts) via l'API standard Node.js (`node:crypto` et `node:stream`).
-- **Liaison dynamique Nœud ↔ Connexion** : À la réception d'un `node:hello` validé, la connexion WebSocket est liée au `nodeId` correspondant.
-- **Routage bidirectionnel** : Les messages reçus sont injectés dans le moteur de messages (`processMessage()`) et les réponses sont réémises directement sur le canal WebSocket du nœud.
-- **Déconnexion instantanée** : Dès fermeture de la socket TCP/WebSocket (par exemple arrêt de la machine locale), le nœud est immédiatement marqué hors ligne sans attendre l'expiration du délai de heartbeat.
+## 5. Routage des tâches distantes (`TaskRouter`)
+
+Le module [`TaskRouter`](../src/core/task-router.ts) gère la distribution, le suivi et le cycle de vie des tâches adressées aux Desktop Nodes connectés :
+
+```text
+Client (HTTP / Telegram / PWA)                   Nexus Core                                   Desktop Node
+            │                                         │                                             │
+            ├───── POST /api/tasks (prompt, agent) ──►│ (Choix du nœud cible)                       │
+            │                                         ├────────────── task:start ──────────────────►│ (Verrouille state: busy)
+            │                                         │◄───────────── task:progress ────────────────┤
+            │◄──── 202 Accepted { taskId } ───────────┤                                             │
+            │                                         │                                             ▼
+            │                                         │                                    (Exécution agent local)
+            │                                         │                                             │
+            │                                         │◄───────────── task:completed ───────────────┤ (Restaure state: idle)
+            │                                         │                                             │
+            ├───── GET /api/tasks/:id ───────────────►│                                             │
+            │◄──── 200 OK { status: 'completed' } ────┤                                             │
+```
+
+### 5.1 Résolution et sélection du Desktop Node
+Lorsqu'une tâche est soumise :
+1. Si un `nodeId` explicite est fourni, Core vérifie que ce nœud est en ligne et disponible.
+2. Si un `projectId` est spécifié, Core cible le premier nœud en ligne qui héberge ce projet.
+3. À défaut, Core cible le nœud principal en ligne (`getPrimaryOnlineNode()`).
+4. Si aucun nœud n'est disponible, l'appel échoue immédiatement avec l'erreur `NODE_OFFLINE` (code HTTP 503). Si le nœud est déjà occupé, l'appel échoue avec `NODE_BUSY` (code HTTP 400).
+
+### 5.2 Annulation de tâche en vol
+- Un client peut demander l'annulation d'une tâche via `POST /api/tasks/:id/cancel` ou `core.cancelTask(taskId)`.
+- Si le nœud est connecté, Core lui expédie immédiatement le message `task:cancel`. Le Desktop Node interrompt alors son `AbortSignal` et annule le runner d'agent local.
+- La tâche passe à l'état `cancelled` avec le code `TASK_CANCELLED`.
+
+### 5.3 Déconnexion imprévue en cours de tâche (Fail-Closed)
+Si un Desktop Node se déconnecte subitement (coupure réseau, extinction PC, crash) alors qu'une tâche est en statut `pending` ou `running` :
+- La fermeture de la socket WebSocket est détectée immédiatement par Core.
+- `TaskRouter.handleNodeDisconnected(nodeId)` fait échouer sur-le-champ toutes les tâches en cours sur ce nœud avec l'erreur `NODE_OFFLINE`.
+- Aucune promesse ne reste suspendue indéfiniment.
 
 ---
 
-## 5. Utilisation en ligne de commande
+## 6. Utilisation en ligne de commande
 
 ### 5.1 Démarrer le serveur Core
 
@@ -157,3 +194,9 @@ Les suites de tests unitaires valident le fonctionnement de Nexus Core :
   - Heartbeats réguliers et maintien de liaison.
   - Reconnexion automatique avec backoff exponentiel.
   - Déconnexion et basculement immédiat hors ligne.
+- [`src/test/unit/core-task-routing.unit.ts`](../src/test/unit/core-task-routing.unit.ts) :
+  - Soumission et routage de tâches à distance (`submitTask`, `executeTask`).
+  - Notification de progression en streaming (`task:progress`).
+  - Annulation de tâche en cours de vol (`task:cancel` → `TASK_CANCELLED`).
+  - Coupure brutale de socket et échec immédiat des tâches actives (`NODE_OFFLINE`).
+  - Endpoints REST de tâches (`POST /api/tasks`, `GET /api/tasks`, `GET /api/tasks/:id`, `POST /api/tasks/:id/cancel`).

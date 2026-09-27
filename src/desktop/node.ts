@@ -3,6 +3,8 @@ import { RuntimeApprovalHandler, TurnTimeoutHandler } from '../runtime/types';
 import { createStandaloneWorkspaceGuard } from '../runtime/workspace';
 import { WorkspaceGuard } from '../workspace/guard';
 import { BrainModel } from '../conversational/model';
+import { createNexusMessage } from '../protocol/messages';
+import { AnyNexusMessage, TaskCancelPayload, TaskStartPayload } from '../protocol/types';
 import {
   DesktopBrainOptions,
   DesktopExecutionResult,
@@ -30,6 +32,7 @@ export interface DesktopNodeOptions {
 export class DesktopNode {
   private state: NodeState = 'draining';
   private activeTaskId?: string;
+  private activeTaskAbortController?: AbortController;
   private readonly projectSummaries: NodeProjectSummary[] = [];
   private readonly projectMap = new Map<string, NodeProjectSummary>();
   private readonly guardMap = new Map<string, WorkspaceGuard>();
@@ -43,6 +46,10 @@ export class DesktopNode {
     private readonly options?: DesktopNodeOptions
   ) {
     this.startTime = Date.now();
+    if (this.options?.coreClient) {
+      this.coreClient = this.options.coreClient;
+      this.attachCoreClientListeners(this.coreClient);
+    }
   }
 
   async start(): Promise<DesktopNodeStatus> {
@@ -102,6 +109,10 @@ export class DesktopNode {
 
   async stop(): Promise<void> {
     this.state = 'draining';
+    if (this.activeTaskAbortController) {
+      this.activeTaskAbortController.abort(new Error('DesktopNode en cours d’arrêt.'));
+      this.activeTaskAbortController = undefined;
+    }
     this.disconnectFromCore();
     if (this.runtime) {
       this.runtime.cancelCurrentWork();
@@ -196,7 +207,7 @@ export class DesktopNode {
     if (!this.runtime) {
       throw new Error('DesktopNode non démarré.');
     }
-    if (this.state === 'busy') {
+    if (this.state === 'busy' && (!options?.taskId || options.taskId !== this.activeTaskId)) {
       throw new Error('Le Desktop Node est déjà occupé par une autre tâche.');
     }
     if (this.state === 'draining') {
@@ -225,7 +236,7 @@ export class DesktopNode {
         projectPath: targetProject.path,
       };
     } finally {
-      if (this.state === 'busy') {
+      if (this.state === 'busy' && !this.activeTaskId) {
         this.state = 'idle';
       }
     }
@@ -239,7 +250,7 @@ export class DesktopNode {
     if (!this.runtime) {
       throw new Error('DesktopNode non démarré.');
     }
-    if (this.state === 'busy') {
+    if (this.state === 'busy' && (!options?.taskId || options.taskId !== this.activeTaskId)) {
       throw new Error('Le Desktop Node est déjà occupé par une autre tâche.');
     }
     if (this.state === 'draining') {
@@ -261,7 +272,7 @@ export class DesktopNode {
         conversationId: options?.conversationId,
       });
     } finally {
-      if (this.state === 'busy') {
+      if (this.state === 'busy' && !this.activeTaskId) {
         this.state = 'idle';
       }
     }
@@ -281,6 +292,7 @@ export class DesktopNode {
       this,
       clientOptions
     );
+    this.attachCoreClientListeners(this.coreClient);
     await this.coreClient.connect();
     return this.coreClient;
   }
@@ -326,5 +338,196 @@ export class DesktopNode {
 
   getRuntime(): NexusRuntime | undefined {
     return this.runtime;
+  }
+
+  cancelActiveTask(reason = 'Tâche annulée'): boolean {
+    if (!this.activeTaskId) {
+      return false;
+    }
+    this.handleRemoteTaskCancel({ taskId: this.activeTaskId, reason });
+    return true;
+  }
+
+  private attachCoreClientListeners(client: DesktopCoreClient): void {
+    client.on('message', (message: AnyNexusMessage) => {
+      this.handleCoreMessage(message);
+    });
+  }
+
+  private handleCoreMessage(message: AnyNexusMessage): void {
+    switch (message.type) {
+      case 'task:start':
+        void this.handleRemoteTaskStart(message.payload as TaskStartPayload);
+        break;
+      case 'task:cancel':
+        this.handleRemoteTaskCancel(message.payload as TaskCancelPayload);
+        break;
+    }
+  }
+
+  private async handleRemoteTaskStart(payload: TaskStartPayload): Promise<void> {
+    const { taskId, backend, prompt, projectId } = payload;
+
+    if (this.state === 'busy') {
+      this.coreClient?.send(
+        createNexusMessage('task:failed', {
+          taskId,
+          error: {
+            code: 'NODE_BUSY',
+            message: 'Le Desktop Node est déjà occupé par une autre tâche.',
+          },
+        })
+      );
+      return;
+    }
+
+    if (this.state === 'draining') {
+      this.coreClient?.send(
+        createNexusMessage('task:failed', {
+          taskId,
+          error: {
+            code: 'NODE_OFFLINE',
+            message: 'Le Desktop Node est en cours d’arrêt.',
+          },
+        })
+      );
+      return;
+    }
+
+    if (projectId && !this.getProject(projectId)) {
+      this.coreClient?.send(
+        createNexusMessage('task:failed', {
+          taskId,
+          error: {
+            code: 'PROJECT_NOT_FOUND',
+            message: `Projet cible introuvable sur ce Desktop Node : ${projectId}`,
+          },
+        })
+      );
+      return;
+    }
+
+    this.state = 'busy';
+    this.activeTaskId = taskId;
+    this.activeTaskAbortController = new AbortController();
+    const signal = this.activeTaskAbortController.signal;
+
+    // Send task:progress (starting)
+    this.coreClient?.send(
+      createNexusMessage('task:progress', {
+        taskId,
+        stage: 'starting',
+        message: `Exécution démarrée avec le backend ${backend}`,
+      })
+    );
+
+    try {
+      if (backend === 'brain') {
+        this.coreClient?.send(
+          createNexusMessage('task:progress', {
+            taskId,
+            stage: 'synthesizing',
+            message: 'Génération de la réponse Brain...',
+          })
+        );
+
+        const text = await this.executeBrain(prompt, signal, {
+          projectId,
+          taskId,
+        });
+
+        this.coreClient?.send(
+          createNexusMessage('task:completed', {
+            taskId,
+            text,
+          })
+        );
+      } else {
+        this.coreClient?.send(
+          createNexusMessage('task:progress', {
+            taskId,
+            stage: 'executing',
+            message: `Exécution de la tâche (${backend})...`,
+          })
+        );
+
+        const result = await this.executeTask(backend, prompt, {
+          projectId,
+          signal,
+          taskId,
+          onFilesChanged: (paths) => {
+            this.coreClient?.send(
+              createNexusMessage('task:progress', {
+                taskId,
+                stage: 'executing',
+                message: `${paths.length} fichier(s) modifié(s)`,
+              })
+            );
+          },
+        });
+
+        this.coreClient?.send(
+          createNexusMessage('task:completed', {
+            taskId,
+            text: result.text,
+            fileSummary: result.fileSummary,
+            filesChanged: result.filesChanged ? [...result.filesChanged] : undefined,
+          })
+        );
+      }
+    } catch (err: unknown) {
+      const isCancelled =
+        signal.aborted ||
+        (err instanceof Error &&
+          (err.name === 'AbortError' ||
+            err.message.toLowerCase().includes('annul') ||
+            err.message.toLowerCase().includes('abort')));
+
+      if (isCancelled) {
+        this.coreClient?.send(
+          createNexusMessage('task:failed', {
+            taskId,
+            error: {
+              code: 'TASK_CANCELLED',
+              message: 'Tâche annulée.',
+            },
+          })
+        );
+      } else {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        this.coreClient?.send(
+          createNexusMessage('task:failed', {
+            taskId,
+            error: {
+              code: 'TASK_EXECUTION_FAILED',
+              message: errorMessage,
+            },
+          })
+        );
+      }
+    } finally {
+      if (this.activeTaskId === taskId) {
+        this.activeTaskId = undefined;
+        this.activeTaskAbortController = undefined;
+        if (this.state === 'busy') {
+          this.state = 'idle';
+        }
+      }
+    }
+  }
+
+  private handleRemoteTaskCancel(payload: TaskCancelPayload): void {
+    const { taskId, reason } = payload;
+    if (this.activeTaskId !== taskId) {
+      return;
+    }
+
+    if (this.activeTaskAbortController && !this.activeTaskAbortController.signal.aborted) {
+      this.activeTaskAbortController.abort(new Error(reason ?? 'Annulé par l’utilisateur'));
+    }
+
+    if (this.runtime) {
+      this.runtime.cancelCurrentWork();
+    }
   }
 }
