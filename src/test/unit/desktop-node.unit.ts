@@ -9,8 +9,11 @@ import { DesktopNode, loadConfigFile, resolveDesktopConfig, runCli } from '../..
 
 suite('Desktop Node configuration and lifecycle', () => {
   const testDir = join(tmpdir(), 'nexus-desktop-unit-test');
+  const isolatedRegistry = join(testDir, 'isolated-registry.json');
+  const originalRegistryEnv = process.env.NEXUS_PROJECTS_REGISTRY;
 
   test('beforeEach setup test dir', () => {
+    process.env.NEXUS_PROJECTS_REGISTRY = isolatedRegistry;
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true, force: true });
     }
@@ -51,6 +54,7 @@ suite('Desktop Node configuration and lifecycle', () => {
         NEXUS_NODE_ID: 'env-node-456',
         NEXUS_NODE_NAME: 'env-host',
         NEXUS_DEFAULT_BACKEND: 'brain',
+        NEXUS_PROJECTS_REGISTRY: isolatedRegistry,
       },
       testDir
     );
@@ -92,7 +96,7 @@ suite('Desktop Node configuration and lifecycle', () => {
 
   test('resolveDesktopConfig rejects missing project', () => {
     assert.throws(() => {
-      resolveDesktopConfig({}, {});
+      resolveDesktopConfig({}, { NEXUS_PROJECTS_REGISTRY: isolatedRegistry });
     }, /Aucun projet configuré/);
   });
 
@@ -303,12 +307,35 @@ suite('Desktop Node configuration and lifecycle', () => {
     assert.equal(statusCode, 0);
   });
 
+  test('CLI entrypoint handles memory command', async () => {
+    const memoryCode = await runCli(['memory', 'show', '--project', testDir]);
+    assert.equal(memoryCode, 0);
+
+    const addCode = await runCli([
+      'memory',
+      'add',
+      'TestDec',
+      'Corps de la décision',
+      '--project',
+      testDir,
+    ]);
+    assert.equal(addCode, 0);
+
+    const clearCode = await runCli(['memory', 'clear', '--project', testDir]);
+    assert.equal(clearCode, 0);
+  });
+
   test('CLI entrypoint reports error with invalid arguments', async () => {
     const badCode = await runCli(['--invalid-flag-1234']);
     assert.equal(badCode, 1);
   });
 
   test('afterAll cleanup test dir', () => {
+    if (originalRegistryEnv !== undefined) {
+      process.env.NEXUS_PROJECTS_REGISTRY = originalRegistryEnv;
+    } else {
+      delete process.env.NEXUS_PROJECTS_REGISTRY;
+    }
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true, force: true });
     }

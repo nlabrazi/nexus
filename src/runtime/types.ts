@@ -8,6 +8,7 @@ import { ApprovalDecision } from '../codex/types';
 import { BrainModel } from '../conversational/model';
 import { AgentBackendType } from '../telegram/status';
 import { WorkspaceGuard } from '../workspace/guard';
+import { ProjectMemory } from '../memory/project-memory';
 
 export type TaskBackendType = 'codex' | 'antigravity' | 'brain';
 
@@ -34,11 +35,11 @@ export type TurnTimeoutHandler = (
 export type RuntimeApprovalRequest =
   | CodexApprovalRequest
   | {
-      readonly kind: 'inspection';
-      readonly agentName: string;
-      readonly details: string;
-      readonly expiresAt: number;
-    };
+    readonly kind: 'inspection';
+    readonly agentName: string;
+    readonly details: string;
+    readonly expiresAt: number;
+  };
 
 export type RuntimeApprovalHandler = (
   request: RuntimeApprovalRequest,
@@ -62,6 +63,7 @@ export interface NexusRuntimeOptions {
   readonly antigravityConfig?: AntigravityClientOptions;
   readonly defaultBackend?: AgentBackendType;
   readonly brainModel?: BrainModel;
+  readonly projectMemory?: ProjectMemory;
 }
 
 export interface StandaloneWorkspaceGuardOptions {

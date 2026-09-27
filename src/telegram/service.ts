@@ -22,6 +22,10 @@ type RemotePromptHandler = (prompt: string) => Promise<string | RemotePromptRepl
 export type RemoteSessionAction = { type: 'new' } | { type: 'resume'; sessionId: string };
 export type RemoteBranchAction = { type: 'list' } | { type: 'switch'; name: string };
 export type RemoteProjectAction = { type: 'list' } | { type: 'switch'; projectId: string };
+export type RemoteMemoryAction =
+  | { type: 'show' }
+  | { type: 'add'; title: string; decision: string }
+  | { type: 'clear' };
 
 export interface TelegramServiceOptions {
   onBrainPrompt?: (prompt: string, signal: AbortSignal) => Promise<string>;
@@ -33,6 +37,7 @@ export interface TelegramServiceOptions {
   onStop?: () => boolean;
   onBranchAction?: (action: RemoteBranchAction) => Promise<string>;
   onProjectAction?: (action: RemoteProjectAction) => Promise<string>;
+  onMemoryAction?: (action: RemoteMemoryAction) => Promise<string>;
   modelControls?: ModelControls;
   onRemoteAntigravityPrompt?: RemotePromptHandler;
   onAntigravitySessionAction?: (action: RemoteSessionAction) => Promise<string>;
@@ -93,7 +98,7 @@ export class FileTelegramStorage implements TelegramStateStorage {
             this.store.set(k, v);
           }
         }
-      } catch {}
+      } catch { }
     }
     if (initialValues) {
       for (const [k, v] of Object.entries(initialValues)) {
@@ -124,7 +129,7 @@ export class FileTelegramStorage implements TelegramStateStorage {
         obj[k] = v;
       }
       writeFileSync(this.filePath, JSON.stringify(obj, null, 2), 'utf-8');
-    } catch {}
+    } catch { }
   }
 }
 
@@ -154,6 +159,7 @@ export class TelegramService {
   private readonly onStop?: () => boolean;
   private readonly onBranchAction?: (action: RemoteBranchAction) => Promise<string>;
   private readonly onProjectAction?: (action: RemoteProjectAction) => Promise<string>;
+  private readonly onMemoryAction?: (action: RemoteMemoryAction) => Promise<string>;
   private readonly onRemoteAntigravityPrompt?: RemotePromptHandler;
   private readonly onAntigravitySessionAction?: (action: RemoteSessionAction) => Promise<string>;
   private readonly onAntigravityStop?: () => boolean;
@@ -191,6 +197,7 @@ export class TelegramService {
       this.onStop = opts.onStop;
       this.onBranchAction = opts.onBranchAction;
       this.onProjectAction = opts.onProjectAction;
+      this.onMemoryAction = opts.onMemoryAction;
       codexModelControls = opts.modelControls;
       this.onRemoteAntigravityPrompt = opts.onRemoteAntigravityPrompt;
       this.onAntigravitySessionAction = opts.onAntigravitySessionAction;
@@ -586,6 +593,38 @@ export class TelegramService {
       );
       return;
     }
+    if (/^\/memory(?:\s|$)/.test(command)) {
+      const parts = command.split(/\s+/);
+      const sub = parts[1];
+      if (!this.onMemoryAction) {
+        await this.client.sendMessage(chatId, 'La mémoire de décisions est indisponible.');
+        return;
+      }
+      if (!sub || sub === 'show' || sub === 'list') {
+        void this.runMemoryCommand(chatId, { type: 'show' }, this.abortController!.signal);
+        return;
+      }
+      if (sub === 'clear') {
+        void this.runMemoryCommand(chatId, { type: 'clear' }, this.abortController!.signal);
+        return;
+      }
+      if (sub === 'add') {
+        const title = parts[2];
+        const decisionText = parts.slice(3).join(' ').trim();
+        if (!title || !decisionText) {
+          await this.client.sendMessage(chatId, 'Usage : /memory add <titre> <décision>');
+          return;
+        }
+        void this.runMemoryCommand(
+          chatId,
+          { type: 'add', title, decision: decisionText },
+          this.abortController!.signal
+        );
+        return;
+      }
+      await this.client.sendMessage(chatId, 'Usage : /memory [show|add <titre> <décision>|clear]');
+      return;
+    }
     if (/^\/stop(?:\s|$)/.test(command)) {
       if (command !== '/stop') {
         await this.client.sendMessage(chatId, 'Usage : /stop');
@@ -973,6 +1012,25 @@ export class TelegramService {
     }
   }
 
+  private async runMemoryCommand(
+    chatId: number,
+    action: RemoteMemoryAction,
+    signal: AbortSignal
+  ): Promise<void> {
+    try {
+      const response = await this.onMemoryAction!(action);
+      if (!signal.aborted) {
+        await this.client.sendMessage(chatId, response, 'markdown');
+      }
+    } catch (error) {
+      if (!signal.aborted) {
+        await this.client
+          .sendMessage(chatId, `❌ ${error instanceof Error ? error.message : String(error)}`)
+          .catch(() => console.error('[Telegram] Memory response delivery failed.'));
+      }
+    }
+  }
+
   private async runSessionCommand(
     chatId: number,
     action: RemoteSessionAction,
@@ -1025,7 +1083,7 @@ export class TelegramService {
             'plain',
             signal
           )
-          .catch(() => {});
+          .catch(() => { });
       }
     } finally {
       if (this.brainOperation === controller) {

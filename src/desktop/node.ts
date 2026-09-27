@@ -8,6 +8,7 @@ import {
 import { createStandaloneWorkspaceGuard } from '../runtime/workspace';
 import { WorkspaceGuard } from '../workspace/guard';
 import { BrainModel } from '../conversational/model';
+import { DecisionRecordInput, ProjectDecision, ProjectMemorySnapshot } from '../memory/types';
 import { createNexusMessage } from '../protocol/messages';
 import {
   AnyNexusMessage,
@@ -221,6 +222,27 @@ export class DesktopNode {
     return found;
   }
 
+  getProjectMemorySnapshot(projectId?: string): ProjectMemorySnapshot {
+    if (!this.runtime) { throw new Error('DesktopNode non démarré.'); }
+    const project = projectId ? this.getProject(projectId) : this.getActiveProject();
+    if (!project) { throw new Error(`Projet cible introuvable : ${projectId}`); }
+    return this.runtime.getProjectMemorySnapshot(project.path);
+  }
+
+  recordProjectDecision(input: DecisionRecordInput, projectId?: string): ProjectDecision {
+    if (!this.runtime) { throw new Error('DesktopNode non démarré.'); }
+    const project = projectId ? this.getProject(projectId) : this.getActiveProject();
+    if (!project) { throw new Error(`Projet cible introuvable : ${projectId}`); }
+    return this.runtime.recordProjectDecision(input, project.path);
+  }
+
+  clearProjectMemory(projectId?: string): void {
+    if (!this.runtime) { throw new Error('DesktopNode non démarré.'); }
+    const project = projectId ? this.getProject(projectId) : this.getActiveProject();
+    if (!project) { throw new Error(`Projet cible introuvable : ${projectId}`); }
+    this.runtime.clearProjectMemory(project.path);
+  }
+
   createHelloPayload(authToken?: string): NodeHelloPayload {
     return {
       nodeId: this.getNodeId(),
@@ -379,10 +401,10 @@ export class DesktopNode {
       runtimeStatus,
       coreConnection: this.coreClient
         ? {
-            status: this.coreClient.getStatus(),
-            url: this.coreClient.getWsUrl(),
-            sessionId: this.coreClient.getSessionId(),
-          }
+          status: this.coreClient.getStatus(),
+          url: this.coreClient.getWsUrl(),
+          sessionId: this.coreClient.getSessionId(),
+        }
         : undefined,
     };
   }

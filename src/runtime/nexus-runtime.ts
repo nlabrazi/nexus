@@ -14,6 +14,8 @@ import { ConversationProjectContext } from '../conversational/types';
 import { formatFileSummary } from '../telegram/file-summary';
 import { AgentBackendType, NexusStatusSnapshot } from '../telegram/status';
 import { WorkspaceBranch, WorkspaceGuard } from '../workspace/guard';
+import { DecisionRecordInput, ProjectDecision, ProjectMemorySnapshot } from '../memory/types';
+import { ProjectMemory } from '../memory/project-memory';
 import { MemoryStorage } from './storage';
 import {
   NexusRuntimeOptions,
@@ -29,12 +31,14 @@ export class NexusRuntime {
   private readonly codexService: CodexService;
   private readonly antigravityService: AntigravityService;
   private readonly conversationalService: ConversationalService;
+  private readonly projectMemory: ProjectMemory;
   private activeBackend: AgentBackendType;
 
   constructor(options: NexusRuntimeOptions) {
     this.workspaceGuard = options.workspaceGuard;
     this.targetPathSupplier = options.targetPath;
     this.activeBackend = options.defaultBackend ?? 'codex';
+    this.projectMemory = options.projectMemory ?? new ProjectMemory();
 
     const memoryStorage = new MemoryStorage();
 
@@ -103,6 +107,7 @@ export class NexusRuntime {
         );
         return decision === 'accept';
       },
+      projectMemory: this.projectMemory,
     });
 
     const brainModel = options.brainModel ?? new CodexBrainModel();
@@ -319,6 +324,25 @@ export class NexusRuntime {
       codex: this.codexService.getStatus(),
       antigravity: this.antigravityService.getStatus(),
     };
+  }
+
+  getProjectMemory(): ProjectMemory {
+    return this.projectMemory;
+  }
+
+  getProjectMemorySnapshot(targetPath?: string): ProjectMemorySnapshot {
+    const path = this.resolveTargetPath(targetPath);
+    return this.projectMemory.getSnapshot(path);
+  }
+
+  recordProjectDecision(input: DecisionRecordInput, targetPath?: string): ProjectDecision {
+    const path = this.resolveTargetPath(targetPath);
+    return this.projectMemory.recordDecision(path, input);
+  }
+
+  clearProjectMemory(targetPath?: string): void {
+    const path = this.resolveTargetPath(targetPath);
+    this.projectMemory.clearMemory(path);
   }
 
   cancelCurrentWork(): boolean {

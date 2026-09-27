@@ -7,9 +7,19 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "cap:sync": "npm run generate && cap sync",
+    "cap:build": "npm run generate && cap sync android",
+    "cap:open": "cap open android"
   },
   "dependencies": {
+    "@capacitor-community/speech-recognition": "^7.0.1",
+    "@capacitor/android": "^7.6.9",
+    "@capacitor/cli": "^7.6.9",
+    "@capacitor/core": "^7.6.9",
+    "@capacitor/haptics": "^7.0.5",
+    "@capacitor/status-bar": "^7.0.6",
+    "capacitor-voice-recorder": "^7.0.6",
     "nuxt": "^4.5.2",
     "vue": "^3.5.43",
     "vue-router": "^5.3.1"

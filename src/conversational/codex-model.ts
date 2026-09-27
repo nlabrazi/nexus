@@ -65,7 +65,9 @@ export class CodexBrainModel implements BrainModel {
       );
       signal.throwIfAborted();
       const value: unknown = JSON.parse(response);
-      if (!value || typeof value !== 'object' || Array.isArray(value)) { throw new Error('Réponse structurée Nexus invalide.'); }
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error('Réponse structurée Nexus invalide.');
+      }
       const decision = value as Record<string, unknown>;
       if (
         Object.keys(decision).length !== 2 ||
@@ -79,7 +81,9 @@ export class CodexBrainModel implements BrainModel {
         typeof decision.text !== 'string' ||
         !decision.text.trim() ||
         decision.text.length > 16000
-      ) { throw new Error('Réponse structurée Nexus invalide.'); }
+      ) {
+        throw new Error('Réponse structurée Nexus invalide.');
+      }
       return { action: decision.action as BrainDecision['action'], text: decision.text };
     } finally {
       signal.removeEventListener('abort', cancel);

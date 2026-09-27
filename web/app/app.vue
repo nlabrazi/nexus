@@ -13,7 +13,8 @@
             <span class="version-tag">v0.4.1</span>
           </div>
           <span class="brand-sub">
-            {{ activeTab === 'chat' ? 'Brain Conversation' : (activeTab === 'activity' ? 'Live Activity' : 'Mobile Bridge') }}
+            {{ activeTab === 'chat' ? 'Brain Conversation' : (activeTab === 'activity' ? 'Live Activity' : 'Mobile
+            Bridge') }}
           </span>
         </div>
       </div>
@@ -21,46 +22,23 @@
       <!-- Header actions -->
       <div class="header-actions">
         <!-- Approvals alert badge in header -->
-        <button
-          v-if="pendingApprovalsCount > 0"
-          type="button"
-          class="btn-approval-alert"
-          title="Demande(s) d'approbation en attente"
-          aria-label="Approbations en attente"
-          @click="showApprovalModal = true"
-        >
+        <button v-if="pendingApprovalsCount > 0" type="button" class="btn-approval-alert"
+          title="Demande(s) d'approbation en attente" aria-label="Approbations en attente"
+          @click="showApprovalModal = true">
           <span class="alert-icon">🛡️</span>
           <span class="alert-count">{{ pendingApprovalsCount }}</span>
         </button>
 
-        <button
-          v-if="activeTab === 'chat' && messages.length > 0"
-          type="button"
-          class="btn-icon"
-          title="Effacer la conversation"
-          aria-label="Effacer la conversation"
-          @click="clearChat"
-        >
+        <button v-if="activeTab === 'chat' && messages.length > 0" type="button" class="btn-icon"
+          title="Effacer la conversation" aria-label="Effacer la conversation" @click="clearChat">
           🗑️
         </button>
-        <button
-          type="button"
-          class="btn-icon"
-          :class="{ spinning: isRefreshing }"
-          title="Rafraîchir"
-          aria-label="Rafraîchir les informations"
-          @click="handleManualRefresh"
-        >
+        <button type="button" class="btn-icon" :class="{ spinning: isRefreshing }" title="Rafraîchir"
+          aria-label="Rafraîchir les informations" @click="handleManualRefresh">
           🔄
         </button>
-        <button
-          type="button"
-          class="btn-icon"
-          :class="{ active: showSettings }"
-          title="Paramètres de connexion"
-          aria-label="Paramètres de connexion"
-          @click="showSettings = !showSettings"
-        >
+        <button type="button" class="btn-icon" :class="{ active: showSettings }" title="Paramètres de connexion"
+          aria-label="Paramètres de connexion" @click="showSettings = !showSettings">
           ⚙️
         </button>
       </div>
@@ -68,39 +46,23 @@
 
     <!-- Navigation Tabs -->
     <nav class="tab-nav">
-      <button
-        type="button"
-        class="tab-btn"
-        :class="{ active: activeTab === 'chat' }"
-        @click="activeTab = 'chat'"
-      >
+      <button type="button" class="tab-btn" :class="{ active: activeTab === 'chat' }" @click="activeTab = 'chat'">
         <span class="tab-icon">💬</span>
         <span class="tab-label">Brain Chat</span>
         <span v-if="isSending" class="tab-badge-pulse"></span>
       </button>
-      <button
-        type="button"
-        class="tab-btn"
-        :class="{ active: activeTab === 'activity' }"
-        @click="activeTab = 'activity'"
-      >
+      <button type="button" class="tab-btn" :class="{ active: activeTab === 'activity' }"
+        @click="activeTab = 'activity'">
         <span class="tab-icon">⚡</span>
         <span class="tab-label">Activité</span>
         <span v-if="pendingApprovalsCount > 0" class="tab-badge-approval">{{ pendingApprovalsCount }}</span>
         <span v-else-if="runningTasksCount > 0" class="tab-badge-count">{{ runningTasksCount }}</span>
       </button>
-      <button
-        type="button"
-        class="tab-btn"
-        :class="{ active: activeTab === 'dashboard' }"
-        @click="activeTab = 'dashboard'"
-      >
+      <button type="button" class="tab-btn" :class="{ active: activeTab === 'dashboard' }"
+        @click="activeTab = 'dashboard'">
         <span class="tab-icon">📊</span>
         <span class="tab-label">Nœud & Projets</span>
-        <span
-          class="tab-status-dot"
-          :class="onlineNodes.length > 0 ? 'online' : 'offline'"
-        ></span>
+        <span class="tab-status-dot" :class="onlineNodes.length > 0 ? 'online' : 'offline'"></span>
       </button>
     </nav>
 
@@ -112,36 +74,29 @@
       </div>
       <div class="form-group">
         <label for="core-url">URL Nexus Core :</label>
-        <input
-          id="core-url"
-          v-model="coreUrlInput"
-          type="text"
-          placeholder="http://127.0.0.1:4040"
-          class="input-field"
-        />
+        <input id="core-url" v-model="coreUrlInput" type="text" placeholder="http://127.0.0.1:4040"
+          class="input-field" />
         <small class="helper-text">
           L'URL HTTP de votre serveur Nexus Core (ex: IP locale sur Wi-Fi).
         </small>
       </div>
       <div class="form-group">
         <label for="core-token">Jeton d'authentification (optionnel) :</label>
-        <input
-          id="core-token"
-          v-model="authTokenInput"
-          type="password"
-          placeholder="NEXUS_CORE_AUTH_TOKENS"
-          class="input-field"
-        />
+        <input id="core-token" v-model="authTokenInput" type="password" placeholder="NEXUS_CORE_AUTH_TOKENS"
+          class="input-field" />
       </div>
       <div class="form-group checkbox-group">
         <label class="checkbox-label">
-          <input
-            type="checkbox"
-            v-model="autoSendVoice"
-            class="checkbox-input"
-          />
+          <input type="checkbox" v-model="autoSendVoice" class="checkbox-input" />
           <span>Envoyer automatiquement après la dictée vocale</span>
         </label>
+      </div>
+      <div v-if="isNativeApp" class="form-group native-platform-badge">
+        <span class="platform-chip">📱 Application Android Native (Capacitor)</span>
+        <small class="helper-text helper-warn">
+          Sur mobile, renseignez l'adresse IP Wi-Fi de votre PC (ex: <code>http://192.168.1.50:4040</code>) au lieu de
+          <code>127.0.0.1</code>.
+        </small>
       </div>
       <div class="settings-actions">
         <button type="button" class="btn-primary" @click="saveSettings">
@@ -171,18 +126,9 @@
         </div>
         <div class="context-item project-selector">
           <span class="context-label">Projet :</span>
-          <select
-            v-if="projectsList.length > 1"
-            :value="activeProjectId"
-            class="select-project"
-            :disabled="isSwitchingProject"
-            @change="handleSelectProject($event)"
-          >
-            <option
-              v-for="p in projectsList"
-              :key="p.id || p.path"
-              :value="p.id"
-            >
+          <select v-if="projectsList.length > 1" :value="activeProjectId" class="select-project"
+            :disabled="isSwitchingProject" @change="handleSelectProject($event)">
+            <option v-for="p in projectsList" :key="p.id || p.path" :value="p.id">
               📁 {{ p.name }}
             </option>
           </select>
@@ -201,18 +147,16 @@
       </div>
 
       <!-- Floating Approval Alert Banner in Chat -->
-      <div
-        v-if="pendingApprovalsCount > 0 && activeApproval"
-        class="approval-chat-banner"
-        @click="showApprovalModal = true"
-      >
+      <div v-if="pendingApprovalsCount > 0 && activeApproval" class="approval-chat-banner"
+        @click="showApprovalModal = true">
         <div class="approval-banner-icon">🛡️</div>
         <div class="approval-banner-content">
           <div class="banner-title-line">
             <strong>Action sensible requise</strong>
             <span class="badge-urgent-pill">{{ getApprovalRemainingSeconds(activeApproval.expiresAt) }}s</span>
           </div>
-          <p>{{ activeApproval.agentName }} attend votre autorisation pour : {{ formatApprovalKind(activeApproval.kind) }}</p>
+          <p>{{ activeApproval.agentName }} attend votre autorisation pour : {{ formatApprovalKind(activeApproval.kind)
+            }}</p>
         </div>
         <button type="button" class="btn-approval-banner-action">
           Examiner ›
@@ -231,26 +175,15 @@
           </p>
 
           <div class="suggestions-grid">
-            <button
-              v-for="chip in quickChips"
-              :key="chip"
-              type="button"
-              class="chip-btn"
-              :disabled="!isNodeReady || isSending"
-              @click="sendPrompt(chip)"
-            >
+            <button v-for="chip in quickChips" :key="chip" type="button" class="chip-btn"
+              :disabled="!isNodeReady || isSending" @click="sendPrompt(chip)">
               {{ chip }}
             </button>
           </div>
         </div>
 
         <!-- Message Bubbles -->
-        <div
-          v-for="msg in messages"
-          :key="msg.id"
-          class="message-wrapper"
-          :class="msg.role"
-        >
+        <div v-for="msg in messages" :key="msg.id" class="message-wrapper" :class="msg.role">
           <div class="message-bubble" :class="{ 'is-error': msg.error }">
             <div class="message-meta">
               <span class="sender-name">
@@ -279,13 +212,8 @@
                 <span></span>
                 <span></span>
               </div>
-              <button
-                v-if="currentInFlightTaskId"
-                type="button"
-                class="btn-cancel-in-flight"
-                title="Arrêter la tâche en cours"
-                @click="cancelTask(currentInFlightTaskId)"
-              >
+              <button v-if="currentInFlightTaskId" type="button" class="btn-cancel-in-flight"
+                title="Arrêter la tâche en cours" @click="cancelTask(currentInFlightTaskId)">
                 ⏹ Arrêter
               </button>
             </div>
@@ -301,24 +229,47 @@
         <span>⚠️ Desktop Node déconnecté. Lancez <code>npm run desktop -- start</code> sur votre PC.</span>
       </div>
 
+      <!-- Voice Recording Wave Banner -->
+      <div v-if="isListening || isProcessingAudio" class="voice-recording-banner">
+        <div class="voice-wave">
+          <span class="wave-bar"></span>
+          <span class="wave-bar"></span>
+          <span class="wave-bar"></span>
+          <span class="wave-bar"></span>
+          <span class="wave-bar"></span>
+        </div>
+        <div class="voice-status-text">
+          <span class="voice-caption">
+            {{ interimTranscript ? interimTranscript : (isProcessingAudio ? 'Traitement audio en cours...' : 'Écoute en
+            cours... Parlez maintenant') }}
+          </span>
+          <small class="voice-hint">
+            {{ clickToggleActive ? 'Touchez le micro pour terminer' : 'Relâchez le micro pour terminer' }}
+          </small>
+        </div>
+        <button type="button" class="btn-cancel-voice" title="Annuler la dictée" @click="cancelVoiceRecording">
+          Annuler ✕
+        </button>
+      </div>
+
       <!-- Chat Input Area -->
       <div class="chat-input-bar">
-        <textarea
-          ref="chatTextareaRef"
-          v-model="inputPrompt"
-          rows="1"
-          placeholder="Message au Brain (ex: 'Quel est l’état du projet ?')..."
-          class="chat-textarea"
-          :disabled="!isNodeReady || isSending"
-          @keydown.enter.exact.prevent="submitMessage"
-        ></textarea>
-        <button
-          type="button"
-          class="btn-send"
-          :disabled="!canSend"
-          aria-label="Envoyer"
-          @click="submitMessage"
-        >
+        <textarea ref="chatTextareaRef" v-model="inputPrompt" rows="1"
+          placeholder="Message au Brain (ex: 'Quel est l’état du projet ?')..." class="chat-textarea"
+          :disabled="!isNodeReady || isSending" @keydown.enter.exact.prevent="submitMessage"></textarea>
+        <!-- Push-to-Talk Mic Button -->
+        <button type="button" class="btn-mic" :class="{
+          'is-listening': isListening,
+          'is-processing': isProcessingAudio
+        }" :disabled="!isNodeReady || isSending"
+          :title="isListening ? 'Relâcher ou toucher pour terminer' : 'Push-to-Talk : maintenir ou toucher pour dicter'"
+          aria-label="Push-to-talk vocal" @pointerdown.prevent="onMicPointerDown" @pointerup.prevent="onMicPointerUp"
+          @pointercancel.prevent="onMicPointerCancel">
+          <span v-if="isProcessingAudio" class="spinning">⏳</span>
+          <span v-else-if="isListening" class="mic-active-pulse">🔴</span>
+          <span v-else class="mic-icon">🎙️</span>
+        </button>
+        <button type="button" class="btn-send" :disabled="!canSend" aria-label="Envoyer" @click="submitMessage">
           <span v-if="!isSending">🚀</span>
           <span v-else class="spinning">⏳</span>
         </button>
@@ -335,14 +286,9 @@
             {{ runningTasksCount > 0 ? `${runningTasksCount} active(s)` : 'Aucune tâche active' }}
           </span>
         </div>
-        <button
-          type="button"
-          class="btn-icon btn-refresh-activity"
-          :class="{ spinning: isRefreshingTasks || isRefreshingApprovals }"
-          title="Rafraîchir les activités"
-          aria-label="Rafraîchir les activités"
-          @click="refreshActivity"
-        >
+        <button type="button" class="btn-icon btn-refresh-activity"
+          :class="{ spinning: isRefreshingTasks || isRefreshingApprovals }" title="Rafraîchir les activités"
+          aria-label="Rafraîchir les activités" @click="refreshActivity">
           🔄
         </button>
       </div>
@@ -358,12 +304,8 @@
         </div>
 
         <div class="approvals-cards-list">
-          <div
-            v-for="approval in pendingApprovals"
-            :key="approval.approvalId"
-            class="card approval-item-card"
-            :class="{ 'expiring-soon': getApprovalRemainingSeconds(approval.expiresAt) <= 15 }"
-          >
+          <div v-for="approval in pendingApprovals" :key="approval.approvalId" class="card approval-item-card"
+            :class="{ 'expiring-soon': getApprovalRemainingSeconds(approval.expiresAt) <= 15 }">
             <div class="approval-item-header">
               <div class="approval-agent-info">
                 <span class="approval-agent-tag">🤖 {{ approval.agentName }}</span>
@@ -371,7 +313,8 @@
                   {{ approvalKindIcon(approval.kind) }} {{ formatApprovalKind(approval.kind) }}
                 </span>
               </div>
-              <div class="approval-timer-pill" :class="{ urgent: getApprovalRemainingSeconds(approval.expiresAt) <= 15 }">
+              <div class="approval-timer-pill"
+                :class="{ urgent: getApprovalRemainingSeconds(approval.expiresAt) <= 15 }">
                 <span v-if="!isApprovalExpired(approval.expiresAt)">
                   ⏱️ {{ getApprovalRemainingSeconds(approval.expiresAt) }}s
                 </span>
@@ -386,21 +329,15 @@
             </div>
 
             <div class="approval-item-actions">
-              <button
-                type="button"
-                class="btn-action-approve"
+              <button type="button" class="btn-action-approve"
                 :disabled="isApprovalExpired(approval.expiresAt) || isDecidingApproval"
-                @click="decideApproval(approval.approvalId, 'accept')"
-              >
+                @click="decideApproval(approval.approvalId, 'accept')">
                 <span v-if="isDecidingApproval && approvalDecidingId === approval.approvalId" class="spinning">⏳</span>
                 <span v-else>✅ Autoriser</span>
               </button>
-              <button
-                type="button"
-                class="btn-action-decline"
+              <button type="button" class="btn-action-decline"
                 :disabled="isApprovalExpired(approval.expiresAt) || isDecidingApproval"
-                @click="decideApproval(approval.approvalId, 'decline')"
-              >
+                @click="decideApproval(approval.approvalId, 'decline')">
                 <span v-if="isDecidingApproval && approvalDecidingId === approval.approvalId" class="spinning">⏳</span>
                 <span v-else>❌ Refuser</span>
               </button>
@@ -411,14 +348,8 @@
 
       <!-- Task Status Filter Tabs -->
       <div class="task-filter-bar">
-        <button
-          v-for="filter in taskFilterTabs"
-          :key="filter.key"
-          type="button"
-          class="filter-pill"
-          :class="{ active: activeTaskFilter === filter.key }"
-          @click="activeTaskFilter = filter.key"
-        >
+        <button v-for="filter in taskFilterTabs" :key="filter.key" type="button" class="filter-pill"
+          :class="{ active: activeTaskFilter === filter.key }" @click="activeTaskFilter = filter.key">
           {{ filter.label }}
           <span class="filter-count">({{ filter.count }})</span>
         </button>
@@ -432,11 +363,7 @@
             <span class="hero-badge">TÂCHE EN COURS</span>
             <span class="backend-tag" :class="activeRunningTask.backend">{{ activeRunningTask.backend }}</span>
           </div>
-          <button
-            type="button"
-            class="btn-stop-hero"
-            @click="cancelTask(activeRunningTask.taskId)"
-          >
+          <button type="button" class="btn-stop-hero" @click="cancelTask(activeRunningTask.taskId)">
             ⏹ Arrêter la tâche
           </button>
         </div>
@@ -444,7 +371,8 @@
         <div class="hero-progress">
           <span class="progress-spinner spinning">⏳</span>
           <span class="progress-label">
-            {{ activeRunningTask.progressMessage || (activeRunningTask.stage ? `Étape : ${activeRunningTask.stage}` : 'Exécution en cours sur le Desktop Node...') }}
+            {{ activeRunningTask.progressMessage || (activeRunningTask.stage ? `Étape : ${activeRunningTask.stage}` :
+            'Exécution en cours sur le Desktop Node...') }}
           </span>
         </div>
         <div class="hero-footer">
@@ -459,12 +387,7 @@
           <span class="empty-icon">📋</span>
           <p>Aucune tâche pour ce filtre.</p>
         </div>
-        <div
-          v-for="task in filteredTasks"
-          :key="task.taskId"
-          class="card task-item-card"
-          :class="task.status"
-        >
+        <div v-for="task in filteredTasks" :key="task.taskId" class="card task-item-card" :class="task.status">
           <div class="task-item-header">
             <div class="task-item-badges">
               <span class="task-status-pill" :class="task.status">
@@ -476,13 +399,8 @@
             </div>
             <div class="task-header-right">
               <span class="task-date">{{ formatRelativeTime(task.createdAt) }}</span>
-              <button
-                v-if="task.status === 'running' || task.status === 'pending'"
-                type="button"
-                class="btn-stop-item"
-                title="Arrêter cette tâche"
-                @click="cancelTask(task.taskId)"
-              >
+              <button v-if="task.status === 'running' || task.status === 'pending'" type="button" class="btn-stop-item"
+                title="Arrêter cette tâche" @click="cancelTask(task.taskId)">
                 ⏹ Stop
               </button>
             </div>
@@ -555,13 +473,8 @@
               <span class="node-state-pill" :class="node.state">
                 <span class="dot"></span>
                 {{ formatState(node.state) }}
-                <button
-                  v-if="node.state === 'busy' && node.activeTaskId"
-                  type="button"
-                  class="btn-stop-node"
-                  title="Arrêter la tâche en cours sur ce nœud"
-                  @click.stop="cancelTask(node.activeTaskId)"
-                >
+                <button v-if="node.state === 'busy' && node.activeTaskId" type="button" class="btn-stop-node"
+                  title="Arrêter la tâche en cours sur ce nœud" @click.stop="cancelTask(node.activeTaskId)">
                   ⏹ Stop
                 </button>
               </span>
@@ -612,11 +525,7 @@
             </p>
             <div class="code-box">
               <code>npm run desktop -- start</code>
-              <button
-                type="button"
-                class="btn-copy"
-                @click="copyCommand('npm run desktop -- start')"
-              >
+              <button type="button" class="btn-copy" @click="copyCommand('npm run desktop -- start')">
                 {{ copied ? 'Copié !' : 'Copier' }}
               </button>
             </div>
@@ -632,12 +541,8 @@
         </div>
 
         <div v-if="projectsList.length > 0" class="projects-list">
-          <div
-            v-for="project in projectsList"
-            :key="project.id || project.path"
-            class="card project-card"
-            :class="{ active: isProjectActive(project) }"
-          >
+          <div v-for="project in projectsList" :key="project.id || project.path" class="card project-card"
+            :class="{ active: isProjectActive(project) }">
             <div class="project-header">
               <div class="project-title-area">
                 <span class="folder-icon">📁</span>
@@ -647,13 +552,8 @@
                 </div>
               </div>
               <span v-if="isProjectActive(project)" class="badge badge-active">Actif</span>
-              <button
-                v-else
-                type="button"
-                class="btn-switch-project"
-                :disabled="isSwitchingProject"
-                @click="switchProject(project.id || project.path)"
-              >
+              <button v-else type="button" class="btn-switch-project" :disabled="isSwitchingProject"
+                @click="switchProject(project.id || project.path)">
                 {{ switchingProjectId === (project.id || project.path) ? 'Basculement...' : 'Basculer' }}
               </button>
             </div>
@@ -680,20 +580,12 @@
             <span class="stat-number">{{ coreStatus?.onlineNodes ?? 0 }}</span>
             <span class="stat-label">Nœuds en ligne</span>
           </div>
-          <div
-            class="stat-card stat-interactive"
-            title="Voir l'activité des tâches"
-            @click="activeTab = 'activity'"
-          >
+          <div class="stat-card stat-interactive" title="Voir l'activité des tâches" @click="activeTab = 'activity'">
             <span class="stat-number">{{ runningTasksCount }}</span>
             <span class="stat-label">Tâches en cours ›</span>
           </div>
-          <div
-            class="stat-card stat-interactive"
-            :class="{ 'stat-approval-pulse': pendingApprovalsCount > 0 }"
-            title="Gérer les demandes d'approbation"
-            @click="showApprovalModal = true"
-          >
+          <div class="stat-card stat-interactive" :class="{ 'stat-approval-pulse': pendingApprovalsCount > 0 }"
+            title="Gérer les demandes d'approbation" @click="showApprovalModal = true">
             <span class="stat-number">{{ pendingApprovalsCount }}</span>
             <span class="stat-label">Approbations ›</span>
           </div>
@@ -728,13 +620,10 @@
 
         <div v-if="pendingApprovals.length > 0 && activeApproval" class="modal-content">
           <!-- Expiration Alert -->
-          <div
-            class="approval-countdown-banner"
-            :class="{
-              urgent: getApprovalRemainingSeconds(activeApproval.expiresAt) <= 15 && !isApprovalExpired(activeApproval.expiresAt),
-              expired: isApprovalExpired(activeApproval.expiresAt)
-            }"
-          >
+          <div class="approval-countdown-banner" :class="{
+            urgent: getApprovalRemainingSeconds(activeApproval.expiresAt) <= 15 && !isApprovalExpired(activeApproval.expiresAt),
+            expired: isApprovalExpired(activeApproval.expiresAt)
+          }">
             <span class="countdown-icon">⏱️</span>
             <div class="countdown-info">
               <template v-if="isApprovalExpired(activeApproval.expiresAt)">
@@ -743,11 +632,13 @@
               </template>
               <template v-else-if="getApprovalRemainingSeconds(activeApproval.expiresAt) <= 15">
                 <strong>Expiration imminente !</strong>
-                <p>Plus que <strong>{{ getApprovalRemainingSeconds(activeApproval.expiresAt) }}s</strong> avant rejet automatique.</p>
+                <p>Plus que <strong>{{ getApprovalRemainingSeconds(activeApproval.expiresAt) }}s</strong> avant rejet
+                  automatique.</p>
               </template>
               <template v-else>
                 <strong>Validation requise</strong>
-                <p>Temps restant : <strong>{{ getApprovalRemainingSeconds(activeApproval.expiresAt) }}s</strong> (rejet automatique à expiration).</p>
+                <p>Temps restant : <strong>{{ getApprovalRemainingSeconds(activeApproval.expiresAt) }}s</strong> (rejet
+                  automatique à expiration).</p>
               </template>
             </div>
           </div>
@@ -760,7 +651,9 @@
             </div>
             <div class="meta-badge" :class="activeApproval.kind">
               <span class="badge-label">Type :</span>
-              <span class="badge-value">{{ approvalKindIcon(activeApproval.kind) }} {{ formatApprovalKind(activeApproval.kind) }}</span>
+              <span class="badge-value">{{ approvalKindIcon(activeApproval.kind) }} {{
+                formatApprovalKind(activeApproval.kind)
+                }}</span>
             </div>
           </div>
 
@@ -774,20 +667,12 @@
           <div v-if="pendingApprovals.length > 1" class="approval-pagination">
             <span>Approbation {{ activeApprovalIndex + 1 }} sur {{ pendingApprovals.length }}</span>
             <div class="pagination-buttons">
-              <button
-                type="button"
-                class="btn-pager"
-                :disabled="activeApprovalIndex === 0"
-                @click="activeApprovalIndex--"
-              >
+              <button type="button" class="btn-pager" :disabled="activeApprovalIndex === 0"
+                @click="activeApprovalIndex--">
                 ◀ Précédent
               </button>
-              <button
-                type="button"
-                class="btn-pager"
-                :disabled="activeApprovalIndex >= pendingApprovals.length - 1"
-                @click="activeApprovalIndex++"
-              >
+              <button type="button" class="btn-pager" :disabled="activeApprovalIndex >= pendingApprovals.length - 1"
+                @click="activeApprovalIndex++">
                 Suivant ▶
               </button>
             </div>
@@ -796,22 +681,16 @@
           <!-- Actions buttons -->
           <div class="approval-modal-actions">
             <template v-if="!isApprovalExpired(activeApproval.expiresAt)">
-              <button
-                type="button"
-                class="btn-modal-approve"
-                :disabled="isDecidingApproval"
-                @click="decideApproval(activeApproval.approvalId, 'accept')"
-              >
-                <span v-if="isDecidingApproval && approvalDecidingId === activeApproval.approvalId" class="spinning">⏳</span>
+              <button type="button" class="btn-modal-approve" :disabled="isDecidingApproval"
+                @click="decideApproval(activeApproval.approvalId, 'accept')">
+                <span v-if="isDecidingApproval && approvalDecidingId === activeApproval.approvalId"
+                  class="spinning">⏳</span>
                 <span v-else>✅ Autoriser l'action</span>
               </button>
-              <button
-                type="button"
-                class="btn-modal-decline"
-                :disabled="isDecidingApproval"
-                @click="decideApproval(activeApproval.approvalId, 'decline')"
-              >
-                <span v-if="isDecidingApproval && approvalDecidingId === activeApproval.approvalId" class="spinning">⏳</span>
+              <button type="button" class="btn-modal-decline" :disabled="isDecidingApproval"
+                @click="decideApproval(activeApproval.approvalId, 'decline')">
+                <span v-if="isDecidingApproval && approvalDecidingId === activeApproval.approvalId"
+                  class="spinning">⏳</span>
                 <span v-else>❌ Refuser</span>
               </button>
             </template>
@@ -850,6 +729,11 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
+import { Capacitor } from '@capacitor/core';
+import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
+import { StatusBar, Style } from '@capacitor/status-bar';
+import { VoiceRecorder } from 'capacitor-voice-recorder';
+import { SpeechRecognition } from '@capacitor-community/speech-recognition';
 
 interface ConnectedNodeInfo {
   nodeId: string;
@@ -992,6 +876,7 @@ const isProcessingAudio = ref<boolean>(false);
 const interimTranscript = ref<string>('');
 const autoSendVoice = ref<boolean>(true);
 const voiceBackendStatus = ref<{ available: boolean; engine?: string; language?: string } | null>(null);
+const isNativeApp = computed(() => Capacitor.isNativePlatform());
 
 let recognitionInstance: any = null;
 let mediaRecorderInstance: MediaRecorder | null = null;
@@ -1000,9 +885,11 @@ let recordedAudioChunks: Blob[] = [];
 let speechRecordingStart = 0;
 let isPressingMic = false;
 let clickToggleActive = false;
+let nativeSpeechActive = false;
+let nativeRecorderActive = false;
 
 // Lifecycle
-onMounted(() => {
+onMounted(async () => {
   if (typeof window !== 'undefined') {
     const savedUrl = localStorage.getItem('nexus_core_url');
     const savedToken = localStorage.getItem('nexus_auth_token') || '';
@@ -1010,10 +897,20 @@ onMounted(() => {
 
     if (savedUrl) {
       coreUrl.value = savedUrl;
+    } else if (Capacitor.isNativePlatform()) {
+      coreUrl.value = 'http://192.168.1.100:4040';
+      showSettings.value = true;
     } else if (window.location.port === '4040' || window.location.pathname.startsWith('/')) {
       coreUrl.value = window.location.origin;
     } else {
       coreUrl.value = 'http://127.0.0.1:4040';
+    }
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await StatusBar.setStyle({ style: Style.Dark });
+        await StatusBar.setBackgroundColor({ color: '#090d16' });
+      } catch { }
     }
 
     coreUrlInput.value = coreUrl.value;
@@ -1529,7 +1426,7 @@ function saveMessages() {
     // Keep last 50 messages to preserve memory
     const trimmed = messages.value.slice(-50);
     localStorage.setItem('nexus_brain_messages', JSON.stringify(trimmed));
-  } catch {}
+  } catch { }
 }
 
 function scrollToBottom() {
@@ -1647,36 +1544,172 @@ async function fetchVoiceStatus() {
   }
 }
 
-async function startPushToTalk(event?: Event) {
-  if (!isNodeReady.value || isSending.value) return;
+async function triggerHaptic(type: 'press' | 'release' | 'cancel' | 'success') {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      if (type === 'press') {
+        await Haptics.impact({ style: ImpactStyle.Medium });
+      } else if (type === 'release') {
+        await Haptics.impact({ style: ImpactStyle.Light });
+      } else if (type === 'success') {
+        await Haptics.notification({ type: NotificationType.Success });
+      } else if (type === 'cancel') {
+        await Haptics.notification({ type: NotificationType.Warning });
+      }
+      return;
+    } catch { }
+  }
+  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    try {
+      if (type === 'press') navigator.vibrate(40);
+      else if (type === 'release') navigator.vibrate([20, 30, 20]);
+    } catch { }
+  }
+}
 
-  // Toggle behavior if clicked while already listening
+function appendTranscript(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+  if (inputPrompt.value) {
+    inputPrompt.value = `${inputPrompt.value} ${trimmed}`;
+  } else {
+    inputPrompt.value = trimmed;
+  }
+  interimTranscript.value = '';
+}
+
+async function onMicPointerDown(e: PointerEvent) {
+  if (!isNodeReady.value || isSending.value) return;
+  const target = e.currentTarget as HTMLElement;
+  if (target && target.setPointerCapture) {
+    try {
+      target.setPointerCapture(e.pointerId);
+    } catch { }
+  }
+
   if (isListening.value) {
     clickToggleActive = false;
     await stopPushToTalk();
     return;
   }
 
+  speechRecordingStart = Date.now();
   isPressingMic = true;
-  clickToggleActive = event?.type === 'click';
+  await startPushToTalk();
+}
+
+async function onMicPointerUp(e: PointerEvent) {
+  const target = e.currentTarget as HTMLElement;
+  if (target && target.releasePointerCapture) {
+    try {
+      target.releasePointerCapture(e.pointerId);
+    } catch { }
+  }
+
+  if (!isPressingMic && !isListening.value) return;
+
+  const pressDuration = Date.now() - speechRecordingStart;
+  isPressingMic = false;
+
+  if (pressDuration < 250) {
+    // Tap court : bascule en mode toggle (reste en écoute jusqu'au prochain tap)
+    clickToggleActive = true;
+    return;
+  }
+
+  clickToggleActive = false;
+  await stopPushToTalk();
+}
+
+async function onMicPointerCancel(e: PointerEvent) {
+  const target = e.currentTarget as HTMLElement;
+  if (target && target.releasePointerCapture) {
+    try {
+      target.releasePointerCapture(e.pointerId);
+    } catch { }
+  }
+  await cancelVoiceRecording();
+}
+
+async function startPushToTalk() {
+  if (!isNodeReady.value || isSending.value) return;
+
   speechRecordingStart = Date.now();
   interimTranscript.value = '';
   isListening.value = true;
+  await triggerHaptic('press');
 
-  if (typeof navigator !== 'undefined' && navigator.vibrate) {
-    try { navigator.vibrate(40); } catch {}
+  if (Capacitor.isNativePlatform()) {
+    // 1. Tenter la reconnaissance vocale native on-device (Google Speech Recognizer)
+    let speechAvailable = false;
+    try {
+      const avail = await SpeechRecognition.available();
+      if (avail.available) {
+        const perm = await SpeechRecognition.checkPermissions();
+        if (perm.speechRecognition !== 'granted') {
+          const req = await SpeechRecognition.requestPermissions();
+          speechAvailable = req.speechRecognition === 'granted';
+        } else {
+          speechAvailable = true;
+        }
+      }
+    } catch (e) {
+      console.warn('SpeechRecognition check failed:', e);
+    }
+
+    if (speechAvailable) {
+      try {
+        nativeSpeechActive = true;
+        await SpeechRecognition.removeAllListeners();
+        await SpeechRecognition.addListener('partialResults', (data: { matches: string[] }) => {
+          if (data.matches && data.matches.length > 0) {
+            interimTranscript.value = data.matches[0];
+          }
+        });
+        await SpeechRecognition.start({
+          language: 'fr-FR',
+          maxResults: 2,
+          partialResults: true,
+          popup: false,
+        });
+        return;
+      } catch (err) {
+        console.warn('SpeechRecognition.start failed, falling back to VoiceRecorder:', err);
+        nativeSpeechActive = false;
+      }
+    }
+
+    // 2. Fallback vers enregistreur audio natif (AAC base64 pour backend Whisper/Vosk Nexus Core)
+    try {
+      const perm = await VoiceRecorder.hasAudioRecordingPermission();
+      if (!perm.value) {
+        const req = await VoiceRecorder.requestAudioRecordingPermission();
+        if (!req.value) {
+          isListening.value = false;
+          return;
+        }
+      }
+      nativeRecorderActive = true;
+      await VoiceRecorder.startRecording();
+      return;
+    } catch (err) {
+      console.warn('VoiceRecorder.startRecording failed:', err);
+      nativeRecorderActive = false;
+      isListening.value = false;
+      return;
+    }
   }
 
+  // Navigateur Web classique
   if (recognitionInstance) {
     try {
       recognitionInstance.start();
       return;
     } catch {
-      // Continue to fallback if already running or rejected
+      // Fallback MediaRecorder
     }
   }
 
-  // Fallback to MediaRecorder audio capture
   if (typeof navigator !== 'undefined' && navigator.mediaDevices && typeof MediaRecorder !== 'undefined') {
     try {
       recordedAudioChunks = [];
@@ -1704,15 +1737,55 @@ async function stopPushToTalk() {
   const durationMs = Date.now() - speechRecordingStart;
   isPressingMic = false;
   isListening.value = false;
+  await triggerHaptic('release');
 
-  if (typeof navigator !== 'undefined' && navigator.vibrate) {
-    try { navigator.vibrate([20, 30, 20]); } catch {}
+  if (Capacitor.isNativePlatform()) {
+    if (nativeSpeechActive) {
+      try {
+        const res = await SpeechRecognition.stop();
+        await SpeechRecognition.removeAllListeners();
+        const text = res?.matches?.[0] || interimTranscript.value;
+        if (text && text.trim()) {
+          appendTranscript(text.trim());
+        }
+      } catch (err) {
+        console.warn('SpeechRecognition.stop failed:', err);
+        if (interimTranscript.value.trim()) {
+          appendTranscript(interimTranscript.value.trim());
+        }
+      } finally {
+        nativeSpeechActive = false;
+      }
+    }
+
+    if (nativeRecorderActive) {
+      isProcessingAudio.value = true;
+      try {
+        const result = await VoiceRecorder.stopRecording();
+        if (result.value?.recordDataBase64 && durationMs > 300) {
+          await transcribeNativeAudio(result.value.recordDataBase64, result.value.mimeType || 'audio/aac');
+        }
+      } catch (err) {
+        console.warn('VoiceRecorder.stopRecording failed:', err);
+      } finally {
+        nativeRecorderActive = false;
+        isProcessingAudio.value = false;
+      }
+    }
+
+    if (autoSendVoice.value && inputPrompt.value.trim().length > 0 && durationMs > 400) {
+      setTimeout(() => {
+        submitMessage();
+      }, 250);
+    }
+    return;
   }
 
+  // Web Browser fallback
   if (recognitionInstance) {
     try {
       recognitionInstance.stop();
-    } catch {}
+    } catch { }
   }
 
   if (mediaRecorderInstance && mediaRecorderInstance.state !== 'inactive') {
@@ -1753,6 +1826,33 @@ async function stopPushToTalk() {
   }
 }
 
+async function transcribeNativeAudio(base64: string, mimeType: string) {
+  try {
+    const targetUrl = `${coreUrl.value.replace(/\/+$/, '')}/api/voice/transcribe`;
+    const headers = {
+      ...getRequestHeaders(),
+      'Content-Type': 'application/json',
+    };
+    const res = await fetch(targetUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        audioBase64: base64,
+        mimeType: mimeType || 'audio/aac',
+        language: 'fr',
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.text) {
+        appendTranscript(data.text);
+      }
+    }
+  } catch (err) {
+    console.warn('Native audio backend transcription failed:', err);
+  }
+}
+
 async function transcribeAudioBlob(blob: Blob) {
   try {
     const targetUrl = `${coreUrl.value.replace(/\/+$/, '')}/api/voice/transcribe`;
@@ -1768,11 +1868,7 @@ async function transcribeAudioBlob(blob: Blob) {
     if (res.ok) {
       const data = await res.json();
       if (data.text) {
-        if (inputPrompt.value) {
-          inputPrompt.value += ' ' + data.text.trim();
-        } else {
-          inputPrompt.value = data.text.trim();
-        }
+        appendTranscript(data.text);
       }
     }
   } catch (err) {
@@ -1780,23 +1876,35 @@ async function transcribeAudioBlob(blob: Blob) {
   }
 }
 
-function onMicMouseLeave() {
-  if (isPressingMic && !clickToggleActive) {
-    stopPushToTalk();
-  }
-}
-
-function cancelVoiceRecording() {
+async function cancelVoiceRecording() {
   isListening.value = false;
   isPressingMic = false;
   clickToggleActive = false;
   interimTranscript.value = '';
+  await triggerHaptic('cancel');
+
+  if (Capacitor.isNativePlatform()) {
+    if (nativeSpeechActive) {
+      try {
+        await SpeechRecognition.stop();
+        await SpeechRecognition.removeAllListeners();
+      } catch { }
+      nativeSpeechActive = false;
+    }
+    if (nativeRecorderActive) {
+      try {
+        await VoiceRecorder.stopRecording();
+      } catch { }
+      nativeRecorderActive = false;
+    }
+    return;
+  }
 
   if (recognitionInstance) {
-    try { recognitionInstance.abort(); } catch {}
+    try { recognitionInstance.abort(); } catch { }
   }
   if (mediaRecorderInstance && mediaRecorderInstance.state !== 'inactive') {
-    try { mediaRecorderInstance.stop(); } catch {}
+    try { mediaRecorderInstance.stop(); } catch { }
   }
   if (mediaStreamInstance) {
     for (const track of mediaStreamInstance.getTracks()) {
@@ -1890,7 +1998,7 @@ async function copyCommand(text: string) {
     setTimeout(() => {
       copied.value = false;
     }, 2000);
-  } catch {}
+  } catch { }
 }
 
 async function installPwa() {
@@ -2001,12 +2109,29 @@ body {
   border: 2px solid var(--bg-primary);
 }
 
-.logo-dot.connected { background-color: var(--color-success); box-shadow: 0 0 6px var(--color-success); }
-.logo-dot.connecting { background-color: var(--color-warning); }
-.logo-dot.error { background-color: var(--color-danger); }
+.logo-dot.connected {
+  background-color: var(--color-success);
+  box-shadow: 0 0 6px var(--color-success);
+}
 
-.brand-text { display: flex; flex-direction: column; }
-.title-row { display: flex; align-items: center; gap: 6px; }
+.logo-dot.connecting {
+  background-color: var(--color-warning);
+}
+
+.logo-dot.error {
+  background-color: var(--color-danger);
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 
 .brand-title {
   font-size: 1.15rem;
@@ -2064,9 +2189,17 @@ body {
 }
 
 @keyframes pulse-amber-border {
-  0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.6); }
-  70% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.6);
+  }
+
+  70% {
+    box-shadow: 0 0 0 8px rgba(245, 158, 11, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
 }
 
 .btn-icon {
@@ -2084,13 +2217,25 @@ body {
   transition: all 0.2s ease;
 }
 
-.btn-icon:active, .btn-icon.active {
+.btn-icon:active,
+.btn-icon.active {
   background: rgba(56, 189, 248, 0.2);
   border-color: var(--color-brand);
 }
 
-.spinning { animation: spin 0.8s linear infinite; }
-@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.spinning {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 /* Tab Navigation Bar */
 .tab-nav {
@@ -2126,15 +2271,23 @@ body {
   border-bottom: 2px solid var(--color-brand);
 }
 
-.tab-icon { font-size: 1rem; }
+.tab-icon {
+  font-size: 1rem;
+}
 
 .tab-status-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
 }
-.tab-status-dot.online { background-color: var(--color-success); }
-.tab-status-dot.offline { background-color: var(--color-danger); }
+
+.tab-status-dot.online {
+  background-color: var(--color-success);
+}
+
+.tab-status-dot.offline {
+  background-color: var(--color-danger);
+}
 
 .tab-badge-pulse {
   width: 8px;
@@ -2164,8 +2317,15 @@ body {
 }
 
 @keyframes pulse-glow {
-  from { opacity: 0.4; transform: scale(0.9); }
-  to { opacity: 1; transform: scale(1.1); }
+  from {
+    opacity: 0.4;
+    transform: scale(0.9);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1.1);
+  }
 }
 
 /* Error Banner */
@@ -2218,10 +2378,21 @@ body {
   gap: 4px;
 }
 
-.context-label { color: var(--text-muted); }
-.context-value { font-weight: 600; }
-.context-value.online { color: var(--color-success); }
-.context-value.offline { color: var(--color-danger); }
+.context-label {
+  color: var(--text-muted);
+}
+
+.context-value {
+  font-weight: 600;
+}
+
+.context-value.online {
+  color: var(--color-success);
+}
+
+.context-value.offline {
+  color: var(--color-danger);
+}
 
 .project-pill {
   background: rgba(56, 189, 248, 0.1);
@@ -2272,7 +2443,9 @@ body {
   background: linear-gradient(135deg, rgba(245, 158, 11, 0.3), rgba(19, 27, 46, 0.95));
 }
 
-.approval-banner-icon { font-size: 1.4rem; }
+.approval-banner-icon {
+  font-size: 1.4rem;
+}
 
 .approval-banner-content {
   flex: 1;
@@ -2339,8 +2512,16 @@ body {
   gap: 12px;
 }
 
-.welcome-icon { font-size: 3rem; }
-.chat-welcome h3 { font-size: 1.25rem; font-weight: 800; color: #fff; }
+.welcome-icon {
+  font-size: 3rem;
+}
+
+.chat-welcome h3 {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #fff;
+}
+
 .chat-welcome p {
   font-size: 0.85rem;
   color: var(--text-secondary);
@@ -2432,7 +2613,11 @@ body {
   opacity: 0.75;
 }
 
-.sender-name { font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.sender-name {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
 
 .message-content {
   line-height: 1.5;
@@ -2479,13 +2664,31 @@ body {
   animation: typing 1.4s infinite ease-in-out;
 }
 
-.typing-indicator span:nth-child(1) { animation-delay: 0s; }
-.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
-.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+.typing-indicator span:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.typing-indicator span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-indicator span:nth-child(3) {
+  animation-delay: 0.4s;
+}
 
 @keyframes typing {
-  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
-  40% { transform: scale(1.1); opacity: 1; }
+
+  0%,
+  80%,
+  100% {
+    transform: scale(0.6);
+    opacity: 0.4;
+  }
+
+  40% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
 }
 
 .btn-cancel-in-flight {
@@ -2546,15 +2749,41 @@ body {
   animation: sound-wave 1.2s ease-in-out infinite;
 }
 
-.wave-bar:nth-child(1) { height: 8px; animation-delay: 0.1s; }
-.wave-bar:nth-child(2) { height: 16px; animation-delay: 0.25s; }
-.wave-bar:nth-child(3) { height: 22px; animation-delay: 0.4s; }
-.wave-bar:nth-child(4) { height: 14px; animation-delay: 0.15s; }
-.wave-bar:nth-child(5) { height: 10px; animation-delay: 0.3s; }
+.wave-bar:nth-child(1) {
+  height: 8px;
+  animation-delay: 0.1s;
+}
+
+.wave-bar:nth-child(2) {
+  height: 16px;
+  animation-delay: 0.25s;
+}
+
+.wave-bar:nth-child(3) {
+  height: 22px;
+  animation-delay: 0.4s;
+}
+
+.wave-bar:nth-child(4) {
+  height: 14px;
+  animation-delay: 0.15s;
+}
+
+.wave-bar:nth-child(5) {
+  height: 10px;
+  animation-delay: 0.3s;
+}
 
 @keyframes sound-wave {
-  0%, 100% { transform: scaleY(0.4); }
-  50% { transform: scaleY(1.2); }
+
+  0%,
+  100% {
+    transform: scaleY(0.4);
+  }
+
+  50% {
+    transform: scaleY(1.2);
+  }
 }
 
 .voice-status-text {
@@ -2621,8 +2850,15 @@ body {
 }
 
 @keyframes mic-pulse {
-  from { transform: scale(0.96); box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
-  to { transform: scale(1.06); box-shadow: 0 0 16px rgba(239, 68, 68, 0.8); }
+  from {
+    transform: scale(0.96);
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+  }
+
+  to {
+    transform: scale(1.06);
+    box-shadow: 0 0 16px rgba(239, 68, 68, 0.8);
+  }
 }
 
 .btn-mic:disabled {
@@ -2647,6 +2883,26 @@ body {
   accent-color: var(--color-brand);
   width: 16px;
   height: 16px;
+}
+
+.native-platform-badge {
+  background: rgba(14, 165, 233, 0.1);
+  border: 1px solid rgba(14, 165, 233, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  margin-top: 6px;
+}
+
+.platform-chip {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #38bdf8;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.helper-warn {
+  color: #fbbf24 !important;
 }
 
 /* Chat Input Bar */
@@ -2676,8 +2932,13 @@ body {
   transition: border-color 0.2s ease;
 }
 
-.chat-textarea:focus { border-color: var(--color-brand); }
-.chat-textarea:disabled { opacity: 0.5; }
+.chat-textarea:focus {
+  border-color: var(--color-brand);
+}
+
+.chat-textarea:disabled {
+  opacity: 0.5;
+}
 
 .btn-send {
   width: 42px;
@@ -2751,8 +3012,16 @@ body {
   padding: 2px 8px;
   border-radius: 999px;
 }
-.badge-running { background: rgba(56, 189, 248, 0.2); color: var(--color-brand); }
-.badge-idle { background: rgba(255, 255, 255, 0.06); color: var(--text-muted); }
+
+.badge-running {
+  background: rgba(56, 189, 248, 0.2);
+  color: var(--color-brand);
+}
+
+.badge-idle {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+}
 
 .btn-refresh-activity {
   width: 32px;
@@ -2845,17 +3114,35 @@ body {
   border-radius: 4px;
 }
 
-.approval-kind-pill.command { color: #38bdf8; background: rgba(56, 189, 248, 0.12); }
-.approval-kind-pill.fileChange { color: #f59e0b; background: rgba(245, 158, 11, 0.12); }
-.approval-kind-pill.consent { color: #10b981; background: rgba(16, 185, 129, 0.12); }
+.approval-kind-pill.command {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.approval-kind-pill.fileChange {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.approval-kind-pill.consent {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.12);
+}
 
 .approval-timer-pill {
   font-size: 0.74rem;
   font-weight: 700;
   color: var(--text-muted);
 }
-.approval-timer-pill.urgent { color: #ef4444; font-weight: 800; }
-.text-expired { color: #ef4444; }
+
+.approval-timer-pill.urgent {
+  color: #ef4444;
+  font-weight: 800;
+}
+
+.text-expired {
+  color: #ef4444;
+}
 
 .approval-command-preview {
   background: #05070c;
@@ -2907,7 +3194,8 @@ body {
   justify-content: center;
 }
 
-.btn-action-approve:disabled, .btn-action-decline:disabled {
+.btn-action-approve:disabled,
+.btn-action-decline:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -2941,7 +3229,10 @@ body {
   font-weight: 700;
 }
 
-.filter-count { font-size: 0.68rem; opacity: 0.8; }
+.filter-count {
+  font-size: 0.68rem;
+  opacity: 0.8;
+}
 
 /* Active Task Hero Banner */
 .active-task-hero {
@@ -3053,10 +3344,26 @@ body {
   gap: 4px;
 }
 
-.task-status-pill.running { background: rgba(56, 189, 248, 0.15); color: var(--color-brand); }
-.task-status-pill.pending { background: rgba(245, 158, 11, 0.15); color: var(--color-warning); }
-.task-status-pill.completed { background: rgba(16, 185, 129, 0.15); color: var(--color-success); }
-.task-status-pill.failed, .task-status-pill.cancelled { background: rgba(239, 68, 68, 0.15); color: var(--color-danger); }
+.task-status-pill.running {
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--color-brand);
+}
+
+.task-status-pill.pending {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--color-warning);
+}
+
+.task-status-pill.completed {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--color-success);
+}
+
+.task-status-pill.failed,
+.task-status-pill.cancelled {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--color-danger);
+}
 
 .pulse-dot-small {
   width: 5px;
@@ -3074,9 +3381,18 @@ body {
   background: rgba(255, 255, 255, 0.08);
   color: var(--text-secondary);
 }
-.backend-tag.brain { color: #a78bfa; }
-.backend-tag.codex { color: #38bdf8; }
-.backend-tag.antigravity { color: #fbbf24; }
+
+.backend-tag.brain {
+  color: #a78bfa;
+}
+
+.backend-tag.codex {
+  color: #38bdf8;
+}
+
+.backend-tag.antigravity {
+  color: #fbbf24;
+}
 
 .task-header-right {
   display: flex;
@@ -3084,7 +3400,10 @@ body {
   gap: 8px;
 }
 
-.task-date { font-size: 0.7rem; color: var(--text-muted); }
+.task-date {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
 
 .btn-stop-item {
   background: rgba(239, 68, 68, 0.15);
@@ -3112,8 +3431,20 @@ body {
   gap: 4px;
 }
 
-.result-header { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; }
-.result-preview { font-size: 0.78rem; color: var(--text-secondary); line-height: 1.35; max-height: 80px; overflow-y: auto; }
+.result-header {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.result-preview {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+  max-height: 80px;
+  overflow-y: auto;
+}
 
 .task-error-box {
   background: rgba(239, 68, 68, 0.1);
@@ -3122,8 +3453,17 @@ body {
   padding: 8px 10px;
 }
 
-.error-badge { font-size: 0.7rem; font-weight: 700; color: #ef4444; }
-.error-desc { font-size: 0.75rem; color: #fca5a5; margin-top: 2px; }
+.error-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #ef4444;
+}
+
+.error-desc {
+  font-size: 0.75rem;
+  color: #fca5a5;
+  margin-top: 2px;
+}
 
 .task-item-footer {
   display: flex;
@@ -3185,19 +3525,76 @@ body {
   color: #fca5a5;
 }
 
-.status-indicator { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-.status-pulse { width: 8px; height: 8px; border-radius: 50%; }
-.status-pulse.connected { background-color: var(--color-success); box-shadow: 0 0 8px var(--color-success); }
-.status-pulse.connecting { background-color: var(--color-warning); animation: blink 1s infinite alternate; }
-.status-pulse.error { background-color: var(--color-danger); }
-@keyframes blink { from { opacity: 0.4; } to { opacity: 1; } }
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
 
-.status-meta { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; color: var(--text-muted); }
-.uptime-badge { background: rgba(255, 255, 255, 0.06); padding: 2px 6px; border-radius: 4px; }
+.status-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
 
-.section-container { display: flex; flex-direction: column; gap: 10px; }
-.section-title-row { display: flex; align-items: center; justify-content: space-between; }
-.section-title { font-size: 0.95rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); }
+.status-pulse.connected {
+  background-color: var(--color-success);
+  box-shadow: 0 0 8px var(--color-success);
+}
+
+.status-pulse.connecting {
+  background-color: var(--color-warning);
+  animation: blink 1s infinite alternate;
+}
+
+.status-pulse.error {
+  background-color: var(--color-danger);
+}
+
+@keyframes blink {
+  from {
+    opacity: 0.4;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.status-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.uptime-badge {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.section-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
 
 .card {
   background: var(--bg-card);
@@ -3207,11 +3604,33 @@ body {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
 
-.badge { font-size: 0.72rem; font-weight: 600; padding: 3px 8px; border-radius: 999px; }
-.badge-success { background: rgba(16, 185, 129, 0.15); color: var(--color-success); }
-.badge-warning { background: rgba(245, 158, 11, 0.15); color: var(--color-warning); }
-.badge-neutral { background: rgba(255, 255, 255, 0.06); color: var(--text-muted); }
-.badge-active { background: rgba(56, 189, 248, 0.18); color: var(--color-brand); }
+.badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+
+.badge-success {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--color-success);
+}
+
+.badge-warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--color-warning);
+}
+
+.badge-neutral {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+}
+
+.badge-active {
+  background: rgba(56, 189, 248, 0.18);
+  color: var(--color-brand);
+}
+
 .btn-switch-project {
   background: rgba(56, 189, 248, 0.12);
   border: 1px solid rgba(56, 189, 248, 0.3);
@@ -3222,22 +3641,51 @@ body {
   cursor: pointer;
   transition: all 0.2s ease;
 }
+
 .btn-switch-project:hover:not(:disabled) {
   background: rgba(56, 189, 248, 0.25);
   border-color: #38bdf8;
 }
+
 .btn-switch-project:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
 /* Node Card */
-.node-card { display: flex; flex-direction: column; gap: 14px; }
-.node-header { display: flex; align-items: center; justify-content: space-between; }
-.node-identity { display: flex; align-items: center; gap: 12px; }
-.node-avatar { font-size: 1.5rem; }
-.node-name { font-size: 1.1rem; font-weight: 700; color: #fff; }
-.node-id { font-size: 0.72rem; color: var(--text-muted); font-family: monospace; }
+.node-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.node-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.node-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.node-avatar {
+  font-size: 1.5rem;
+}
+
+.node-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.node-id {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-family: monospace;
+}
 
 .node-state-pill {
   display: flex;
@@ -3249,11 +3697,30 @@ body {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.05);
 }
-.node-state-pill .dot { width: 6px; height: 6px; border-radius: 50%; }
-.node-state-pill.idle { background: rgba(16, 185, 129, 0.15); color: var(--color-success); }
-.node-state-pill.idle .dot { background: var(--color-success); }
-.node-state-pill.busy { background: rgba(245, 158, 11, 0.15); color: var(--color-warning); }
-.node-state-pill.busy .dot { background: var(--color-warning); }
+
+.node-state-pill .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.node-state-pill.idle {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--color-success);
+}
+
+.node-state-pill.idle .dot {
+  background: var(--color-success);
+}
+
+.node-state-pill.busy {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--color-warning);
+}
+
+.node-state-pill.busy .dot {
+  background: var(--color-warning);
+}
 
 .node-project-box {
   background: rgba(0, 0, 0, 0.25);
@@ -3264,9 +3731,27 @@ body {
   flex-direction: column;
   gap: 4px;
 }
-.node-project-box.no-project { color: var(--text-muted); font-size: 0.85rem; text-align: center; }
-.project-headline { display: flex; align-items: center; justify-content: space-between; }
-.project-tag { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-brand); font-weight: 700; }
+
+.node-project-box.no-project {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.project-headline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.project-tag {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-brand);
+  font-weight: 700;
+}
+
 .branch-pill {
   display: inline-flex;
   align-items: center;
@@ -3278,9 +3763,25 @@ body {
   color: var(--text-primary);
   font-family: monospace;
 }
-.branch-icon { font-size: 0.75rem; }
-.project-name { font-size: 1rem; font-weight: 700; color: #fff; }
-.project-path { font-size: 0.75rem; color: var(--text-muted); font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.branch-icon {
+  font-size: 0.75rem;
+}
+
+.project-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.project-path {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .node-meta-grid {
   display: grid;
@@ -3289,9 +3790,22 @@ body {
   padding-top: 6px;
   border-top: 1px solid var(--border-color);
 }
-.meta-item { display: flex; flex-direction: column; }
-.meta-label { font-size: 0.68rem; color: var(--text-muted); }
-.meta-val { font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); }
+
+.meta-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.meta-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.meta-val {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
 
 /* Node Offline State */
 .node-offline .offline-hero {
@@ -3302,9 +3816,24 @@ body {
   padding: 12px 6px;
   gap: 10px;
 }
-.offline-icon { font-size: 2.2rem; opacity: 0.8; }
-.offline-hero h3 { font-size: 1.05rem; font-weight: 700; color: #fff; }
-.offline-hero p { font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4; max-width: 400px; }
+
+.offline-icon {
+  font-size: 2.2rem;
+  opacity: 0.8;
+}
+
+.offline-hero h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.offline-hero p {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  max-width: 400px;
+}
 
 .code-box {
   background: #05070b;
@@ -3318,25 +3847,103 @@ body {
   width: 100%;
   max-width: 360px;
 }
-.code-box code { flex: 1; font-family: monospace; font-size: 0.8rem; color: var(--color-brand); text-align: left; }
-.btn-copy { background: rgba(255, 255, 255, 0.08); border: none; color: var(--text-primary); font-size: 0.7rem; padding: 4px 8px; border-radius: 4px; cursor: pointer; }
-.btn-copy:active { background: var(--color-brand); color: #000; }
+
+.code-box code {
+  flex: 1;
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: var(--color-brand);
+  text-align: left;
+}
+
+.btn-copy {
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  color: var(--text-primary);
+  font-size: 0.7rem;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-copy:active {
+  background: var(--color-brand);
+  color: #000;
+}
 
 /* Projects List */
-.projects-list { display: flex; flex-direction: column; gap: 10px; }
-.project-card { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; }
-.project-card.active { border-color: var(--border-accent); background: linear-gradient(135deg, rgba(56, 189, 248, 0.04), var(--bg-card)); }
-.project-header { display: flex; align-items: flex-start; justify-content: space-between; }
-.project-title-area { display: flex; align-items: center; gap: 10px; }
-.folder-icon { font-size: 1.3rem; }
-.project-title { font-size: 0.95rem; font-weight: 700; color: #fff; }
-.project-path-text { font-size: 0.72rem; color: var(--text-muted); font-family: monospace; }
-.project-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
-.timestamp { font-size: 0.7rem; color: var(--text-muted); }
-.card-empty { text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 24px; }
+.projects-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.project-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.project-card.active {
+  border-color: var(--border-accent);
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.04), var(--bg-card));
+}
+
+.project-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.project-title-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.folder-icon {
+  font-size: 1.3rem;
+}
+
+.project-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.project-path-text {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-family: monospace;
+}
+
+.project-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.timestamp {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.card-empty {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  padding: 24px;
+}
 
 /* Telemetry Grid */
-.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
 .stat-card {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
@@ -3348,8 +3955,16 @@ body {
   text-align: center;
   gap: 4px;
 }
-.stat-interactive { cursor: pointer; transition: transform 0.15s ease, border-color 0.2s ease; }
-.stat-interactive:hover { border-color: var(--color-brand); transform: translateY(-1px); }
+
+.stat-interactive {
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.2s ease;
+}
+
+.stat-interactive:hover {
+  border-color: var(--color-brand);
+  transform: translateY(-1px);
+}
 
 .stat-approval-pulse {
   border-color: var(--color-warning) !important;
@@ -3357,8 +3972,18 @@ body {
   animation: pulse-amber-border 2s infinite;
 }
 
-.stat-number { font-size: 1.5rem; font-weight: 800; color: #fff; }
-.stat-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.stat-number {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.stat-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
 
 /* Settings Card */
 .settings-card {
@@ -3376,18 +4001,86 @@ body {
   z-index: 100;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
-.settings-header { display: flex; align-items: center; justify-content: space-between; }
-.settings-header h2 { font-size: 1rem; font-weight: 700; color: #fff; }
-.btn-close { background: transparent; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer; }
-.form-group { display: flex; flex-direction: column; gap: 6px; }
-.form-group label { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); }
-.input-field { background: #070a12; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 10px 12px; color: #fff; font-size: 0.9rem; font-family: monospace; }
-.input-field:focus { outline: none; border-color: var(--color-brand); }
-.helper-text { font-size: 0.72rem; color: var(--text-muted); }
-.settings-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
 
-.btn-primary { background: var(--color-brand); color: #040914; font-weight: 700; font-size: 0.9rem; border: none; border-radius: var(--radius-sm); padding: 10px 16px; cursor: pointer; }
-.btn-secondary { background: rgba(255, 255, 255, 0.06); color: var(--text-primary); font-size: 0.85rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 8px 14px; cursor: pointer; }
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-header h2 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.btn-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-group label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.input-field {
+  background: #070a12;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  color: #fff;
+  font-size: 0.9rem;
+  font-family: monospace;
+}
+
+.input-field:focus {
+  outline: none;
+  border-color: var(--color-brand);
+}
+
+.helper-text {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.settings-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.btn-primary {
+  background: var(--color-brand);
+  color: #040914;
+  font-weight: 700;
+  font-size: 0.9rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 8px 14px;
+  cursor: pointer;
+}
 
 /* Install Banner */
 .install-banner {
@@ -3398,11 +4091,33 @@ body {
   border-color: rgba(56, 189, 248, 0.35);
   background: linear-gradient(135deg, rgba(56, 189, 248, 0.1), var(--bg-card));
 }
-.install-info { display: flex; align-items: center; gap: 12px; }
-.install-icon { font-size: 1.6rem; }
-.install-info h4 { font-size: 0.88rem; font-weight: 700; color: #fff; }
-.install-info p { font-size: 0.74rem; color: var(--text-secondary); }
-.btn-install { white-space: nowrap; padding: 8px 14px; font-size: 0.82rem; }
+
+.install-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.install-icon {
+  font-size: 1.6rem;
+}
+
+.install-info h4 {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.install-info p {
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+}
+
+.btn-install {
+  white-space: nowrap;
+  padding: 8px 14px;
+  font-size: 0.82rem;
+}
 
 /* ======================================================== */
 /* APPROVAL MODAL OVERLAY & BOTTOM SHEET                     */
@@ -3461,8 +4176,15 @@ body {
   gap: 8px;
 }
 
-.modal-icon { font-size: 1.4rem; }
-.modal-header h2 { font-size: 1.1rem; font-weight: 800; color: #fff; }
+.modal-icon {
+  font-size: 1.4rem;
+}
+
+.modal-header h2 {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #fff;
+}
 
 .modal-content {
   display: flex;
@@ -3491,7 +4213,9 @@ body {
   border-color: var(--color-danger);
 }
 
-.countdown-icon { font-size: 1.5rem; }
+.countdown-icon {
+  font-size: 1.5rem;
+}
 
 .countdown-info strong {
   font-size: 0.88rem;
@@ -3520,8 +4244,17 @@ body {
   gap: 2px;
 }
 
-.badge-label { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; }
-.badge-value { font-size: 0.82rem; font-weight: 700; color: #fff; }
+.badge-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.badge-value {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #fff;
+}
 
 .approval-details-box {
   display: flex;
@@ -3577,7 +4310,11 @@ body {
   border-radius: 4px;
   cursor: pointer;
 }
-.btn-pager:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.btn-pager:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
 
 /* Modal Action Buttons */
 .approval-modal-actions {
@@ -3617,12 +4354,16 @@ body {
   transition: background 0.15s ease;
 }
 
-.btn-modal-approve:disabled, .btn-modal-decline:disabled {
+.btn-modal-approve:disabled,
+.btn-modal-decline:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-.btn-block { width: 100%; grid-column: span 2; }
+.btn-block {
+  width: 100%;
+  grid-column: span 2;
+}
 
 .modal-empty-body {
   display: flex;
@@ -3633,9 +4374,22 @@ body {
   gap: 12px;
 }
 
-.modal-empty-icon { font-size: 2.5rem; opacity: 0.8; }
-.modal-empty-body h3 { font-size: 1.1rem; color: #fff; }
-.modal-empty-body p { font-size: 0.82rem; color: var(--text-secondary); max-width: 320px; line-height: 1.4; }
+.modal-empty-icon {
+  font-size: 2.5rem;
+  opacity: 0.8;
+}
+
+.modal-empty-body h3 {
+  font-size: 1.1rem;
+  color: #fff;
+}
+
+.modal-empty-body p {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  max-width: 320px;
+  line-height: 1.4;
+}
 
 /* Footer */
 .nexus-footer {
@@ -3655,9 +4409,29 @@ body {
   color: var(--text-muted);
   z-index: 40;
 }
-.footer-status { display: flex; align-items: center; gap: 6px; font-family: monospace; }
-.core-ping-dot { width: 6px; height: 6px; border-radius: 50%; }
-.core-ping-dot.connected { background: var(--color-success); }
-.core-ping-dot.connecting { background: var(--color-warning); }
-.core-ping-dot.error { background: var(--color-danger); }
+
+.footer-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: monospace;
+}
+
+.core-ping-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.core-ping-dot.connected {
+  background: var(--color-success);
+}
+
+.core-ping-dot.connecting {
+  background: var(--color-warning);
+}
+
+.core-ping-dot.error {
+  background: var(--color-danger);
+}
 </style>
