@@ -1,4 +1,5 @@
 import * as assert from 'node:assert/strict';
+import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,6 +15,10 @@ suite('Desktop Node configuration and lifecycle', () => {
       rmSync(testDir, { recursive: true, force: true });
     }
     mkdirSync(testDir, { recursive: true });
+    execSync(
+      'git init -b staging && git config user.name "Test" && git config user.email "test@example.com" && git commit --allow-empty -m "initial"',
+      { cwd: testDir }
+    );
   });
 
   test('resolveDesktopConfig resolves project from CLI options', () => {
@@ -117,7 +122,7 @@ suite('Desktop Node configuration and lifecycle', () => {
 
   test('DesktopNode starts, validates workspace, and reports status', async () => {
     const config = resolveDesktopConfig({
-      project: process.cwd(),
+      project: testDir,
       name: 'Nexus Core Testing',
       nodeId: 'test-node-status',
       nodeName: 'test-host',
@@ -132,8 +137,8 @@ suite('Desktop Node configuration and lifecycle', () => {
     assert.equal(status.nodeId, 'test-node-status');
     assert.equal(status.nodeName, 'test-host');
     assert.equal(status.activeProject.name, 'Nexus Core Testing');
-    assert.equal(status.activeProject.path, process.cwd());
-    assert.ok(status.activeProject.currentBranch);
+    assert.equal(status.activeProject.path, testDir);
+    assert.equal(status.activeProject.currentBranch, 'staging');
     assert.equal(status.capabilities.workspaceGuard, true);
     assert.deepEqual(status.capabilities.backends, ['codex', 'antigravity', 'brain']);
 
@@ -143,7 +148,7 @@ suite('Desktop Node configuration and lifecycle', () => {
 
   test('DesktopNode generates valid protocol payloads', async () => {
     const config = resolveDesktopConfig({
-      project: process.cwd(),
+      project: testDir,
       name: 'Nexus Protocol Payload',
       nodeId: 'node-payload-test',
       nodeName: 'payload-host',
@@ -215,7 +220,7 @@ suite('Desktop Node configuration and lifecycle', () => {
       {
         nodeId: 'brain-node',
         nodeName: 'brain-host',
-        projects: [{ id: 'cwd', name: 'cwd', path: process.cwd() }],
+        projects: [{ id: 'cwd', name: 'cwd', path: testDir }],
       },
       {
         brainModel: mockBrainModel,
@@ -252,7 +257,7 @@ suite('Desktop Node configuration and lifecycle', () => {
     const node = new DesktopNode(
       {
         nodeId: 'busy-test',
-        projects: [{ id: 'p', name: 'p', path: process.cwd() }],
+        projects: [{ id: 'p', name: 'p', path: testDir }],
       },
       {
         brainModel: mockBrainModel,
@@ -279,7 +284,7 @@ suite('Desktop Node configuration and lifecycle', () => {
   test('DesktopNode rejects execution when stopped', async () => {
     const node = new DesktopNode({
       nodeId: 'stop-node',
-      projects: [{ id: 'p', name: 'p', path: process.cwd() }],
+      projects: [{ id: 'p', name: 'p', path: testDir }],
     });
 
     await assert.rejects(node.executeTask('brain', 'Test'), /DesktopNode non démarré/);
@@ -294,7 +299,7 @@ suite('Desktop Node configuration and lifecycle', () => {
   });
 
   test('CLI entrypoint handles status command with valid project', async () => {
-    const statusCode = await runCli(['status', '--project', process.cwd()]);
+    const statusCode = await runCli(['status', '--project', testDir]);
     assert.equal(statusCode, 0);
   });
 

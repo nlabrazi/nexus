@@ -1,4 +1,8 @@
 import * as assert from 'node:assert/strict';
+import { execSync } from 'node:child_process';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { suite, test } from 'node:test';
 import {
   NexusRuntime,
@@ -10,6 +14,18 @@ import { BrainModel } from '../../conversational/model';
 
 suite('NexusRuntime isolated agent runtime', () => {
   const mockPath = '/home/user/project';
+  const testDir = join(tmpdir(), 'nexus-agent-runtime-unit-test');
+
+  test('beforeEach setup test dir', () => {
+    if (existsSync(testDir)) {
+      rmSync(testDir, { recursive: true, force: true });
+    }
+    mkdirSync(testDir, { recursive: true });
+    execSync(
+      'git init -b staging && git config user.name "Test" && git config user.email "test@example.com" && git commit --allow-empty -m "initial"',
+      { cwd: testDir }
+    );
+  });
 
   test('initializes with standalone workspace guard and memory storage', async () => {
     const workspaceGuard = createStandaloneWorkspaceGuard(mockPath, {
@@ -140,7 +156,7 @@ suite('NexusRuntime isolated agent runtime', () => {
   });
 
   test('bridges Brain inspection requests to runtime approval handler', async () => {
-    const workspaceGuard = createStandaloneWorkspaceGuard(process.cwd());
+    const workspaceGuard = createStandaloneWorkspaceGuard(testDir);
     const approvalRequests: RuntimeApprovalRequest[] = [];
 
     let calls = 0;
@@ -155,7 +171,7 @@ suite('NexusRuntime isolated agent runtime', () => {
 
     const runtime = new NexusRuntime({
       workspaceGuard,
-      targetPath: () => process.cwd(),
+      targetPath: () => testDir,
       brainModel: mockBrainModel,
       requestApproval: async (req) => {
         approvalRequests.push(req);
@@ -174,7 +190,7 @@ suite('NexusRuntime isolated agent runtime', () => {
   });
 
   test('handles Brain inspection refusal when approval handler declines', async () => {
-    const workspaceGuard = createStandaloneWorkspaceGuard(process.cwd());
+    const workspaceGuard = createStandaloneWorkspaceGuard(testDir);
     const approvalRequests: RuntimeApprovalRequest[] = [];
 
     let calls = 0;
@@ -190,7 +206,7 @@ suite('NexusRuntime isolated agent runtime', () => {
 
     const runtime = new NexusRuntime({
       workspaceGuard,
-      targetPath: () => process.cwd(),
+      targetPath: () => testDir,
       brainModel: mockBrainModel,
       requestApproval: async (req) => {
         approvalRequests.push(req);
@@ -207,10 +223,10 @@ suite('NexusRuntime isolated agent runtime', () => {
   });
 
   test('handles branch list action using standalone workspace guard', async () => {
-    const workspaceGuard = createStandaloneWorkspaceGuard(process.cwd());
+    const workspaceGuard = createStandaloneWorkspaceGuard(testDir);
     const runtime = new NexusRuntime({
       workspaceGuard,
-      targetPath: () => process.cwd(),
+      targetPath: () => testDir,
     });
 
     const listResult = await runtime.handleBranchAction({ type: 'list' });
@@ -234,5 +250,11 @@ suite('NexusRuntime isolated agent runtime', () => {
     assert.equal(status.workspaceCount, 0);
 
     runtime.stop();
+  });
+
+  test('afterAll cleanup test dir', () => {
+    if (existsSync(testDir)) {
+      rmSync(testDir, { recursive: true, force: true });
+    }
   });
 });
