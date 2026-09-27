@@ -13,13 +13,26 @@
             <span class="version-tag">v0.4.1</span>
           </div>
           <span class="brand-sub">
-            {{ activeTab === 'chat' ? 'Brain Conversation' : 'Mobile Bridge' }}
+            {{ activeTab === 'chat' ? 'Brain Conversation' : (activeTab === 'activity' ? 'Live Activity' : 'Mobile Bridge') }}
           </span>
         </div>
       </div>
 
       <!-- Header actions -->
       <div class="header-actions">
+        <!-- Approvals alert badge in header -->
+        <button
+          v-if="pendingApprovalsCount > 0"
+          type="button"
+          class="btn-approval-alert"
+          title="Demande(s) d'approbation en attente"
+          aria-label="Approbations en attente"
+          @click="showApprovalModal = true"
+        >
+          <span class="alert-icon">🛡️</span>
+          <span class="alert-count">{{ pendingApprovalsCount }}</span>
+        </button>
+
         <button
           v-if="activeTab === 'chat' && messages.length > 0"
           type="button"
@@ -36,7 +49,7 @@
           :class="{ spinning: isRefreshing }"
           title="Rafraîchir"
           aria-label="Rafraîchir les informations"
-          @click="fetchStatus"
+          @click="handleManualRefresh"
         >
           🔄
         </button>
@@ -73,7 +86,8 @@
       >
         <span class="tab-icon">⚡</span>
         <span class="tab-label">Activité</span>
-        <span v-if="runningTasksCount > 0" class="tab-badge-count">{{ runningTasksCount }}</span>
+        <span v-if="pendingApprovalsCount > 0" class="tab-badge-approval">{{ pendingApprovalsCount }}</span>
+        <span v-else-if="runningTasksCount > 0" class="tab-badge-count">{{ runningTasksCount }}</span>
       </button>
       <button
         type="button"
@@ -132,7 +146,7 @@
     <!-- Error Banner (if disconnected) -->
     <div v-if="errorMessage && !showSettings" class="error-banner">
       <span>⚠️ {{ errorMessage }}</span>
-      <button type="button" class="btn-retry" @click="fetchStatus">Réessayer</button>
+      <button type="button" class="btn-retry" @click="handleManualRefresh">Réessayer</button>
     </div>
 
     <!-- TAB 1: BRAIN CHAT -->
@@ -159,6 +173,25 @@
             <option value="antigravity">✨ Antigravity</option>
           </select>
         </div>
+      </div>
+
+      <!-- Floating Approval Alert Banner in Chat -->
+      <div
+        v-if="pendingApprovalsCount > 0 && activeApproval"
+        class="approval-chat-banner"
+        @click="showApprovalModal = true"
+      >
+        <div class="approval-banner-icon">🛡️</div>
+        <div class="approval-banner-content">
+          <div class="banner-title-line">
+            <strong>Action sensible requise</strong>
+            <span class="badge-urgent-pill">{{ getApprovalRemainingSeconds(activeApproval.expiresAt) }}s</span>
+          </div>
+          <p>{{ activeApproval.agentName }} attend votre autorisation pour : {{ formatApprovalKind(activeApproval.kind) }}</p>
+        </div>
+        <button type="button" class="btn-approval-banner-action">
+          Examiner ›
+        </button>
       </div>
 
       <!-- Messages Stream -->
@@ -267,28 +300,91 @@
       </div>
     </main>
 
-    <!-- TAB 3: ACTIVITY (Tasks tracking & cancellation) -->
+    <!-- TAB 2: ACTIVITY (Tasks tracking, cancellations & Approvals) -->
     <main v-if="activeTab === 'activity'" class="nexus-main activity-view">
+      <!-- Top Title & Refresh -->
       <div class="activity-top-bar">
         <div class="activity-title-group">
-          <h2 class="section-title">Activité des Tâches</h2>
+          <h2 class="section-title">Activité & Tâches</h2>
           <span class="activity-badge" :class="runningTasksCount > 0 ? 'badge-running' : 'badge-idle'">
-            {{ runningTasksCount > 0 ?  : 'Aucune tâche active' }}
+            {{ runningTasksCount > 0 ? `${runningTasksCount} active(s)` : 'Aucune tâche active' }}
           </span>
         </div>
         <button
           type="button"
           class="btn-icon btn-refresh-activity"
-          :class="{ spinning: isRefreshingTasks }"
-          title="Rafraîchir les tâches"
-          aria-label="Rafraîchir les tâches"
-          @click="fetchTasks"
+          :class="{ spinning: isRefreshingTasks || isRefreshingApprovals }"
+          title="Rafraîchir les activités"
+          aria-label="Rafraîchir les activités"
+          @click="refreshActivity"
         >
           🔄
         </button>
       </div>
 
-      <!-- Filters -->
+      <!-- Approvals Section in Activity Tab (High Priority) -->
+      <section v-if="pendingApprovals.length > 0" class="activity-approvals-box">
+        <div class="activity-section-header">
+          <div class="section-header-left">
+            <span class="section-icon">🛡️</span>
+            <h3 class="section-title-sm">Demandes d'Approbation ({{ pendingApprovals.length }})</h3>
+          </div>
+          <span class="pulse-warning-dot"></span>
+        </div>
+
+        <div class="approvals-cards-list">
+          <div
+            v-for="approval in pendingApprovals"
+            :key="approval.approvalId"
+            class="card approval-item-card"
+            :class="{ 'expiring-soon': getApprovalRemainingSeconds(approval.expiresAt) <= 15 }"
+          >
+            <div class="approval-item-header">
+              <div class="approval-agent-info">
+                <span class="approval-agent-tag">🤖 {{ approval.agentName }}</span>
+                <span class="approval-kind-pill" :class="approval.kind">
+                  {{ approvalKindIcon(approval.kind) }} {{ formatApprovalKind(approval.kind) }}
+                </span>
+              </div>
+              <div class="approval-timer-pill" :class="{ urgent: getApprovalRemainingSeconds(approval.expiresAt) <= 15 }">
+                <span v-if="!isApprovalExpired(approval.expiresAt)">
+                  ⏱️ {{ getApprovalRemainingSeconds(approval.expiresAt) }}s
+                </span>
+                <span v-else class="text-expired">
+                  ⏱️ Expiré
+                </span>
+              </div>
+            </div>
+
+            <div class="approval-command-preview">
+              <pre><code>{{ approval.details }}</code></pre>
+            </div>
+
+            <div class="approval-item-actions">
+              <button
+                type="button"
+                class="btn-action-approve"
+                :disabled="isApprovalExpired(approval.expiresAt) || isDecidingApproval"
+                @click="decideApproval(approval.approvalId, 'accept')"
+              >
+                <span v-if="isDecidingApproval && approvalDecidingId === approval.approvalId" class="spinning">⏳</span>
+                <span v-else>✅ Autoriser</span>
+              </button>
+              <button
+                type="button"
+                class="btn-action-decline"
+                :disabled="isApprovalExpired(approval.expiresAt) || isDecidingApproval"
+                @click="decideApproval(approval.approvalId, 'decline')"
+              >
+                <span v-if="isDecidingApproval && approvalDecidingId === approval.approvalId" class="spinning">⏳</span>
+                <span v-else>❌ Refuser</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Task Status Filter Tabs -->
       <div class="task-filter-bar">
         <button
           v-for="filter in taskFilterTabs"
@@ -323,7 +419,7 @@
         <div class="hero-progress">
           <span class="progress-spinner spinning">⏳</span>
           <span class="progress-label">
-            {{ activeRunningTask.progressMessage || (activeRunningTask.stage ?  : 'Exécution en cours sur le Desktop Node...') }}
+            {{ activeRunningTask.progressMessage || (activeRunningTask.stage ? `Étape : ${activeRunningTask.stage}` : 'Exécution en cours sur le Desktop Node...') }}
           </span>
         </div>
         <div class="hero-footer">
@@ -393,7 +489,7 @@
       </div>
     </main>
 
-    <!-- TAB 2: DASHBOARD (Nœud, Projets & Core Telemetry) -->
+    <!-- TAB 3: DASHBOARD (Nœud, Projets & Core Telemetry) -->
     <main v-if="activeTab === 'dashboard'" class="nexus-main">
       <!-- Status Banner -->
       <section class="status-banner" :class="connectionStatus">
@@ -550,13 +646,22 @@
             <span class="stat-number">{{ coreStatus?.onlineNodes ?? 0 }}</span>
             <span class="stat-label">Nœuds en ligne</span>
           </div>
-          <div class="stat-card stat-interactive" title="Voir l'activité des tâches" @click="activeTab = 'activity'">
-            <span class="stat-number">{{ coreStatus?.activeTasks ?? 0 }}</span>
+          <div
+            class="stat-card stat-interactive"
+            title="Voir l'activité des tâches"
+            @click="activeTab = 'activity'"
+          >
+            <span class="stat-number">{{ runningTasksCount }}</span>
             <span class="stat-label">Tâches en cours ›</span>
           </div>
-          <div class="stat-card">
-            <span class="stat-number">{{ coreStatus?.pendingApprovals ?? 0 }}</span>
-            <span class="stat-label">Approbations</span>
+          <div
+            class="stat-card stat-interactive"
+            :class="{ 'stat-approval-pulse': pendingApprovalsCount > 0 }"
+            title="Gérer les demandes d'approbation"
+            @click="showApprovalModal = true"
+          >
+            <span class="stat-number">{{ pendingApprovalsCount }}</span>
+            <span class="stat-label">Approbations ›</span>
           </div>
         </div>
       </section>
@@ -575,6 +680,126 @@
         </button>
       </section>
     </main>
+
+    <!-- Full Approval Modal / Dialog Overlay -->
+    <section v-if="showApprovalModal" class="modal-overlay" @click.self="showApprovalModal = false">
+      <div class="modal-card approval-modal">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <span class="modal-icon">🛡️</span>
+            <h2>Demande d'approbation</h2>
+          </div>
+          <button type="button" class="btn-close" aria-label="Fermer" @click="showApprovalModal = false">✕</button>
+        </div>
+
+        <div v-if="pendingApprovals.length > 0 && activeApproval" class="modal-content">
+          <!-- Expiration Alert -->
+          <div
+            class="approval-countdown-banner"
+            :class="{
+              urgent: getApprovalRemainingSeconds(activeApproval.expiresAt) <= 15 && !isApprovalExpired(activeApproval.expiresAt),
+              expired: isApprovalExpired(activeApproval.expiresAt)
+            }"
+          >
+            <span class="countdown-icon">⏱️</span>
+            <div class="countdown-info">
+              <template v-if="isApprovalExpired(activeApproval.expiresAt)">
+                <strong>Demande expirée</strong>
+                <p>Délai dépassé. L'action a été automatiquement refusée (Fail-Closed).</p>
+              </template>
+              <template v-else-if="getApprovalRemainingSeconds(activeApproval.expiresAt) <= 15">
+                <strong>Expiration imminente !</strong>
+                <p>Plus que <strong>{{ getApprovalRemainingSeconds(activeApproval.expiresAt) }}s</strong> avant rejet automatique.</p>
+              </template>
+              <template v-else>
+                <strong>Validation requise</strong>
+                <p>Temps restant : <strong>{{ getApprovalRemainingSeconds(activeApproval.expiresAt) }}s</strong> (rejet automatique à expiration).</p>
+              </template>
+            </div>
+          </div>
+
+          <!-- Metadata -->
+          <div class="approval-meta-grid">
+            <div class="meta-badge">
+              <span class="badge-label">Agent :</span>
+              <span class="badge-value">🤖 {{ activeApproval.agentName }}</span>
+            </div>
+            <div class="meta-badge" :class="activeApproval.kind">
+              <span class="badge-label">Type :</span>
+              <span class="badge-value">{{ approvalKindIcon(activeApproval.kind) }} {{ formatApprovalKind(activeApproval.kind) }}</span>
+            </div>
+          </div>
+
+          <!-- Details / Code -->
+          <div class="approval-details-box">
+            <span class="details-label">Commande / Action demandée :</span>
+            <pre class="approval-code-block"><code>{{ activeApproval.details }}</code></pre>
+          </div>
+
+          <!-- Multiple approvals navigation -->
+          <div v-if="pendingApprovals.length > 1" class="approval-pagination">
+            <span>Approbation {{ activeApprovalIndex + 1 }} sur {{ pendingApprovals.length }}</span>
+            <div class="pagination-buttons">
+              <button
+                type="button"
+                class="btn-pager"
+                :disabled="activeApprovalIndex === 0"
+                @click="activeApprovalIndex--"
+              >
+                ◀ Précédent
+              </button>
+              <button
+                type="button"
+                class="btn-pager"
+                :disabled="activeApprovalIndex >= pendingApprovals.length - 1"
+                @click="activeApprovalIndex++"
+              >
+                Suivant ▶
+              </button>
+            </div>
+          </div>
+
+          <!-- Actions buttons -->
+          <div class="approval-modal-actions">
+            <template v-if="!isApprovalExpired(activeApproval.expiresAt)">
+              <button
+                type="button"
+                class="btn-modal-approve"
+                :disabled="isDecidingApproval"
+                @click="decideApproval(activeApproval.approvalId, 'accept')"
+              >
+                <span v-if="isDecidingApproval && approvalDecidingId === activeApproval.approvalId" class="spinning">⏳</span>
+                <span v-else>✅ Autoriser l'action</span>
+              </button>
+              <button
+                type="button"
+                class="btn-modal-decline"
+                :disabled="isDecidingApproval"
+                @click="decideApproval(activeApproval.approvalId, 'decline')"
+              >
+                <span v-if="isDecidingApproval && approvalDecidingId === activeApproval.approvalId" class="spinning">⏳</span>
+                <span v-else>❌ Refuser</span>
+              </button>
+            </template>
+            <template v-else>
+              <button type="button" class="btn-secondary btn-block" @click="showApprovalModal = false">
+                Fermer
+              </button>
+            </template>
+          </div>
+        </div>
+
+        <!-- Empty State in Modal -->
+        <div v-else class="modal-empty-body">
+          <span class="modal-empty-icon">🛡️</span>
+          <h3>Aucune approbation en attente</h3>
+          <p>Toutes les demandes de sécurité ont été traitées ou sont synchronisées.</p>
+          <button type="button" class="btn-primary" @click="showApprovalModal = false">
+            Fermer
+          </button>
+        </div>
+      </div>
+    </section>
 
     <!-- Bottom Status Bar -->
     <footer class="nexus-footer">
@@ -598,6 +823,7 @@ interface ConnectedNodeInfo {
   online: boolean;
   state: 'idle' | 'busy' | 'offline';
   lastHeartbeat?: number;
+  activeTaskId?: string;
   activeProject?: {
     id?: string;
     name: string;
@@ -634,8 +860,48 @@ interface ChatMessage {
   error?: boolean;
 }
 
+interface RemoteTaskItem {
+  taskId: string;
+  backend: 'codex' | 'antigravity' | 'brain';
+  prompt: string;
+  projectId?: string;
+  nodeId: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  stage?: string;
+  progressMessage?: string;
+  activeTool?: string;
+  createdAt: number;
+  startedAt?: number;
+  completedAt?: number;
+  result?: {
+    text?: string;
+    fileSummary?: string;
+    filesChanged?: string[];
+  };
+  error?: {
+    code?: string;
+    message?: string;
+  };
+}
+
+interface PendingApprovalItem {
+  approvalId: string;
+  taskId: string;
+  nodeId: string;
+  agentName: string;
+  kind: 'command' | 'fileChange' | 'consent';
+  details: string;
+  expiresAt: number;
+  createdAt: number;
+  status: 'pending' | 'accepted' | 'declined' | 'cancelled' | 'timed_out';
+  decidedAt?: number;
+  decidedBy?: string;
+  decision?: 'accept' | 'decline';
+  cancelReason?: string;
+}
+
 // Navigation & Tab state
-const activeTab = ref<'chat' | 'dashboard'>('chat');
+const activeTab = ref<'chat' | 'activity' | 'dashboard'>('chat');
 const selectedBackend = ref<'brain' | 'codex' | 'antigravity'>('brain');
 
 // Core Connection state
@@ -660,6 +926,7 @@ let clockTimer: ReturnType<typeof setInterval> | null = null;
 const inputPrompt = ref<string>('');
 const isSending = ref<boolean>(false);
 const currentProgressMessage = ref<string>('');
+const currentInFlightTaskId = ref<string | null>(null);
 const messages = ref<ChatMessage[]>([]);
 const messagesScrollRef = ref<HTMLElement | null>(null);
 const chatTextareaRef = ref<HTMLTextAreaElement | null>(null);
@@ -671,12 +938,25 @@ const quickChips = [
   'Quels fichiers ont été modifiés récemment ?',
 ];
 
+// Activity & Tasks State
+const tasks = ref<RemoteTaskItem[]>([]);
+const isRefreshingTasks = ref<boolean>(false);
+const activeTaskFilter = ref<'all' | 'running' | 'completed' | 'failed'>('all');
+
+// Approvals State
+const approvals = ref<PendingApprovalItem[]>([]);
+const isRefreshingApprovals = ref<boolean>(false);
+const showApprovalModal = ref<boolean>(false);
+const isDecidingApproval = ref<boolean>(false);
+const approvalDecidingId = ref<string | null>(null);
+const activeApprovalIndex = ref<number>(0);
+
 // Lifecycle
 onMounted(() => {
   if (typeof window !== 'undefined') {
     const savedUrl = localStorage.getItem('nexus_core_url');
     const savedToken = localStorage.getItem('nexus_auth_token') || '';
-    const savedTab = localStorage.getItem('nexus_active_tab') as 'chat' | 'dashboard' | null;
+    const savedTab = localStorage.getItem('nexus_active_tab') as 'chat' | 'activity' | 'dashboard' | null;
 
     if (savedUrl) {
       coreUrl.value = savedUrl;
@@ -702,9 +982,13 @@ onMounted(() => {
   }
 
   fetchStatus();
+  fetchTasks(true);
+  fetchApprovals(true);
 
   pollTimer = setInterval(() => {
     fetchStatus(true);
+    fetchTasks(true);
+    fetchApprovals(true);
   }, 3000);
 
   clockTimer = setInterval(() => {
@@ -764,21 +1048,121 @@ const lastUpdatedText = computed(() => {
   return `il y a ${diffSec}s`;
 });
 
-// Actions
+// Tasks Computeds
+const runningTasks = computed(() => tasks.value.filter((t) => t.status === 'running'));
+const runningTasksCount = computed(() => {
+  return runningTasks.value.length || (coreStatus.value?.activeTasks ?? 0);
+});
+const activeRunningTask = computed(() => runningTasks.value[0] || null);
+
+const filteredTasks = computed(() => {
+  if (activeTaskFilter.value === 'all') return tasks.value;
+  if (activeTaskFilter.value === 'running') {
+    return tasks.value.filter((t) => t.status === 'running' || t.status === 'pending');
+  }
+  if (activeTaskFilter.value === 'completed') {
+    return tasks.value.filter((t) => t.status === 'completed');
+  }
+  if (activeTaskFilter.value === 'failed') {
+    return tasks.value.filter((t) => t.status === 'failed' || t.status === 'cancelled');
+  }
+  return tasks.value;
+});
+
+const taskFilterTabs = computed(() => [
+  { key: 'all' as const, label: 'Tous', count: tasks.value.length },
+  {
+    key: 'running' as const,
+    label: 'En cours',
+    count: tasks.value.filter((t) => t.status === 'running' || t.status === 'pending').length,
+  },
+  {
+    key: 'completed' as const,
+    label: 'Terminés',
+    count: tasks.value.filter((t) => t.status === 'completed').length,
+  },
+  {
+    key: 'failed' as const,
+    label: 'Erreurs',
+    count: tasks.value.filter((t) => t.status === 'failed' || t.status === 'cancelled').length,
+  },
+]);
+
+// Approvals Computeds
+const pendingApprovals = computed(() => {
+  return approvals.value.filter((a) => a.status === 'pending');
+});
+
+const pendingApprovalsCount = computed(() => {
+  const localPending = pendingApprovals.value.length;
+  const statusPending = coreStatus.value?.pendingApprovals ?? 0;
+  return Math.max(localPending, statusPending);
+});
+
+const activeApproval = computed(() => {
+  if (pendingApprovals.value.length === 0) return null;
+  const idx = Math.min(activeApprovalIndex.value, pendingApprovals.value.length - 1);
+  return pendingApprovals.value[idx] || pendingApprovals.value[0] || null;
+});
+
+// Helper functions for Approvals
+function formatApprovalKind(kind?: string): string {
+  if (kind === 'command') return 'Exécution de commande';
+  if (kind === 'fileChange') return 'Modification de fichier';
+  if (kind === 'consent') return 'Demande d’autorisation';
+  return 'Opération sécurisée';
+}
+
+function approvalKindIcon(kind?: string): string {
+  if (kind === 'command') return '⚡';
+  if (kind === 'fileChange') return '📝';
+  if (kind === 'consent') return '🛡️';
+  return '🔒';
+}
+
+function getApprovalRemainingSeconds(expiresAt?: number): number {
+  if (!expiresAt) return 0;
+  return Math.max(0, Math.ceil((expiresAt - now.value) / 1000));
+}
+
+function isApprovalExpired(expiresAt?: number): boolean {
+  if (!expiresAt) return false;
+  return now.value >= expiresAt;
+}
+
+// Actions & HTTP Calls
+function getRequestHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+  };
+  if (authToken.value) {
+    headers['Authorization'] = `Bearer ${authToken.value}`;
+  }
+  return headers;
+}
+
+async function handleManualRefresh() {
+  await Promise.all([
+    fetchStatus(false),
+    fetchTasks(false),
+    fetchApprovals(false),
+  ]);
+}
+
+async function refreshActivity() {
+  await Promise.all([
+    fetchTasks(false),
+    fetchApprovals(false),
+  ]);
+}
+
 async function fetchStatus(background = false) {
   if (!background) isRefreshing.value = true;
   try {
     const targetUrl = `${coreUrl.value.replace(/\/+$/, '')}/status`;
-    const headers: Record<string, string> = {
-      Accept: 'application/json',
-    };
-    if (authToken.value) {
-      headers['Authorization'] = `Bearer ${authToken.value}`;
-    }
-
     const res = await fetch(targetUrl, {
       method: 'GET',
-      headers,
+      headers: getRequestHeaders(),
     });
 
     if (!res.ok) {
@@ -798,6 +1182,128 @@ async function fetchStatus(background = false) {
   }
 }
 
+async function fetchTasks(background = false) {
+  if (!background) isRefreshingTasks.value = true;
+  try {
+    const targetUrl = `${coreUrl.value.replace(/\/+$/, '')}/api/tasks`;
+    const res = await fetch(targetUrl, {
+      method: 'GET',
+      headers: getRequestHeaders(),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        tasks.value = data;
+      }
+    }
+  } catch {
+    // Non-blocking error in background polling
+  } finally {
+    if (!background) isRefreshingTasks.value = false;
+  }
+}
+
+async function cancelTask(taskId: string) {
+  if (!taskId) return;
+  try {
+    const targetUrl = `${coreUrl.value.replace(/\/+$/, '')}/api/tasks/${encodeURIComponent(taskId)}/cancel`;
+    const headers = getRequestHeaders();
+    headers['Content-Type'] = 'application/json';
+
+    await fetch(targetUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ reason: 'Annulé depuis l’interface Web mobile' }),
+    });
+
+    await fetchTasks(true);
+    await fetchStatus(true);
+  } catch (err: any) {
+    alert(`Impossible d'arrêter la tâche : ${err?.message || err}`);
+  }
+}
+
+async function fetchApprovals(background = false) {
+  if (!background) isRefreshingApprovals.value = true;
+  try {
+    const targetUrl = `${coreUrl.value.replace(/\/+$/, '')}/api/approvals`;
+    const res = await fetch(targetUrl, {
+      method: 'GET',
+      headers: getRequestHeaders(),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        approvals.value = data;
+        // If index is beyond bounds, reset it
+        if (activeApprovalIndex.value >= pendingApprovals.value.length) {
+          activeApprovalIndex.value = Math.max(0, pendingApprovals.value.length - 1);
+        }
+      }
+    }
+  } catch {
+    // Non-blocking error
+  } finally {
+    if (!background) isRefreshingApprovals.value = false;
+  }
+}
+
+async function decideApproval(approvalId: string, decision: 'accept' | 'decline') {
+  if (!approvalId || isDecidingApproval.value) return;
+
+  isDecidingApproval.value = true;
+  approvalDecidingId.value = approvalId;
+
+  try {
+    const targetUrl = `${coreUrl.value.replace(/\/+$/, '')}/api/approvals/${encodeURIComponent(approvalId)}/decide`;
+    const headers = getRequestHeaders();
+    headers['Content-Type'] = 'application/json';
+
+    const res = await fetch(targetUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        decision,
+        decidedBy: 'mobile-web',
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || `Erreur HTTP ${res.status}`);
+    }
+
+    // Update approval status locally
+    const found = approvals.value.find((a) => a.approvalId === approvalId);
+    if (found) {
+      found.status = decision === 'accept' ? 'accepted' : 'declined';
+      found.decision = decision;
+    }
+
+    // Refresh state from core
+    await Promise.all([
+      fetchApprovals(true),
+      fetchStatus(true),
+      fetchTasks(true),
+    ]);
+
+    // If no more pending approvals, auto-close modal after brief delay
+    if (pendingApprovals.value.length === 0) {
+      setTimeout(() => {
+        showApprovalModal.value = false;
+      }, 400);
+    }
+  } catch (err: any) {
+    alert(`Erreur d’approbation : ${err?.message || err}`);
+  } finally {
+    isDecidingApproval.value = false;
+    approvalDecidingId.value = null;
+  }
+}
+
 async function submitMessage() {
   if (!canSend.value) return;
   const promptText = inputPrompt.value.trim();
@@ -807,6 +1313,9 @@ async function submitMessage() {
 
 async function sendPrompt(promptText: string) {
   if (!promptText || isSending.value) return;
+
+  const generatedTaskId = `task-${Date.now()}`;
+  currentInFlightTaskId.value = generatedTaskId;
 
   const userMsgId = `user-${Date.now()}`;
   const userMsg: ChatMessage = {
@@ -826,18 +1335,14 @@ async function sendPrompt(promptText: string) {
 
   try {
     const targetUrl = `${coreUrl.value.replace(/\/+$/, '')}/api/tasks`;
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    };
-    if (authToken.value) {
-      headers['Authorization'] = `Bearer ${authToken.value}`;
-    }
+    const headers = getRequestHeaders();
+    headers['Content-Type'] = 'application/json';
 
     const res = await fetch(targetUrl, {
       method: 'POST',
       headers,
       body: JSON.stringify({
+        taskId: generatedTaskId,
         backend: selectedBackend.value,
         prompt: promptText,
         projectId: primaryNode.value?.activeProject?.id || activeProjectName.value,
@@ -876,8 +1381,12 @@ async function sendPrompt(promptText: string) {
     saveMessages();
   } finally {
     isSending.value = false;
+    currentInFlightTaskId.value = null;
     currentProgressMessage.value = '';
     scrollToBottom();
+    // Refresh tasks and status
+    fetchTasks(true);
+    fetchStatus(true);
   }
 }
 
@@ -968,7 +1477,7 @@ function saveSettings() {
   }
 
   showSettings.value = false;
-  fetchStatus();
+  handleManualRefresh();
 }
 
 function resetSettings() {
@@ -989,6 +1498,15 @@ function formatState(state: string): string {
   if (state === 'idle') return 'Prêt (idle)';
   if (state === 'busy') return 'En tâche (busy)';
   return state;
+}
+
+function formatTaskStatus(status: string): string {
+  if (status === 'running') return 'En cours';
+  if (status === 'pending') return 'En attente';
+  if (status === 'completed') return 'Terminé';
+  if (status === 'failed') return 'Échoué';
+  if (status === 'cancelled') return 'Annulé';
+  return status;
 }
 
 function formatTime(timestamp: number): string {
@@ -1165,7 +1683,40 @@ body {
 
 .header-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
+}
+
+/* Approval Alert Button in Header */
+.btn-approval-alert {
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid var(--color-warning);
+  color: #fde68a;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  animation: pulse-amber-border 1.5s infinite;
+}
+
+.alert-count {
+  background: var(--color-warning);
+  color: #000;
+  font-size: 0.72rem;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 800;
+}
+
+@keyframes pulse-amber-border {
+  0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.6); }
+  70% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
 }
 
 .btn-icon {
@@ -1240,6 +1791,25 @@ body {
   height: 8px;
   border-radius: 50%;
   background-color: var(--color-brand);
+  animation: pulse-glow 1s infinite alternate;
+}
+
+.tab-badge-count {
+  background: rgba(56, 189, 248, 0.2);
+  color: var(--color-brand);
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 700;
+}
+
+.tab-badge-approval {
+  background: var(--color-warning);
+  color: #000;
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 800;
   animation: pulse-glow 1s infinite alternate;
 }
 
@@ -1318,6 +1888,70 @@ body {
   font-size: 0.74rem;
   padding: 2px 6px;
   border-radius: 4px;
+  cursor: pointer;
+}
+
+/* Floating Approval Alert Banner in Chat */
+.approval-chat-banner {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(19, 27, 46, 0.95));
+  border-bottom: 1px solid rgba(245, 158, 11, 0.4);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.2s ease;
+}
+
+.approval-chat-banner:hover {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.3), rgba(19, 27, 46, 0.95));
+}
+
+.approval-banner-icon { font-size: 1.4rem; }
+
+.approval-banner-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.banner-title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.banner-title-line strong {
+  font-size: 0.82rem;
+  color: #fef3c7;
+}
+
+.badge-urgent-pill {
+  background: var(--color-warning);
+  color: #000;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.approval-banner-content p {
+  font-size: 0.74rem;
+  color: #fde68a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn-approval-banner-action {
+  background: rgba(245, 158, 11, 0.3);
+  border: 1px solid var(--color-warning);
+  color: #fff;
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -1456,9 +2090,16 @@ body {
 /* Typing Indicator */
 .typing-bubble {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 6px;
   background: rgba(19, 27, 46, 0.8) !important;
+}
+
+.typing-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .typing-indicator {
@@ -1481,6 +2122,16 @@ body {
 @keyframes typing {
   0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
   40% { transform: scale(1.1); opacity: 1; }
+}
+
+.btn-cancel-in-flight {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
 .typing-text {
@@ -1577,6 +2228,427 @@ body {
   border-radius: 4px;
   font-family: monospace;
   font-size: 0.82rem;
+}
+
+/* ======================================================== */
+/* ACTIVITY TAB STYLES                                      */
+/* ======================================================== */
+.activity-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.activity-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.activity-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.activity-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.badge-running { background: rgba(56, 189, 248, 0.2); color: var(--color-brand); }
+.badge-idle { background: rgba(255, 255, 255, 0.06); color: var(--text-muted); }
+
+.btn-refresh-activity {
+  width: 32px;
+  height: 32px;
+}
+
+/* Approvals Box in Activity Tab */
+.activity-approvals-box {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.activity-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-title-sm {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #fde68a;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pulse-warning-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-warning);
+  animation: pulse-glow 1s infinite alternate;
+}
+
+.approvals-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.approval-item-card {
+  background: #0f1627;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.approval-item-card.expiring-soon {
+  border-color: #ef4444;
+  animation: pulse-amber-border 1.2s infinite;
+}
+
+.approval-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.approval-agent-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.approval-agent-tag {
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: #fff;
+}
+
+.approval-kind-pill {
+  font-size: 0.7rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.approval-kind-pill.command { color: #38bdf8; background: rgba(56, 189, 248, 0.12); }
+.approval-kind-pill.fileChange { color: #f59e0b; background: rgba(245, 158, 11, 0.12); }
+.approval-kind-pill.consent { color: #10b981; background: rgba(16, 185, 129, 0.12); }
+
+.approval-timer-pill {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.approval-timer-pill.urgent { color: #ef4444; font-weight: 800; }
+.text-expired { color: #ef4444; }
+
+.approval-command-preview {
+  background: #05070c;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px;
+  overflow-x: auto;
+}
+
+.approval-command-preview pre code {
+  font-family: monospace;
+  font-size: 0.78rem;
+  color: #fde68a;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.approval-item-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.btn-action-approve {
+  background: var(--color-success);
+  color: #041409;
+  font-weight: 700;
+  font-size: 0.82rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-action-decline {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid #ef4444;
+  color: #fca5a5;
+  font-weight: 700;
+  font-size: 0.82rem;
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-action-approve:disabled, .btn-action-decline:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Task Filter Pills */
+.task-filter-bar {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.filter-pill {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.filter-pill.active {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: var(--color-brand);
+  color: #fff;
+  font-weight: 700;
+}
+
+.filter-count { font-size: 0.68rem; opacity: 0.8; }
+
+/* Active Task Hero Banner */
+.active-task-hero {
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.12), var(--bg-card));
+  border: 1px solid var(--color-brand);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hero-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hero-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hero-badge {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: var(--color-brand);
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-brand);
+  box-shadow: 0 0 8px var(--color-brand);
+  animation: pulse-glow 1s infinite alternate;
+}
+
+.btn-stop-hero {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid #ef4444;
+  color: #fca5a5;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.hero-prompt {
+  font-size: 0.85rem;
+  color: #fff;
+  font-weight: 600;
+}
+
+.hero-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.hero-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-color);
+  padding-top: 8px;
+}
+
+/* Tasks Scroll List */
+.tasks-scroll-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.task-item-card {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.task-item-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-status-pill {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.task-status-pill.running { background: rgba(56, 189, 248, 0.15); color: var(--color-brand); }
+.task-status-pill.pending { background: rgba(245, 158, 11, 0.15); color: var(--color-warning); }
+.task-status-pill.completed { background: rgba(16, 185, 129, 0.15); color: var(--color-success); }
+.task-status-pill.failed, .task-status-pill.cancelled { background: rgba(239, 68, 68, 0.15); color: var(--color-danger); }
+
+.pulse-dot-small {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-brand);
+}
+
+.backend-tag {
+  font-size: 0.68rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+}
+.backend-tag.brain { color: #a78bfa; }
+.backend-tag.codex { color: #38bdf8; }
+.backend-tag.antigravity { color: #fbbf24; }
+
+.task-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.task-date { font-size: 0.7rem; color: var(--text-muted); }
+
+.btn-stop-item {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+  font-size: 0.68rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.task-prompt-text {
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.task-result-box {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.result-header { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; }
+.result-preview { font-size: 0.78rem; color: var(--text-secondary); line-height: 1.35; max-height: 80px; overflow-y: auto; }
+
+.task-error-box {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+.error-badge { font-size: 0.7rem; font-weight: 700; color: #ef4444; }
+.error-desc { font-size: 0.75rem; color: #fca5a5; margin-top: 2px; }
+
+.task-item-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-family: monospace;
+}
+
+.btn-stop-node {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+  font-size: 0.68rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: 4px;
 }
 
 /* ======================================================== */
@@ -1764,6 +2836,15 @@ body {
   text-align: center;
   gap: 4px;
 }
+.stat-interactive { cursor: pointer; transition: transform 0.15s ease, border-color 0.2s ease; }
+.stat-interactive:hover { border-color: var(--color-brand); transform: translateY(-1px); }
+
+.stat-approval-pulse {
+  border-color: var(--color-warning) !important;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), var(--bg-card));
+  animation: pulse-amber-border 2s infinite;
+}
+
 .stat-number { font-size: 1.5rem; font-weight: 800; color: #fff; }
 .stat-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 
@@ -1810,6 +2891,239 @@ body {
 .install-info h4 { font-size: 0.88rem; font-weight: 700; color: #fff; }
 .install-info p { font-size: 0.74rem; color: var(--text-secondary); }
 .btn-install { white-space: nowrap; padding: 8px 14px; font-size: 0.82rem; }
+
+/* ======================================================== */
+/* APPROVAL MODAL OVERLAY & BOTTOM SHEET                     */
+/* ======================================================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 120;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+}
+
+@media (min-width: 600px) {
+  .modal-overlay {
+    align-items: center;
+    padding: 20px;
+  }
+}
+
+.modal-card.approval-modal {
+  width: 100%;
+  max-width: 540px;
+  background: #0f1628;
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.8);
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+@media (min-width: 600px) {
+  .modal-card.approval-modal {
+    border-radius: var(--radius-lg);
+  }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-icon { font-size: 1.4rem; }
+.modal-header h2 { font-size: 1.1rem; font-weight: 800; color: #fff; }
+
+.modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Countdown Banner in Modal */
+.approval-countdown-banner {
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.approval-countdown-banner.urgent {
+  background: rgba(245, 158, 11, 0.18);
+  border-color: var(--color-warning);
+}
+
+.approval-countdown-banner.expired {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: var(--color-danger);
+}
+
+.countdown-icon { font-size: 1.5rem; }
+
+.countdown-info strong {
+  font-size: 0.88rem;
+  color: #fff;
+  display: block;
+}
+
+.countdown-info p {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.approval-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.meta-badge {
+  background: #090d18;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.badge-label { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; }
+.badge-value { font-size: 0.82rem; font-weight: 700; color: #fff; }
+
+.approval-details-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.details-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.approval-code-block {
+  background: #05070c;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.approval-code-block code {
+  font-family: monospace;
+  font-size: 0.82rem;
+  color: #fde68a;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Pagination */
+.approval-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding-top: 4px;
+}
+
+.pagination-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-pager {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 0.72rem;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.btn-pager:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* Modal Action Buttons */
+.approval-modal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding-top: 6px;
+}
+
+.btn-modal-approve {
+  background: var(--color-success);
+  color: #041409;
+  font-size: 0.95rem;
+  font-weight: 800;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+.btn-modal-decline {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid #ef4444;
+  color: #fca5a5;
+  font-size: 0.95rem;
+  font-weight: 800;
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+.btn-modal-approve:disabled, .btn-modal-decline:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-block { width: 100%; grid-column: span 2; }
+
+.modal-empty-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 24px 12px;
+  gap: 12px;
+}
+
+.modal-empty-icon { font-size: 2.5rem; opacity: 0.8; }
+.modal-empty-body h3 { font-size: 1.1rem; color: #fff; }
+.modal-empty-body p { font-size: 0.82rem; color: var(--text-secondary); max-width: 320px; line-height: 1.4; }
 
 /* Footer */
 .nexus-footer {
