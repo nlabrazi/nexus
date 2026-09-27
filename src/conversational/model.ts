@@ -7,11 +7,13 @@ export interface BrainMessage {
 
 export interface BrainDecision {
   readonly action:
-  | 'reply'
-  | 'get_project_status'
-  | 'inspect_project'
-  | 'get_project_memory'
-  | 'record_decision';
+    | 'reply'
+    | 'get_project_status'
+    | 'inspect_project'
+    | 'get_project_memory'
+    | 'record_decision'
+    | 'list_projects'
+    | 'switch_project';
   readonly text: string;
 }
 

@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { hostname } from 'node:os';
-import { basename, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { loadProjectRegistry } from './registry';
 import { DesktopNodeConfig, DesktopProjectConfig, TaskBackend } from './types';
@@ -19,6 +19,7 @@ export interface CliConfigOptions {
   readonly config?: string;
   readonly registryPath?: string;
   readonly protectedBranches?: readonly string[];
+  readonly autoDiscover?: boolean;
 }
 
 export function loadConfigFile(configPath: string): Partial<DesktopNodeConfig> {
@@ -113,6 +114,41 @@ export function resolveDesktopConfig(
     throw new Error(
       'Aucun projet configuré. Spécifiez au moins un projet via --project <chemin>, enregistrez-en un via `nexus-desktop projects add <chemin>`, ou définissez la variable NEXUS_PROJECT_PATH.'
     );
+  }
+
+  // 5. Auto-discover sibling workspace directories in parent folder if requested
+  const shouldAutoDiscover =
+    cliOptions?.autoDiscover ??
+    (env.NEXUS_AUTO_DISCOVER === '1' || env.NEXUS_AUTO_DISCOVER === 'true');
+  const primaryCandidate = rawProjects[0]?.path ? resolve(baseDir, rawProjects[0].path) : undefined;
+  if (shouldAutoDiscover && primaryCandidate && existsSync(primaryCandidate)) {
+    try {
+      const parentDir = dirname(primaryCandidate);
+      const isSystemDir =
+        parentDir === '/' || parentDir === '/tmp' || parentDir === '/home' || parentDir === '/var';
+      if (!isSystemDir && existsSync(parentDir) && statSync(parentDir).isDirectory()) {
+        const entries = readdirSync(parentDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
+            const siblingPath = resolve(parentDir, entry.name);
+            const isProject =
+              existsSync(resolve(siblingPath, '.git')) ||
+              existsSync(resolve(siblingPath, 'package.json')) ||
+              existsSync(resolve(siblingPath, '.nexus')) ||
+              existsSync(resolve(siblingPath, 'Cargo.toml')) ||
+              existsSync(resolve(siblingPath, 'pyproject.toml'));
+            if (isProject && !rawProjects.some((p) => resolve(baseDir, p.path) === siblingPath)) {
+              rawProjects.push({
+                name: entry.name,
+                path: siblingPath,
+              });
+            }
+          }
+        }
+      }
+    } catch {
+      // Non-blocking sibling exploration
+    }
   }
 
   // Deduplicate and resolve projects

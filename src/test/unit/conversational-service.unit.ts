@@ -138,4 +138,53 @@ suite('Nexus Brain conversation loop', () => {
     await failure;
     await service.respond(input('Nouveau tour'), signal());
   });
+
+  test('list_projects and switch_project are executed and results returned to the model', async () => {
+    let currentProject = 'nexus';
+    const tools = new CodingAgentTools({
+      resolveWorkspace: async () => ({ root: `/projects/${currentProject}` }),
+      listProjects: () => [
+        {
+          id: 'nexus',
+          name: 'nexus',
+          path: '/projects/nexus',
+          isCurrent: currentProject === 'nexus',
+        },
+        {
+          id: 'riftvision',
+          name: 'riftvision',
+          path: '/projects/riftvision',
+          isCurrent: currentProject === 'riftvision',
+        },
+      ],
+      switchProject: (target) => {
+        currentProject = target;
+        return { id: target, name: target, path: `/projects/${target}`, isCurrent: true };
+      },
+    });
+
+    let step = 0;
+    const service = new ConversationalService(
+      {
+        decide: async (messages) => {
+          if (step === 0) {
+            step++;
+            return { action: 'list_projects', text: '' };
+          }
+          if (step === 1) {
+            step++;
+            assert.match(messages.at(-1)!.text, /riftvision/);
+            return { action: 'switch_project', text: 'riftvision' };
+          }
+          assert.match(messages.at(-1)!.text, /riftvision/);
+          return { action: 'reply', text: 'Contexte basculé sur riftvision !' };
+        },
+      },
+      tools
+    );
+
+    const reply = await service.respond(input('Bascule sur riftvision'), signal());
+    assert.equal(reply.text, 'Contexte basculé sur riftvision !');
+    assert.equal(currentProject, 'riftvision');
+  });
 });

@@ -35,11 +35,11 @@ export type TurnTimeoutHandler = (
 export type RuntimeApprovalRequest =
   | CodexApprovalRequest
   | {
-    readonly kind: 'inspection';
-    readonly agentName: string;
-    readonly details: string;
-    readonly expiresAt: number;
-  };
+      readonly kind: 'inspection';
+      readonly agentName: string;
+      readonly details: string;
+      readonly expiresAt: number;
+    };
 
 export type RuntimeApprovalHandler = (
   request: RuntimeApprovalRequest,
@@ -50,6 +50,8 @@ export interface KeyValueStorage {
   get(key: string): unknown;
   update(key: string, value: unknown): PromiseLike<void>;
 }
+
+import { CodingAgentProjectSummary } from '../conversational/tools';
 
 export interface NexusRuntimeOptions {
   readonly workspaceGuard: WorkspaceGuard;
@@ -64,6 +66,12 @@ export interface NexusRuntimeOptions {
   readonly defaultBackend?: AgentBackendType;
   readonly brainModel?: BrainModel;
   readonly projectMemory?: ProjectMemory;
+  readonly listProjects?: () =>
+    | Promise<readonly CodingAgentProjectSummary[]>
+    | readonly CodingAgentProjectSummary[];
+  readonly switchProject?: (
+    idOrPath: string
+  ) => Promise<CodingAgentProjectSummary> | CodingAgentProjectSummary;
 }
 
 export interface StandaloneWorkspaceGuardOptions {

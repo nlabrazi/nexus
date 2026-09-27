@@ -162,4 +162,60 @@ suite('Brain coding agent tools', () => {
     await assert.rejects(tools.getProjectStatus(aborted), { name: 'AbortError' });
     await assert.rejects(tools.inspectProject('Inspect', aborted), { name: 'AbortError' });
   });
+
+  test('listProjects returns available projects from options or defaults to active', async () => {
+    const defaultTools = new CodingAgentTools({
+      resolveWorkspace: async () => workspace(),
+    });
+    const defaultProjects = await defaultTools.listProjects(signal());
+    assert.equal(defaultProjects.length, 1);
+    assert.equal(defaultProjects[0].name, 'nexus');
+
+    const multiTools = new CodingAgentTools({
+      resolveWorkspace: async () => workspace(),
+      listProjects: () => [
+        {
+          id: 'nexus',
+          name: 'nexus',
+          path: '/project/nexus',
+          currentBranch: 'staging',
+          isCurrent: true,
+        },
+        {
+          id: 'riftvision',
+          name: 'riftvision',
+          path: '/project/riftvision',
+          currentBranch: 'master',
+        },
+      ],
+    });
+    const multi = await multiTools.listProjects(signal());
+    assert.equal(multi.length, 2);
+    assert.equal(multi[1].name, 'riftvision');
+  });
+
+  test('switchProject switches context or rejects if unavailable or invalid', async () => {
+    const toolsWithoutSwitch = new CodingAgentTools({
+      resolveWorkspace: async () => workspace(),
+    });
+    await assert.rejects(toolsWithoutSwitch.switchProject('riftvision', signal()), /indisponible/);
+    await assert.rejects(toolsWithoutSwitch.switchProject('', signal()), /manquant/);
+
+    let switchedTarget = '';
+    const tools = new CodingAgentTools({
+      resolveWorkspace: async () => workspace(),
+      switchProject: (target) => {
+        switchedTarget = target;
+        return {
+          id: 'riftvision',
+          name: 'riftvision',
+          path: '/project/riftvision',
+          isCurrent: true,
+        };
+      },
+    });
+    const res = await tools.switchProject('riftvision', signal());
+    assert.equal(switchedTarget, 'riftvision');
+    assert.equal(res.name, 'riftvision');
+  });
 });

@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync, readdirSync, statSync } from 'node:fs';
+import { basename, dirname, resolve } from 'node:path';
 import { NexusRuntime } from '../runtime/nexus-runtime';
 import {
   RuntimeApprovalHandler,
@@ -146,6 +148,62 @@ export class DesktopNode {
         requestApproval: (req, sig) => this.handleApprovalRequest(req, sig),
         requestTurnTimeoutContinuation: this.options?.requestTurnTimeoutContinuation,
         brainModel: this.options?.brainModel,
+        listProjects: () => {
+          const current = this.getActiveProject();
+          const list = this.getProjects().map((p) => ({
+            id: p.id,
+            name: p.name,
+            path: p.path,
+            currentBranch: p.currentBranch,
+            isCurrent: p.id === current.id || p.path === current.path,
+          }));
+          try {
+            const parentDir = dirname(current.path);
+            const isSystemDir =
+              parentDir === '/' ||
+              parentDir === '/tmp' ||
+              parentDir === '/home' ||
+              parentDir === '/var';
+            if (!isSystemDir && existsSync(parentDir) && statSync(parentDir).isDirectory()) {
+              const entries = readdirSync(parentDir, { withFileTypes: true });
+              for (const entry of entries) {
+                if (
+                  entry.isDirectory() &&
+                  !entry.name.startsWith('.') &&
+                  entry.name !== 'node_modules'
+                ) {
+                  const siblingPath = resolve(parentDir, entry.name);
+                  const isProject =
+                    existsSync(resolve(siblingPath, '.git')) ||
+                    existsSync(resolve(siblingPath, 'package.json')) ||
+                    existsSync(resolve(siblingPath, '.nexus')) ||
+                    existsSync(resolve(siblingPath, 'Cargo.toml')) ||
+                    existsSync(resolve(siblingPath, 'pyproject.toml'));
+                  if (isProject && !list.some((p) => p.path === siblingPath)) {
+                    list.push({
+                      id: entry.name.toLowerCase().replace(/[^a-z0-9_-]/g, '-'),
+                      name: entry.name,
+                      path: siblingPath,
+                      currentBranch: undefined,
+                      isCurrent: false,
+                    });
+                  }
+                }
+              }
+            }
+          } catch {}
+          return list;
+        },
+        switchProject: (idOrPath) => {
+          const switched = this.setActiveProject(idOrPath);
+          return {
+            id: switched.id,
+            name: switched.name,
+            path: switched.path,
+            currentBranch: switched.currentBranch,
+            isCurrent: true,
+          };
+        },
       });
     }
 
@@ -211,11 +269,44 @@ export class DesktopNode {
   }
 
   setActiveProject(idOrPath: string): NodeProjectSummary {
-    const found = this.projectMap.get(idOrPath);
+    let found = this.projectMap.get(idOrPath);
+    if (!found) {
+      const resolved = resolve(idOrPath);
+      found = this.projectMap.get(resolved);
+      if (!found) {
+        const lower = idOrPath.toLowerCase().trim();
+        found = this.projectSummaries.find(
+          (p) => p.name.toLowerCase() === lower || p.id.toLowerCase() === lower
+        );
+      }
+      if (!found && existsSync(resolved) && statSync(resolved).isDirectory()) {
+        const name = basename(resolved);
+        const id = name.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+        const guard = new WorkspaceGuard(() => ({
+          trusted: true,
+          folders: [{ scheme: 'file', path: resolved }],
+          dirtyDocuments: [],
+          protectedBranches: this.config.protectedBranches ?? [],
+        }));
+        const summary: NodeProjectSummary = {
+          id,
+          name,
+          path: resolved,
+        };
+        this.projectSummaries.push(summary);
+        this.projectMap.set(summary.id, summary);
+        this.projectMap.set(summary.path, summary);
+        this.guardMap.set(summary.id, guard);
+        this.guardMap.set(summary.path, guard);
+        found = summary;
+      }
+    }
     if (!found) {
       throw new Error(`Projet inconnu : ${idOrPath}`);
     }
-    const index = this.projectSummaries.findIndex((p) => p.id === found.id);
+    const index = this.projectSummaries.findIndex(
+      (p) => p.id === found!.id || p.path === found!.path
+    );
     if (index !== -1) {
       this.activeProjectIndex = index;
     }
@@ -223,23 +314,35 @@ export class DesktopNode {
   }
 
   getProjectMemorySnapshot(projectId?: string): ProjectMemorySnapshot {
-    if (!this.runtime) { throw new Error('DesktopNode non démarré.'); }
+    if (!this.runtime) {
+      throw new Error('DesktopNode non démarré.');
+    }
     const project = projectId ? this.getProject(projectId) : this.getActiveProject();
-    if (!project) { throw new Error(`Projet cible introuvable : ${projectId}`); }
+    if (!project) {
+      throw new Error(`Projet cible introuvable : ${projectId}`);
+    }
     return this.runtime.getProjectMemorySnapshot(project.path);
   }
 
   recordProjectDecision(input: DecisionRecordInput, projectId?: string): ProjectDecision {
-    if (!this.runtime) { throw new Error('DesktopNode non démarré.'); }
+    if (!this.runtime) {
+      throw new Error('DesktopNode non démarré.');
+    }
     const project = projectId ? this.getProject(projectId) : this.getActiveProject();
-    if (!project) { throw new Error(`Projet cible introuvable : ${projectId}`); }
+    if (!project) {
+      throw new Error(`Projet cible introuvable : ${projectId}`);
+    }
     return this.runtime.recordProjectDecision(input, project.path);
   }
 
   clearProjectMemory(projectId?: string): void {
-    if (!this.runtime) { throw new Error('DesktopNode non démarré.'); }
+    if (!this.runtime) {
+      throw new Error('DesktopNode non démarré.');
+    }
     const project = projectId ? this.getProject(projectId) : this.getActiveProject();
-    if (!project) { throw new Error(`Projet cible introuvable : ${projectId}`); }
+    if (!project) {
+      throw new Error(`Projet cible introuvable : ${projectId}`);
+    }
     this.runtime.clearProjectMemory(project.path);
   }
 
@@ -401,10 +504,10 @@ export class DesktopNode {
       runtimeStatus,
       coreConnection: this.coreClient
         ? {
-          status: this.coreClient.getStatus(),
-          url: this.coreClient.getWsUrl(),
-          sessionId: this.coreClient.getSessionId(),
-        }
+            status: this.coreClient.getStatus(),
+            url: this.coreClient.getWsUrl(),
+            sessionId: this.coreClient.getSessionId(),
+          }
         : undefined,
     };
   }

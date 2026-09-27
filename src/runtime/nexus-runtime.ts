@@ -90,7 +90,8 @@ export class NexusRuntime {
     );
 
     const codingTools = new CodingAgentTools({
-      resolveWorkspace: () => this.workspaceGuard.validate(this.resolveTargetPath()),
+      resolveWorkspace: (targetPath?: string) =>
+        this.workspaceGuard.validate(this.resolveTargetPath(targetPath)),
       inspector: new CodexProjectInspector((path) => this.workspaceGuard.validate(path)),
       requestConsent: async (request, signal) => {
         if (!options.requestApproval) {
@@ -108,6 +109,8 @@ export class NexusRuntime {
         return decision === 'accept';
       },
       projectMemory: this.projectMemory,
+      listProjects: options.listProjects,
+      switchProject: options.switchProject,
     });
 
     const brainModel = options.brainModel ?? new CodexBrainModel();
