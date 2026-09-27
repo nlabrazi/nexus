@@ -115,6 +115,20 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
 
     if (telegramToken) {
       telegram = createCoreTelegramService(core, telegramToken);
+      const envUserId = process.env.TELEGRAM_ALLOWED_USER_ID;
+      const envChatId = process.env.TELEGRAM_ALLOWED_CHAT_ID ?? envUserId;
+      if (envUserId) {
+        await telegram.context.globalState.update(
+          'nexus.telegram.allowedUserId',
+          parseInt(envUserId, 10)
+        );
+        if (envChatId) {
+          await telegram.context.globalState.update(
+            'nexus.telegram.allowedChatId',
+            parseInt(envChatId, 10)
+          );
+        }
+      }
       await telegram.service.start();
     }
 
@@ -124,8 +138,15 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
     console.log(`  • URL HTTP       : http://${host}:${port}`);
     console.log(`  • Jetons admis   : ${authTokens.length} configuré(s)`);
     console.log('  • Heartbeat      : 15s (délai de grâce 45s)');
-    if (telegramToken) {
-      console.log('  • Telegram Bot   : Actif (routage agents via Core)');
+    if (telegramToken && telegram) {
+      const allowedUser = telegram.context.globalState.get<number>('nexus.telegram.allowedUserId');
+      if (allowedUser !== undefined) {
+        console.log(`  • Telegram Bot   : Actif et appairé (utilisateur ID ${allowedUser})`);
+      } else {
+        const pairingCode = telegram.service.createPairingCode();
+        console.log('  • Telegram Bot   : Actif (routage agents via Core)');
+        console.log(`  👉 Appairage     : Envoyez "/pair ${pairingCode}" à votre bot sur Telegram`);
+      }
     }
     console.log('================================================================');
     console.log('Nexus Core actif. En attente de connexions (Ctrl+C pour quitter)...');

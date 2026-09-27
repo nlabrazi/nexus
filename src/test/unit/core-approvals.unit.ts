@@ -20,7 +20,9 @@ suite('Nexus Core ApprovalRelay and REST endpoints', () => {
     const conn = {
       isOpen: () => open,
       send: (data: string) => {
-        if (open) { sentMessages.push(data); }
+        if (open) {
+          sentMessages.push(data);
+        }
       },
       close: () => {
         open = false;

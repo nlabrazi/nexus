@@ -1,9 +1,11 @@
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { NexusCore } from '../core/nexus-core';
 import { PendingApproval } from '../core/types';
 import { NexusProtocolError } from '../protocol/errors';
 import { TelegramClient } from './client';
 import {
-  MemoryTelegramStorage,
+  FileTelegramStorage,
   TelegramContextLike,
   TelegramService,
   TelegramServiceOptions,
@@ -299,11 +301,15 @@ export function createCoreTelegramService(
   service: TelegramService;
   bridge: TelegramCoreBridge;
   client: TelegramClient;
+  context: TelegramContextLike;
 } {
   const client = new TelegramClient(token);
   const bridge = new TelegramCoreBridge(core, options);
-  const context = options?.context ?? { globalState: new MemoryTelegramStorage() };
+  const defaultPath = join(homedir(), '.nexus', 'telegram-state.json');
+  const context = options?.context ?? {
+    globalState: new FileTelegramStorage(defaultPath),
+  };
   const service = new TelegramService(context, client, bridge.createServiceOptions());
   bridge.attachTelegramService(service);
-  return { service, bridge, client };
+  return { service, bridge, client, context };
 }

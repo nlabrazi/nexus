@@ -351,10 +351,10 @@ export class DesktopNode {
       runtimeStatus,
       coreConnection: this.coreClient
         ? {
-          status: this.coreClient.getStatus(),
-          url: this.coreClient.getWsUrl(),
-          sessionId: this.coreClient.getSessionId(),
-        }
+            status: this.coreClient.getStatus(),
+            url: this.coreClient.getWsUrl(),
+            sessionId: this.coreClient.getSessionId(),
+          }
         : undefined,
     };
   }

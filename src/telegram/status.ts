@@ -94,7 +94,8 @@ function formatCodexSection(
     const active = codex.sessionActive ?? codex.processRunning;
     const indicator = active ? '🟢' : codex.processRunning ? '🟠' : '🔴';
     lines.push(
-      `${indicator} Session Codex : ${active ? 'active' : codex.processRunning ? 'à reprendre' : 'indisponible (processus arrêté)'
+      `${indicator} Session Codex : ${
+        active ? 'active' : codex.processRunning ? 'à reprendre' : 'indisponible (processus arrêté)'
       }`
     );
     lines.push(`ID session : ${literal(codex.sessionId)}`);
@@ -180,7 +181,8 @@ function formatCodexSection(
   if (codex.rateLimits?.length) {
     for (const limit of codex.rateLimits) {
       lines.push(
-        `${literal(limit.limitName ?? limit.limitId ?? 'Codex')}${limit.planType ? ` · ${literal(limit.planType)}` : ''
+        `${literal(limit.limitName ?? limit.limitId ?? 'Codex')}${
+          limit.planType ? ` · ${literal(limit.planType)}` : ''
         }`
       );
       let windows = 0;
@@ -267,7 +269,8 @@ function formatAntigravitySection(
     const active = agy.sessionActive ?? agy.processRunning;
     const indicator = active ? '🟢' : agy.processRunning ? '🟠' : '🔴';
     lines.push(
-      `${indicator} Session Antigravity : ${active ? 'active' : agy.processRunning ? 'à reprendre' : 'indisponible (processus arrêté)'
+      `${indicator} Session Antigravity : ${
+        active ? 'active' : agy.processRunning ? 'à reprendre' : 'indisponible (processus arrêté)'
       }`
     );
     lines.push(`ID session : ${literal(agy.sessionId)}`);

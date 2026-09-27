@@ -11,13 +11,13 @@ export interface TelegramPeer {
 export type ApprovalRequest =
   | CodexApprovalRequest
   | {
-    kind: 'command' | 'fileChange' | 'consent' | 'inspection';
-    agentName?: string;
-    details: string;
-    expiresAt: number;
-    taskId?: string;
-    approvalId?: string;
-  };
+      kind: 'command' | 'fileChange' | 'consent' | 'inspection';
+      agentName?: string;
+      details: string;
+      expiresAt: number;
+      taskId?: string;
+      approvalId?: string;
+    };
 export type ApprovalHandler = (
   request: ApprovalRequest,
   signal: AbortSignal
@@ -37,7 +37,7 @@ export class TelegramApprovals {
   constructor(
     private readonly client: TelegramClient,
     private readonly getPeer: () => TelegramPeer | undefined
-  ) { }
+  ) {}
 
   request(request: ApprovalRequest, signal: AbortSignal): Promise<ApprovalDecision> {
     const peer = this.getPeer();

@@ -1,5 +1,7 @@
 import type * as vscode from 'vscode';
 import { randomInt } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { TelegramClient, TelegramVoiceDownloadError } from './client';
 import { TelegramUpdate, TelegramVoice, TelegramVoiceFile } from './types';
 import { SpeechError } from '../speech/errors';
@@ -70,6 +72,57 @@ export class MemoryTelegramStorage implements TelegramStateStorage {
     } else {
       this.store.set(key, value);
     }
+  }
+}
+
+export class FileTelegramStorage implements TelegramStateStorage {
+  private readonly store = new Map<string, unknown>();
+
+  constructor(
+    private readonly filePath: string,
+    initialValues?: Record<string, unknown>
+  ) {
+    if (existsSync(filePath)) {
+      try {
+        const raw = readFileSync(filePath, 'utf-8');
+        const data = JSON.parse(raw);
+        if (data && typeof data === 'object') {
+          for (const [k, v] of Object.entries(data)) {
+            this.store.set(k, v);
+          }
+        }
+      } catch { }
+    }
+    if (initialValues) {
+      for (const [k, v] of Object.entries(initialValues)) {
+        if (!this.store.has(k)) {
+          this.store.set(k, v);
+        }
+      }
+    }
+  }
+
+  get<T>(key: string, defaultValue?: T): T | undefined {
+    return (this.store.get(key) as T) ?? defaultValue;
+  }
+
+  async update(key: string, value: unknown): Promise<void> {
+    if (value === undefined) {
+      this.store.delete(key);
+    } else {
+      this.store.set(key, value);
+    }
+    try {
+      const dir = dirname(this.filePath);
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+      const obj: Record<string, unknown> = {};
+      for (const [k, v] of this.store.entries()) {
+        obj[k] = v;
+      }
+      writeFileSync(this.filePath, JSON.stringify(obj, null, 2), 'utf-8');
+    } catch { }
   }
 }
 
@@ -911,8 +964,12 @@ export class TelegramService {
           .catch(() => { });
       }
     } finally {
-      if (this.brainOperation === controller) { this.brainOperation = undefined; }
-      if (generation === this.operationGeneration) { this.remotePromptRunning = false; }
+      if (this.brainOperation === controller) {
+        this.brainOperation = undefined;
+      }
+      if (generation === this.operationGeneration) {
+        this.remotePromptRunning = false;
+      }
     }
   }
 

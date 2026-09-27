@@ -197,7 +197,9 @@ export class ApprovalRelay extends EventEmitter {
   getPendingCount(): number {
     let count = 0;
     for (const a of this.approvals.values()) {
-      if (a.status === 'pending') { count++; }
+      if (a.status === 'pending') {
+        count++;
+      }
     }
     return count;
   }
