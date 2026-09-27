@@ -4,8 +4,8 @@
     <header class="nexus-header">
       <div class="brand">
         <div class="brand-logo">
+          <span class="logo-nx">NX</span>
           <span class="logo-dot" :class="connectionStatus"></span>
-          <span class="logo-icon">{{ activeTab === 'chat' ? '🧠' : '⚡' }}</span>
         </div>
         <div class="brand-text">
           <div class="title-row">
@@ -18,19 +18,19 @@
             </select>
           </div>
           <span v-else class="brand-sub">
-            {{ activeTab === 'chat' ? 'Brain Conversation' : (activeTab === 'activity' ? 'Live Activity' : 'Mobile Bridge') }}
+            {{ activeTab === 'chat' ? 'Brain Console' : (activeTab === 'activity' ? 'Live Activity' : 'Node Bridge') }}
           </span>
         </div>
       </div>
 
       <!-- Header actions -->
       <div class="header-actions">
-        <!-- Compact Agent selector -->
-        <select v-model="selectedBackend" class="header-select-backend" title="Agent actif">
-          <option value="brain">🧠 Brain</option>
-          <option value="codex">⚡ Codex</option>
-          <option value="antigravity">✨ Antigravity</option>
-        </select>
+        <!-- Segmented Agent selector -->
+        <div class="header-agent-segmented" title="Agent actif">
+          <button type="button" class="btn-seg" :class="{ active: selectedBackend === 'brain' }" @click="selectedBackend = 'brain'">Brain</button>
+          <button type="button" class="btn-seg" :class="{ active: selectedBackend === 'codex' }" @click="selectedBackend = 'codex'">Codex</button>
+          <button type="button" class="btn-seg" :class="{ active: selectedBackend === 'antigravity' }" @click="selectedBackend = 'antigravity'">AntiG</button>
+        </div>
 
         <!-- Approvals alert badge in header -->
         <button v-if="pendingApprovalsCount > 0" type="button" class="btn-approval-alert"
@@ -207,7 +207,10 @@
 
       <!-- Subtle Offline Status Banner -->
       <div v-if="!isNodeReady" class="node-offline-pill">
-        <span>💻 Desktop Node non connecté</span>
+        <div class="offline-label">
+          <span class="offline-dot"></span>
+          <span>Desktop Node déconnecté</span>
+        </div>
         <button type="button" class="btn-retry-pill" @click="handleManualRefresh">Reconnecter</button>
       </div>
 
@@ -225,11 +228,19 @@
             {{ interimTranscript ? interimTranscript : (isProcessingAudio ? 'Traitement audio en cours...' : 'Écoute en cours... Parlez maintenant') }}
           </span>
           <small class="voice-hint">
-            {{ clickToggleActive ? 'Touchez le micro pour terminer' : 'Relâchez le micro pour terminer' }}
+            Toucher le micro pour terminer
           </small>
         </div>
         <button type="button" class="btn-cancel-voice" title="Annuler la dictée" @click="cancelVoiceRecording">
           Annuler ✕
+        </button>
+      </div>
+
+      <!-- Horizontal Quick Action Chips (Thumb Friendly) -->
+      <div class="chat-quick-chips">
+        <button v-for="chip in quickChips" :key="chip" type="button" class="chip-item"
+          :disabled="isSending" @click="sendPrompt(chip)">
+          {{ chip }}
         </button>
       </div>
 
@@ -2098,18 +2109,19 @@ async function installPwa() {
 <style>
 /* CSS Reset & Design System Variables */
 :root {
-  --bg-primary: #07090e;
-  --bg-secondary: #0d121d;
-  --bg-card: #131b2e;
-  --bg-card-hover: #17223b;
-  --border-color: rgba(255, 255, 255, 0.08);
-  --border-accent: rgba(56, 189, 248, 0.35);
+  --bg-primary: #05070a;
+  --bg-secondary: #080b11;
+  --bg-card: #0f141f;
+  --bg-card-hover: #141b2a;
+  --border-color: rgba(255, 255, 255, 0.07);
+  --border-accent: rgba(245, 158, 11, 0.35);
 
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
 
-  --color-brand: #38bdf8;
+  --color-brand: #f59e0b;
+  --color-brand-glow: rgba(245, 158, 11, 0.2);
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-danger: #ef4444;
@@ -2153,9 +2165,9 @@ body {
 /* Header */
 .nexus-header {
   padding: calc(var(--safe-top) + 10px) 16px 10px;
-  background: rgba(13, 18, 29, 0.95);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(8, 11, 17, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
@@ -2172,23 +2184,32 @@ body {
 
 .brand-logo {
   position: relative;
-  width: 36px;
-  height: 36px;
-  background: linear-gradient(135deg, #1e293b, #0f172a);
-  border: 1px solid var(--border-accent);
+  width: 32px;
+  height: 32px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.2rem;
+  font-weight: 800;
+  font-size: 0.78rem;
+  color: #fbbf24;
+  letter-spacing: 0.05em;
+  font-family: monospace;
+}
+
+.logo-nx {
+  font-weight: 800;
+  font-family: monospace;
 }
 
 .logo-dot {
   position: absolute;
   top: -2px;
   right: -2px;
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   border: 2px solid var(--bg-primary);
 }
@@ -2218,26 +2239,28 @@ body {
 }
 
 .brand-title {
-  font-size: 1.15rem;
+  font-size: 1.1rem;
   font-weight: 800;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   color: #fff;
 }
 
 .version-tag {
   font-size: 0.65rem;
-  background: rgba(56, 189, 248, 0.15);
-  color: var(--color-brand);
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
   padding: 1px 6px;
   border-radius: 4px;
   font-weight: 600;
+  font-family: monospace;
 }
 
 .brand-sub {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  font-family: monospace;
 }
 
 .header-project-pill {
@@ -2245,9 +2268,9 @@ body {
 }
 
 .select-project-pill {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #38bdf8;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fbbf24;
   font-size: 0.72rem;
   font-weight: 600;
   padding: 2px 8px;
@@ -2260,37 +2283,64 @@ body {
   text-overflow: ellipsis;
 }
 
-.header-select-backend {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #f1f5f9;
-  font-size: 0.78rem;
-  font-weight: 600;
-  height: 34px;
-  padding: 0 10px;
+.header-agent-segmented {
+  display: flex;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-sm);
-  outline: none;
+  padding: 2px;
+  gap: 2px;
+}
+
+.btn-seg {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
   cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-seg.active {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
 }
 
 .node-offline-pill {
   margin: 8px 16px;
   padding: 6px 12px;
-  background: rgba(239, 68, 68, 0.12);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
   border-radius: 8px;
   color: #fca5a5;
-  font-size: 0.75rem;
+  font-size: 0.74rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
+.offline-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.offline-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ef4444;
+}
+
 .btn-retry-pill {
-  background: rgba(239, 68, 68, 0.25);
-  border: 1px solid rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.4);
   color: #fff;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 6px;
@@ -2726,15 +2776,16 @@ body {
 }
 
 .message-wrapper.user .message-bubble {
-  background: linear-gradient(135deg, #0284c7, #0369a1);
-  color: #fff;
+  background: #1e2538;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
   border-bottom-right-radius: 4px;
 }
 
 .message-wrapper.assistant .message-bubble {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
+  background: #0f141f;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
   border-bottom-left-radius: 4px;
 }
 
@@ -2959,34 +3010,75 @@ body {
   white-space: nowrap;
 }
 
-/* Push-to-Talk Mic Button */
+/* Quick Chips (Horizontal, Thumb Friendly) */
+.chat-quick-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 6px 14px;
+  flex-shrink: 0;
+  background: rgba(8, 11, 17, 0.7);
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  scrollbar-width: none;
+}
+
+.chat-quick-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.chip-item {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  font-size: 0.74rem;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.chip-item:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
+}
+
+.chip-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Mic Button */
 .btn-mic {
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   border-radius: var(--radius-md);
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
   font-size: 1.15rem;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
   user-select: none;
   -webkit-user-select: none;
 }
 
 .btn-mic:hover:not(:disabled) {
-  border-color: var(--color-brand);
-  background: var(--bg-card-hover);
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.2);
 }
 
 .btn-mic.is-listening {
-  background: rgba(239, 68, 68, 0.25);
-  border-color: #ef4444;
-  box-shadow: 0 0 12px rgba(239, 68, 68, 0.6);
+  background: rgba(245, 158, 11, 0.25);
+  border-color: #f59e0b;
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.5);
   animation: mic-pulse 1s infinite alternate;
 }
 
@@ -3048,26 +3140,28 @@ body {
 
 /* Chat Input Bar */
 .chat-input-bar {
-  padding: 10px 14px calc(var(--safe-bottom) + 38px);
-  background: rgba(13, 18, 29, 0.95);
+  padding: 8px 14px calc(var(--safe-bottom) + 38px);
+  background: rgba(8, 11, 17, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border-top: 1px solid var(--border-color);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
 .chat-textarea {
   flex: 1;
-  background: #07090e;
+  background: #0f141f;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   padding: 10px 14px;
   color: #fff;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   font-family: inherit;
   resize: none;
-  min-height: 42px;
+  min-height: 44px;
   max-height: 120px;
   outline: none;
   transition: border-color 0.2s ease;
@@ -3082,19 +3176,24 @@ body {
 }
 
 .btn-send {
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   border-radius: var(--radius-md);
   background: var(--color-brand);
   border: none;
-  color: #040914;
+  color: #05070a;
   font-size: 1.15rem;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
+  font-weight: 700;
+}
+
+.btn-send:hover:not(:disabled) {
+  background: #d97706;
 }
 
 .btn-send:disabled {
