@@ -110,7 +110,37 @@ Nexus Core actif. En attente de connexions (Ctrl+C pour quitter)...
 
 ---
 
-## 6. Validation par les tests
+## 6. Déploiement Docker & Docker Compose
+
+Nexus Core est prêt pour un déploiement sécurisé et autonome sur VPS ou en conteneur Docker.
+
+### 6.1 Démarrage rapide avec Docker Compose
+
+```bash
+# 1. Copier le fichier d'exemple des variables d'environnement
+cp .env.example .env
+
+# 2. Configurer votre jeton sécurisé dans .env
+# NEXUS_CORE_AUTH_TOKENS=votre-jeton-secret-aleatoire
+
+# 3. Lancer le service en arrière-plan
+docker compose up -d
+
+# 4. Vérifier l'état et la santé du conteneur
+docker compose logs -f
+curl http://localhost:4040/health
+```
+
+### 6.2 Image Docker multi-stage (`Dockerfile`)
+
+- **Image de base** : `node:24-alpine`.
+- **Empreinte minimale** : ~170 Mo (runtime complet Node.js 24 + bundle `dist/core.js` autonome sans aucun `node_modules` de build).
+- **Sécurité** : L'application tourne sous l'utilisateur non-root standard `node`.
+- **Healthcheck intégré** : Vérification automatique de l'endpoint `/health` avec Node.js natif `fetch`.
+
+---
+
+## 7. Validation par les tests
 
 Les suites de tests unitaires valident le fonctionnement de Nexus Core :
 - [`src/test/unit/nexus-core.unit.ts`](../src/test/unit/nexus-core.unit.ts) :

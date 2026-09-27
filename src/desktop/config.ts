@@ -12,6 +12,7 @@ export interface CliConfigOptions {
   readonly nodeId?: string;
   readonly nodeName?: string;
   readonly authToken?: string;
+  readonly core?: string;
   readonly backend?: string;
   readonly config?: string;
   readonly protectedBranches?: readonly string[];
@@ -142,12 +143,16 @@ export function resolveDesktopConfig(
     fileConfig.authToken?.trim() ??
     '';
 
+  const coreUrl =
+    cliOptions?.core?.trim() ?? env.NEXUS_CORE_URL?.trim() ?? fileConfig.coreUrl?.trim();
+
   const protectedBranches = cliOptions?.protectedBranches ?? fileConfig.protectedBranches;
 
   return {
     nodeId,
     nodeName,
     authToken,
+    coreUrl,
     projects: validatedProjects,
     defaultBackend,
     protectedBranches,

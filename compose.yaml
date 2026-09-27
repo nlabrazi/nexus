@@ -1,0 +1,20 @@
+services:
+  nexus-core:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nexus-core:latest
+    container_name: nexus-core
+    restart: unless-stopped
+    ports:
+      - "${NEXUS_CORE_PORT:-4040}:4040"
+    environment:
+      - NEXUS_CORE_PORT=4040
+      - NEXUS_CORE_HOST=0.0.0.0
+      - NEXUS_CORE_AUTH_TOKENS=${NEXUS_CORE_AUTH_TOKENS:-nexus-dev-secret-token}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4040/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

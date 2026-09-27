@@ -11,6 +11,11 @@ import { TaskBackend } from './types';
 export * from './types';
 export * from './config';
 export * from './node';
+export * from './ws-client';
+
+export * from './types';
+export * from './config';
+export * from './node';
 
 const VERSION = '0.4.1';
 
@@ -31,6 +36,7 @@ OPTIONS:
   -n, --name <name>        Nom lisible du projet ou du nœud
   -b, --backend <backend>  Backend agent par défaut (codex, antigravity, brain) [défaut: codex]
   -c, --config <file>      Fichier de configuration JSON
+  -C, --core <url>         URL de Nexus Core (ex: ws://vps.example.com:4040 ou http://localhost:4040)
   --node-id <id>           Identifiant unique du nœud Desktop
   -t, --token <token>      Jeton d'authentification pour Nexus Core
   -h, --help               Afficher cette aide
@@ -38,6 +44,7 @@ OPTIONS:
 
 EXEMPLES:
   nexus-desktop start --project ./mon-projet
+  nexus-desktop start --project ./mon-projet --core ws://vps.example.com:4040 --token secret123
   nexus-desktop status --project /home/user/code/app
   nexus-desktop exec --project ./mon-projet --backend codex "Créer un script de build"
   nexus-desktop exec --project ./mon-projet --backend brain "Que peux-tu me dire sur l'architecture ?"
@@ -94,6 +101,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
     name: { type: 'string' as const, short: 'n' },
     backend: { type: 'string' as const, short: 'b' },
     config: { type: 'string' as const, short: 'c' },
+    core: { type: 'string' as const, short: 'C' },
     'node-id': { type: 'string' as const },
     token: { type: 'string' as const, short: 't' },
     help: { type: 'boolean' as const, short: 'h', default: false },
@@ -106,6 +114,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
       name?: string;
       backend?: string;
       config?: string;
+      core?: string;
       'node-id'?: string;
       token?: string;
       help?: boolean;
@@ -145,6 +154,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
       name: values.name,
       backend: values.backend,
       config: values.config,
+      core: values.core,
       nodeId: values['node-id'],
       authToken: values.token,
     });
@@ -160,6 +170,11 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
       console.log(`• Nœud ID        : ${status.nodeId}`);
       console.log(`• Nom du nœud    : ${status.nodeName}`);
       console.log(`• État           : ${status.state}`);
+      if (status.coreConnection) {
+        console.log(
+          `• Nexus Core     : ${status.coreConnection.status} (${status.coreConnection.url})`
+        );
+      }
       console.log(`• Projet actif   : ${status.activeProject.name} (${status.activeProject.path})`);
       console.log(`• Branche Git    : ${status.activeProject.currentBranch ?? 'sans dépôt Git'}`);
       console.log(`• Agent actif    : ${status.runtimeStatus.activeBackend}`);
@@ -203,6 +218,11 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
       console.log(`  • Nœud ID        : ${status.nodeId}`);
       console.log(`  • Nom            : ${status.nodeName}`);
       console.log(`  • État           : ${status.state}`);
+      if (status.coreConnection) {
+        console.log(
+          `  • Nexus Core     : ${status.coreConnection.status} (${status.coreConnection.url})`
+        );
+      }
       console.log(`  • Projet actif   : ${status.activeProject.name}`);
       console.log(`  • Répertoire     : ${status.activeProject.path}`);
       console.log(`  • Branche Git    : ${status.activeProject.currentBranch ?? 'aucune'}`);
@@ -221,7 +241,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
       process.on('SIGTERM', shutdown);
 
       // Keep running until killed
-      await new Promise<void>(() => { });
+      await new Promise<void>(() => {});
       return 0;
     }
 

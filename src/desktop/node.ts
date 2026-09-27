@@ -17,12 +17,14 @@ import {
   NodeStatusPayload,
   TaskBackend,
 } from './types';
+import { DesktopCoreClient, DesktopCoreClientOptions } from './ws-client';
 
 export interface DesktopNodeOptions {
   readonly runtime?: NexusRuntime;
   readonly requestApproval?: RuntimeApprovalHandler;
   readonly requestTurnTimeoutContinuation?: TurnTimeoutHandler;
   readonly brainModel?: BrainModel;
+  readonly coreClient?: DesktopCoreClient;
 }
 
 export class DesktopNode {
@@ -33,6 +35,7 @@ export class DesktopNode {
   private readonly guardMap = new Map<string, WorkspaceGuard>();
   private activeProjectIndex = 0;
   private runtime?: NexusRuntime;
+  private coreClient?: DesktopCoreClient;
   private readonly startTime: number;
 
   constructor(
@@ -89,11 +92,17 @@ export class DesktopNode {
     }
 
     this.state = 'idle';
+
+    if (this.config.coreUrl) {
+      await this.connectToCore(this.config.coreUrl, this.config.authToken);
+    }
+
     return this.getStatus();
   }
 
   async stop(): Promise<void> {
     this.state = 'draining';
+    this.disconnectFromCore();
     if (this.runtime) {
       this.runtime.cancelCurrentWork();
       this.runtime.stop();
@@ -258,6 +267,35 @@ export class DesktopNode {
     }
   }
 
+  async connectToCore(
+    coreUrl: string,
+    authToken?: string,
+    clientOptions?: DesktopCoreClientOptions
+  ): Promise<DesktopCoreClient> {
+    if (this.coreClient) {
+      this.coreClient.disconnect();
+    }
+    this.coreClient = new DesktopCoreClient(
+      coreUrl,
+      authToken ?? this.config.authToken ?? '',
+      this,
+      clientOptions
+    );
+    await this.coreClient.connect();
+    return this.coreClient;
+  }
+
+  disconnectFromCore(): void {
+    if (this.coreClient) {
+      this.coreClient.disconnect();
+      this.coreClient = undefined;
+    }
+  }
+
+  getCoreClient(): DesktopCoreClient | undefined {
+    return this.coreClient;
+  }
+
   async getStatus(): Promise<DesktopNodeStatus> {
     if (!this.runtime) {
       throw new Error('DesktopNode non démarré.');
@@ -276,6 +314,13 @@ export class DesktopNode {
       capabilities: this.getCapabilities(),
       uptimeSeconds,
       runtimeStatus,
+      coreConnection: this.coreClient
+        ? {
+            status: this.coreClient.getStatus(),
+            url: this.coreClient.getWsUrl(),
+            sessionId: this.coreClient.getSessionId(),
+          }
+        : undefined,
     };
   }
 

@@ -21,6 +21,7 @@ export interface DesktopNodeConfig {
   readonly nodeId?: string;
   readonly nodeName?: string;
   readonly authToken?: string;
+  readonly coreUrl?: string;
   readonly projects: readonly DesktopProjectConfig[];
   readonly defaultBackend?: TaskBackend;
   readonly protectedBranches?: readonly string[];
@@ -36,6 +37,11 @@ export interface DesktopNodeStatus {
   readonly capabilities: NodeCapabilities;
   readonly uptimeSeconds: number;
   readonly runtimeStatus: NexusStatusSnapshot;
+  readonly coreConnection?: {
+    readonly status: string;
+    readonly url?: string;
+    readonly sessionId?: string;
+  };
 }
 
 export interface DesktopTaskOptions {

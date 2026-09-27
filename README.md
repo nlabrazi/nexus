@@ -713,6 +713,18 @@ npm run test:unit
 # Development watch mode
 npm run watch
 
+# Run Nexus Desktop Node locally
+npm run desktop -- start --project /chemin/vers/projet
+
+# Run Nexus Core Server locally
+npm run core -- --port 4040 --token secret123
+
+# Docker (Nexus Core)
+npm run docker:build  # Construit l'image Docker nexus-core
+npm run docker:up     # Démarre Nexus Core via Docker Compose
+npm run docker:logs   # Affiche les logs en direct
+npm run docker:down   # Arrête et supprime les conteneurs
+
 # Extension tests
 npm test
 
