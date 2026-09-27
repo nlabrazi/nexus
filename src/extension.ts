@@ -7,7 +7,6 @@ import {
   RemoteSessionAction,
   TelegramService,
 } from './telegram/service';
-import { formatFileSummary } from './telegram/file-summary';
 
 import { CodexClient } from './codex/client';
 import { CodexService } from './codex/service';
@@ -23,11 +22,9 @@ import { AgentBackendType } from './telegram/status';
 import { registerSpeechTestCommand } from './speech/commands';
 import { createConfiguredSpeechService } from './speech/configuration';
 import { synthesizeAcknowledgement } from './speech/acknowledgement';
-import { ConversationalService } from './conversational/service';
-import { CodingAgentTools } from './conversational/tools';
-import { CodexProjectInspector } from './conversational/codex-inspector';
-import { CodexBrainModel } from './conversational/codex-model';
+import { NexusRuntime } from './runtime';
 
+let nexusRuntime: NexusRuntime | undefined;
 let telegramService: TelegramService | undefined;
 let codexService: CodexService | undefined;
 let antigravityService: AntigravityService | undefined;
@@ -47,42 +44,33 @@ const workspaceGuard = new WorkspaceGuard(() => ({
 }));
 
 export async function activate(context: vscode.ExtensionContext) {
-  codexService = new CodexService(
-    async (request, signal) => {
+  const agyConfig = vscode.workspace.getConfiguration('nexus.antigravity');
+
+  nexusRuntime = new NexusRuntime({
+    workspaceGuard,
+    targetPath: () => workspaceGuard.targetPath(),
+    requestApproval: async (request, signal) => {
       return (await telegramService?.requestApproval(request, signal)) ?? 'decline';
     },
-    (path) => workspaceGuard.validate(path),
-    new WorkspaceSessionPersistence(context.workspaceState),
-    new WorkspaceModelPreferences(context.workspaceState),
-    {
-      turnTimeoutHandler: async (request, signal) => {
-        return (await telegramService?.requestTurnTimeoutContinuation(request, signal)) ?? false;
-      },
-    }
-  );
-
-  const agyConfig = vscode.workspace.getConfiguration('nexus.antigravity');
-  antigravityService = new AntigravityService(
-    async (request, signal) => {
-      return (
-        (await telegramService?.requestApproval(
-          { ...request, agentName: 'Antigravity' },
-          signal
-        )) ?? 'decline'
-      );
+    requestTurnTimeoutContinuation: async (request, signal) => {
+      return (await telegramService?.requestTurnTimeoutContinuation(request, signal)) ?? false;
     },
-    (path) => workspaceGuard.validate(path),
-    new WorkspaceAntigravitySessionPersistence(context.workspaceState),
-    new WorkspaceAntigravityModelPreferences(context.workspaceState),
-    {
+    codexPersistence: new WorkspaceSessionPersistence(context.workspaceState),
+    codexModelPreferences: new WorkspaceModelPreferences(context.workspaceState),
+    antigravityPersistence: new WorkspaceAntigravitySessionPersistence(context.workspaceState),
+    antigravityModelPreferences: new WorkspaceAntigravityModelPreferences(context.workspaceState),
+    antigravityConfig: {
       executablePath: agyConfig.get<string>('path') || undefined,
       sandbox: agyConfig.get<boolean>('sandbox', true),
       dangerouslySkipPermissions: agyConfig.get<boolean>('dangerouslySkipPermissions', false),
-      turnTimeoutHandler: async (request, signal) => {
-        return (await telegramService?.requestTurnTimeoutContinuation(request, signal)) ?? false;
-      },
-    }
-  );
+    },
+    defaultBackend:
+      context.globalState.get<AgentBackendType>('nexus.activeBackend') ??
+      vscode.workspace.getConfiguration('nexus').get<AgentBackendType>('defaultBackend', 'codex'),
+  });
+
+  codexService = nexusRuntime.getCodexService();
+  antigravityService = nexusRuntime.getAntigravityService();
 
   const statusCommand = vscode.commands.registerCommand('nexus.status', async () => {
     const workspace = vscode.workspace.workspaceFolders?.[0];
@@ -91,33 +79,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
     const telegramToken = await context.secrets.get('nexus.telegram.botToken');
 
-    const allowedUserId = context.globalState.get<number>('nexus.telegram.allowedUserId');
-
-    const allowedChatId = context.globalState.get<number>('nexus.telegram.allowedChatId');
-
-    const telegramConfigured = Boolean(telegramToken);
-
-    const telegramPaired = allowedUserId !== undefined && allowedChatId !== undefined;
-
-    const codexSession = codexService?.getCurrentSessionId();
-
-    const agySession = antigravityService?.getCurrentSessionId();
-
-    const activeBackend =
-      context.globalState.get<AgentBackendType>('nexus.activeBackend') ??
-      vscode.workspace.getConfiguration('nexus').get<AgentBackendType>('defaultBackend', 'codex');
-
-    vscode.window.showInformationMessage(
-      [
-        'Nexus: ON',
-        `Backend: ${activeBackend === 'antigravity' ? 'Antigravity' : 'Codex'}`,
-        `Workspace: ${workspaceName}`,
-        `Telegram: ${telegramConfigured ? 'Configured' : 'Not configured'}`,
-        `Paired: ${telegramPaired ? 'Yes' : 'No'}`,
-        `Codex: ${codexSession ? 'Session active' : 'No session'}`,
-        `Antigravity: ${agySession ? 'Session active' : 'No session'}`,
-      ].join(' | ')
-    );
   });
 
   const configureTelegramCommand = vscode.commands.registerCommand(
@@ -158,8 +119,7 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.window.showInformationMessage(`Nexus connected to @${data.result?.username}`);
     } catch (error) {
       vscode.window.showErrorMessage(
-        `Nexus: Unable to connect to Telegram: ${
-          error instanceof Error ? error.message : String(error)
+        `Nexus: Unable to connect to Telegram: ${error instanceof Error ? error.message : String(error)
         }`
       );
     }
@@ -208,8 +168,7 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage(`Nexus: Codex session started — ${sessionId}`);
       } catch (error) {
         vscode.window.showErrorMessage(
-          `Nexus: Unable to start Codex session: ${
-            error instanceof Error ? error.message : String(error)
+          `Nexus: Unable to start Codex session: ${error instanceof Error ? error.message : String(error)
           }`
         );
       }
@@ -440,44 +399,16 @@ function startTelegramService(context: vscode.ExtensionContext, token: string): 
 
   const client = new TelegramClient(token);
 
-  const tools = new CodingAgentTools({
-    resolveWorkspace: () => workspaceGuard.validate(workspaceGuard.targetPath()),
-    inspector: new CodexProjectInspector((path) => workspaceGuard.validate(path)),
-    requestConsent: async (request, signal) => {
-      const decision = await service.requestApproval(
-        {
-          kind: 'inspection',
-          agentName: 'Nexus Brain',
-          details: `Projet : ${request.project.name}\nBranche : ${request.project.branch ?? 'sans dépôt'}\n\n${request.question}`,
-          expiresAt: request.expiresAt,
-        },
-        signal
-      );
-      return decision === 'accept';
-    },
-  });
-  const brain = new ConversationalService(new CodexBrainModel(), tools);
   const service: TelegramService = new TelegramService(context, client, {
     onBrainPrompt: async (message, signal) => {
       const folders = vscode.workspace.workspaceFolders ?? [];
       const folder = folders.length === 1 ? folders[0] : undefined;
-      const workspace = folder
-        ? await workspaceGuard.validate(folder.uri.fsPath).catch(() => undefined)
-        : undefined;
-      signal.throwIfAborted();
-      const reply = await brain.respond(
-        {
-          conversationId: JSON.stringify([
-            context.globalState.get<number>('nexus.telegram.allowedUserId'),
-            context.globalState.get<number>('nexus.telegram.allowedChatId'),
-            folder?.uri.toString(),
-          ]),
-          message,
-          project: folder ? { name: folder.name, branch: workspace?.git?.branch } : undefined,
-        },
-        signal
-      );
-      return reply.text;
+      const conversationId = JSON.stringify([
+        context.globalState.get<number>('nexus.telegram.allowedUserId'),
+        context.globalState.get<number>('nexus.telegram.allowedChatId'),
+        folder?.uri.toString(),
+      ]);
+      return nexusRuntime!.executeBrain(message, signal, { conversationId });
     },
     onRemotePrompt: handleRemoteCodexPrompt,
     synthesizeAcknowledgement: async (signal) => {
@@ -497,59 +428,31 @@ function startTelegramService(context: vscode.ExtensionContext, token: string): 
       return service.transcribe(audio, { signal, language });
     },
     getStatus: async () => {
-      await codexService?.refreshStatus();
-      await antigravityService?.refreshStatus();
       const folders = vscode.workspace.workspaceFolders ?? [];
       const workspace = folders.length === 1 ? folders[0] : undefined;
-      const activeBackend =
-        context.globalState.get<AgentBackendType>('nexus.activeBackend') ??
-        vscode.workspace.getConfiguration('nexus').get<AgentBackendType>('defaultBackend', 'codex');
+      const status = await nexusRuntime!.getStatus();
       return {
+        ...status,
         workspace: workspace ? { name: workspace.name, path: workspace.uri.fsPath } : undefined,
         workspaceCount: folders.length,
-        activeBackend,
-        codex: codexService?.getStatus(),
-        antigravity: antigravityService?.getStatus(),
       };
     },
     onSessionAction: handleSessionAction,
-    onStop: () => {
-      const codexCancelled = codexService?.cancelCurrentWork() ?? false;
-      const agyCancelled = antigravityService?.cancelCurrentWork() ?? false;
-      return codexCancelled || agyCancelled;
-    },
+    onStop: () => nexusRuntime!.cancelCurrentWork(),
     onBranchAction: handleBranchAction,
     modelControls: {
-      list: async () => {
-        if (!codexService) {
-          throw new Error('Codex indisponible.');
-        }
-        return codexService.listModels(workspaceGuard.targetPath());
-      },
-      select: async (selection, menuContext) => {
-        if (!codexService) {
-          throw new Error('Codex indisponible.');
-        }
-        await codexService.selectModel(workspaceGuard.targetPath(), selection, menuContext);
-      },
+      list: async () => nexusRuntime!.listModels('codex'),
+      select: async (selection, menuContext) =>
+        nexusRuntime!.selectModel('codex', selection, menuContext),
     },
     onRemoteAntigravityPrompt: handleRemoteAntigravityPrompt,
     onAntigravitySessionAction: handleAntigravitySessionAction,
     antigravityModelControls: {
-      list: async () => {
-        if (!antigravityService) {
-          throw new Error('Gemini Antigravity indisponible.');
-        }
-        return antigravityService.listModels(workspaceGuard.targetPath());
-      },
-      select: async (selection, menuContext) => {
-        if (!antigravityService) {
-          throw new Error('Gemini Antigravity indisponible.');
-        }
-        await antigravityService.selectModel(workspaceGuard.targetPath(), selection, menuContext);
-      },
+      list: async () => nexusRuntime!.listModels('antigravity'),
+      select: async (selection, menuContext) =>
+        nexusRuntime!.selectModel('antigravity', selection, menuContext),
     },
-    onAntigravityStop: () => antigravityService?.cancelCurrentWork() ?? false,
+    onAntigravityStop: () => nexusRuntime!.getAntigravityService().cancelCurrentWork(),
     getActiveBackend: () => {
       return (
         context.globalState.get<AgentBackendType>('nexus.activeBackend') ??
@@ -557,6 +460,7 @@ function startTelegramService(context: vscode.ExtensionContext, token: string): 
       );
     },
     setActiveBackend: async (backend: AgentBackendType) => {
+      nexusRuntime!.setActiveBackend(backend);
       await context.globalState.update('nexus.activeBackend', backend);
     },
   });
@@ -566,93 +470,55 @@ function startTelegramService(context: vscode.ExtensionContext, token: string): 
 }
 
 async function handleRemoteCodexPrompt(prompt: string): Promise<RemotePromptReply> {
-  if (!codexService) {
+  if (!nexusRuntime) {
     throw new Error('Codex service unavailable.');
   }
 
-  const workspace = workspaceGuard.targetPath();
-  let files: readonly string[] = [];
-  const text = await codexService.sendPrompt(prompt, workspace, (paths) => {
-    files = paths;
-  });
+  const result = await nexusRuntime.executeTask('codex', prompt);
   return {
-    text,
-    fileSummary: formatFileSummary(files, codexService.getStatus().workspacePath ?? workspace),
+    text: result.text,
+    fileSummary: result.fileSummary,
   };
 }
 
 async function handleRemoteAntigravityPrompt(prompt: string): Promise<RemotePromptReply> {
-  if (!antigravityService) {
+  if (!nexusRuntime) {
     throw new Error('Gemini Antigravity service unavailable.');
   }
 
-  const workspace = workspaceGuard.targetPath();
-  let files: readonly string[] = [];
-  const text = await antigravityService.sendPrompt(prompt, workspace, (paths) => {
-    files = paths;
-  });
+  const result = await nexusRuntime.executeTask('antigravity', prompt);
   return {
-    text,
-    fileSummary: formatFileSummary(
-      files,
-      antigravityService.getStatus().workspacePath ?? workspace
-    ),
+    text: result.text,
+    fileSummary: result.fileSummary,
   };
 }
 
 async function handleSessionAction(action: RemoteSessionAction): Promise<string> {
-  if (!codexService) {
+  if (!nexusRuntime) {
     throw new Error('Codex service unavailable.');
   }
-  const path = workspaceGuard.targetPath();
-  return action.type === 'new'
-    ? await codexService.newSession(path)
-    : await codexService.resumeSession(path, action.sessionId);
+  return nexusRuntime.handleSessionAction('codex', action);
 }
 
 async function handleAntigravitySessionAction(action: RemoteSessionAction): Promise<string> {
-  if (!antigravityService) {
+  if (!nexusRuntime) {
     throw new Error('Gemini Antigravity service unavailable.');
   }
-  const path = workspaceGuard.targetPath();
-  return action.type === 'new'
-    ? await antigravityService.newSession(path)
-    : await antigravityService.resumeSession(path, action.sessionId);
+  return nexusRuntime.handleSessionAction('antigravity', action);
 }
 
 async function switchWorkspaceBranch(path: string, name: string): Promise<string> {
-  const runner = codexService ?? antigravityService;
-  if (!runner) {
+  if (!nexusRuntime) {
     throw new Error('Service unavailable.');
   }
-  const branch = await runner.withWorkspaceOperation(() => workspaceGuard.switchBranch(path, name));
-  const hasSession = Boolean(
-    codexService?.getCurrentSessionId() || antigravityService?.getCurrentSessionId()
-  );
-  return (
-    `✅ Branche courante : ${branch}.` +
-    (hasSession
-      ? '\nAvant le prochain prompt, utilisez /new ou /resume <id> pour associer la session à cette branche.'
-      : '')
-  );
+  return nexusRuntime.switchBranch(name, path);
 }
 
 async function handleBranchAction(action: RemoteBranchAction): Promise<string> {
-  const path = workspaceGuard.targetPath();
-  if (action.type === 'switch') {
-    return switchWorkspaceBranch(path, action.name);
+  if (!nexusRuntime) {
+    throw new Error('Service unavailable.');
   }
-  const branches = await workspaceGuard.listBranches(path);
-  return [
-    'Branches disponibles (références Git connues localement) :',
-    ...branches.map(
-      (branch) =>
-        `${branch.current ? '→ ' : '• '}${branch.name}${branch.remote ? ' (distante)' : ''}${branch.protected ? ' 🔒 protégée' : ''}`
-    ),
-    branches.length
-      ? 'Choisir : /switch <nom exact>\nExemples : /switch staging ou /switch origin/staging'
-      : 'Aucune branche disponible.',
-  ].join('\n');
+  return nexusRuntime.handleBranchAction(action);
 }
 
 async function runLocalSessionAction(action: RemoteSessionAction): Promise<void> {
@@ -683,6 +549,5 @@ async function runLocalAntigravitySessionAction(action: RemoteSessionAction): Pr
 
 export function deactivate() {
   telegramService?.stop();
-  codexService?.stop();
-  antigravityService?.stop();
+  nexusRuntime?.stop();
 }

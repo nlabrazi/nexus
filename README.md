@@ -146,6 +146,21 @@ Nexus is not intended to replace VS Code, Git, Codex, or Antigravity. It acts as
 ```text
 src/
 ├── extension.ts
+├── runtime/
+│   ├── nexus-runtime.ts
+│   ├── workspace.ts
+│   ├── storage.ts
+│   └── types.ts
+├── protocol/
+│   ├── types.ts
+│   ├── messages.ts
+│   └── errors.ts
+├── conversational/
+│   ├── service.ts
+│   ├── tools.ts
+│   ├── codex-model.ts
+│   ├── codex-inspector.ts
+│   └── types.ts
 ├── telegram/
 │   ├── client.ts
 │   ├── service.ts
@@ -172,16 +187,19 @@ Responsibilities:
 
 ```text
 extension.ts
-└── VS Code lifecycle, commands, status bar, backend service wiring
+└── VS Code lifecycle, commands, status bar, NexusRuntime instantiation
+
+NexusRuntime
+└── Unified headless agent orchestration (tasks, Brain, sessions, branches, models, cancellation)
+
+WorkspaceGuard
+└── Standalone / VS Code workspace and Git security checks, protected branches, preflight guards
 
 TelegramService
-└── polling, pairing, authorization, multi-backend routing (/backend, /codex, /antigravity)
+└── Polling, pairing, authorization, multi-backend routing (/backend, /codex, /antigravity)
 
-TelegramClient
-└── Telegram Bot API transport
-
-CodexService / AntigravityService
-└── Agent session, turn lifecycle, workspace isolation, model preferences
+CodexService / AntigravityService / ConversationalService (Nexus Brain)
+└── Agent sessions, turn lifecycle, workspace isolation, model preferences, conversational guidance
 
 CodexClient
 └── Codex App Server process + JSON-RPC transport
@@ -197,9 +215,11 @@ Telegram message (/codex, /antigravity, /new, /resume, /model, /backend)
       ↓
 TelegramService
       ↓
-authorization checks & active backend routing
+NexusRuntime (Isolated agent runtime)
       ↓
-CodexService  OR  AntigravityService
+WorkspaceGuard (Git & workspace preflight)
+      ↓
+CodexService  OR  AntigravityService  OR  ConversationalService
       ↓
 CodexClient (JSON-RPC)  OR  AntigravityClient (NDJSON stream)
       ↓
@@ -485,6 +505,9 @@ Detailed documentation:
 - [Gemini Antigravity sessions](docs/antigravity-sessions.md)
 - [Gemini Antigravity models](docs/antigravity-models.md)
 - [Gemini Antigravity errors](docs/antigravity-errors.md)
+- [Nexus Brain spike](docs/nexus-brain.md)
+- [Nexus Protocol](docs/nexus-protocol.md)
+- [Agent Runtime Isolation](docs/runtime-isolation.md)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -642,6 +665,7 @@ Detailed test documentation:
 - [Telegram approvals](docs/telegram-approvals.md)
 - [Nexus Brain spike](docs/nexus-brain.md)
 - [Nexus Protocol](docs/nexus-protocol.md)
+- [Agent Runtime Isolation](docs/runtime-isolation.md)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
