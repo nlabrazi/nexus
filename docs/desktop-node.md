@@ -21,6 +21,7 @@ Le Desktop Node constitue la brique locale de l'architecture découplée de Nexu
 src/desktop/
 ├── types.ts     # Interfaces : DesktopNodeConfig, DesktopProjectConfig, DesktopNodeStatus, etc.
 ├── config.ts    # Résolution et validation : CLI flags, variables d'environnement, fichier JSON
+├── ws-client.ts # Client WebSocket natif : poignée de main, heartbeat et reconnexion automatique
 ├── node.ts      # Classe DesktopNode : cycle de vie (start, stop), gestion des projets, exécution
 ├── cli.ts       # Script exécutable avec parseArgs, bannières et gestion des signaux (SIGINT/SIGTERM)
 └── index.ts     # Exports publics du module
@@ -108,6 +109,7 @@ nexus-desktop exec --project ./repo --backend brain "Explique-moi la structure d
 | `--name <name>` | `-n` | Nom lisible du projet ou du nœud | Nom du dossier |
 | `--backend <agent>` | `-b` | Backend par défaut (`codex`, `antigravity`, `brain`) | `codex` |
 | `--config <file>` | `-c` | Chemin vers un fichier de configuration JSON | - |
+| `--core <url>` | `-C` | URL de Nexus Core (`ws://` ou `http://`) | `""` (mode local isolé) |
 | `--node-id <id>` | - | Identifiant unique du nœud | UUID généré |
 | `--token <token>` | `-t` | Jeton d'authentification pour Nexus Core | `""` |
 | `--help` | `-h` | Affiche l'aide complète | - |
@@ -120,6 +122,7 @@ nexus-desktop exec --project ./repo --backend brain "Explique-moi la structure d
 | `NEXUS_PROJECT_PATH` | Chemin du projet par défaut |
 | `NEXUS_PROJECT_NAME` | Nom du projet par défaut |
 | `NEXUS_DEFAULT_BACKEND` | Backend agent par défaut (`codex`, `antigravity`, `brain`) |
+| `NEXUS_CORE_URL` | URL de Nexus Core (`ws://host:port` ou `http://host:port`) |
 | `NEXUS_NODE_ID` | Identifiant fixe du nœud |
 | `NEXUS_NODE_NAME` | Nom d'hôte du nœud |
 | `NEXUS_AUTH_TOKEN` | Jeton d'authentification du nœud |
@@ -145,7 +148,19 @@ nexus-desktop exec --project ./repo --backend brain "Explique-moi la structure d
 
 ---
 
-## 5. Sécurité et Modèle d'approbation
+## 5. Connexion sortante vers Nexus Core (WebSocket)
+
+Lorsqu'une URL Core est configurée (`--core <url>` ou `NEXUS_CORE_URL`), le Desktop Node se connecte automatiquement au serveur central Nexus Core :
+
+1. **Connexion sortante persistante** : Le PC établit un tunnel WebSocket sortant (`DesktopCoreClient`). Aucun port entrant n'a besoin d'être ouvert sur le pare-feu local ou la box Internet.
+2. **Authentification & Enregistrement** : Dès l'ouverture du socket, le nœud émet un message `node:hello` contenant le jeton `authToken`, ses capacités et ses projets locaux. Core répond par `node:welcome` en attribuant un `sessionId`.
+3. **Maintien de liaison (Heartbeat)** : Un battement de cœur périodique (`node:heartbeat`) est envoyé à la fréquence négociée dans le message de bienvenue (défaut : 15s). Core accuse réception via `node:heartbeat_ack`.
+4. **Reconnexion automatique avec backoff exponentiel** : En cas de coupure réseau ou de redémarrage de Nexus Core, le client bascule à l'état `reconnecting` et retente la connexion avec un délai initial (1s) multiplié par 1.5 à chaque échec (plafonné à 30s).
+5. **Protection contre les jetons invalides** : Si Core rejette la connexion avec l'erreur `UNAUTHENTICATED`, la reconnexion automatique est immédiatement interrompue pour éviter d'inonder le serveur.
+
+---
+
+## 6. Sécurité et Modèle d'approbation
 
 - **Fail-closed par défaut** : Si le Desktop Node fonctionne en arrière-plan sans TTY interactif (`process.stdin.isTTY === false`), toute demande d'approbation (`command`, `fileChange`, ou inspection Brain) est immédiatement refusée (`decline`).
 - **Confirmation interactive en terminal** : Lorsqu'un terminal interactif est attaché, les requêtes d'approbation s'affichent sur `stderr` avec les détails de l'action envisagée et attendent une confirmation explicite (`y` / `yes` / `o` / `oui`).
@@ -153,13 +168,18 @@ nexus-desktop exec --project ./repo --backend brain "Explique-moi la structure d
 
 ---
 
-## 6. Validation par les tests
+## 7. Validation par les tests
 
-La suite [`src/test/unit/desktop-node.unit.ts`](../src/test/unit/desktop-node.unit.ts) couvre :
-- La résolution et la déduplication de la configuration (CLI, env vars, fichier JSON).
-- Le rejet des projets inexistants ou des backends inconnus.
-- Le cycle de vie complet du nœud (`start`, `getStatus`, `stop`).
-- La conformité des messages de protocole v1 (`node:hello`, `node:heartbeat`, `node:status`).
-- La gestion multi-projets et le basculement de projet actif (`setActiveProject`).
-- L'exclusion des tâches concurrentes avec transition d'état (`idle` -> `busy` -> `idle`).
-- Les commandes CLI (`start`, `status`, `exec`, `--help`, `--version`).
+Les suites de tests unitaires couvrent l'intégralité du Desktop Node :
+- [`src/test/unit/desktop-node.unit.ts`](../src/test/unit/desktop-node.unit.ts) :
+  - Résolution et déduplication de configuration (CLI, env vars, JSON).
+  - Cycle de vie complet (`start`, `getStatus`, `stop`).
+  - Validation du préflight Git et exclusion des branches protégées.
+  - Gestion multi-projets et exécution autonome des agents (`Codex`, `Antigravity`, `Brain`).
+- [`src/test/unit/desktop-connection.unit.ts`](../src/test/unit/desktop-connection.unit.ts) :
+  - Normalisation des URLs (`ws://`, `wss://`, `http://`, `https://`).
+  - Poignée de main WebSocket authentifiée (`node:hello` → `node:welcome`).
+  - Battements de cœur périodiques (`node:heartbeat` → `node:heartbeat_ack`).
+  - Détection du refus d'authentification (`UNAUTHENTICATED`).
+  - Reconnexion automatique avec backoff après coupure du serveur.
+  - Déconnexion ordonnée et mise à jour de présence sur Core.

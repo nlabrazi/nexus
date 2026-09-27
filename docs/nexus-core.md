@@ -19,11 +19,12 @@ Nexus Core constitue le point de ralliement de l'architecture distribuée Nexus 
 
 ```text
 src/core/
-├── types.ts       # Types : CoreConfig, ConnectedNode, CoreStatusSnapshot, etc.
-├── presence.ts    # NodePresenceManager : gestion des sessions, heartbeat et liveness
-├── nexus-core.ts  # Classe NexusCore : serveur HTTP, routage et traitement des messages
-├── cli.ts         # Script exécutable autonome (nexus-core / npm run core)
-└── index.ts       # Exports publics du module
+├── types.ts         # Types : CoreConfig, ConnectedNode, CoreStatusSnapshot, etc.
+├── presence.ts      # NodePresenceManager : gestion des sessions, heartbeat et liveness
+├── ws-connection.ts # Gestionnaire WebSocket RFC 6455 : upgrade HTTP, trames texte, ping/pong
+├── nexus-core.ts    # Classe NexusCore : serveur HTTP & WebSocket, routage et messages
+├── cli.ts           # Script exécutable autonome (nexus-core / npm run core)
+└── index.ts         # Exports publics du module
 ```
 
 ---
@@ -53,9 +54,9 @@ Desktop Node                                     Nexus Core
 
 ---
 
-## 4. Endpoints HTTP du serveur Core
+## 4. Endpoints HTTP & WebSocket du serveur Core
 
-Lorsqu'un port est configuré (`port > 0` ou `port: 0` pour un port éphémère), Nexus Core démarre un serveur HTTP intégré :
+Lorsqu'un port est configuré (`port > 0` ou `port: 0` pour un port éphémère), Nexus Core démarre un serveur HTTP intégré supportant l'upgrade WebSocket RFC 6455 :
 
 | Méthode | Chemin | Description | Réponse |
 | --- | --- | --- | --- |
@@ -64,6 +65,14 @@ Lorsqu'un port est configuré (`port > 0` ou `port: 0` pour un port éphémère)
 | `GET` | `/api/nodes` | Liste des nœuds connectés | `200 ConnectedNode[]` |
 | `GET` | `/api/projects` | Projets des nœuds en ligne | `200 NodeProjectSummary[]` |
 | `POST` | `/api/message` | Envoi d'un message protocole JSON | `200 AnyNexusMessage` ou `204 No Content` |
+| `GET` (Upgrade) | `/ws` | Canal bidirectionnel temps réel pour Desktop Nodes | Connexion WebSocket RFC 6455 |
+
+### 4.1 Canal WebSocket temps réel
+
+- **RFC 6455 natif sans dépendance externe** : Implémenté dans [`src/core/ws-connection.ts`](../src/core/ws-connection.ts) via l'API standard Node.js (`node:crypto` et `node:stream`).
+- **Liaison dynamique Nœud ↔ Connexion** : À la réception d'un `node:hello` validé, la connexion WebSocket est liée au `nodeId` correspondant.
+- **Routage bidirectionnel** : Les messages reçus sont injectés dans le moteur de messages (`processMessage()`) et les réponses sont réémises directement sur le canal WebSocket du nœud.
+- **Déconnexion instantanée** : Dès fermeture de la socket TCP/WebSocket (par exemple arrêt de la machine locale), le nœud est immédiatement marqué hors ligne sans attendre l'expiration du délai de heartbeat.
 
 ---
 
@@ -103,12 +112,18 @@ Nexus Core actif. En attente de connexions (Ctrl+C pour quitter)...
 
 ## 6. Validation par les tests
 
-La suite [`src/test/unit/nexus-core.unit.ts`](../src/test/unit/nexus-core.unit.ts) valide :
-- L'enregistrement d'un nœud avec jeton valide (`node:welcome`, attribution de `sessionId`).
-- Le refus strict en cas de jeton d'authentification invalide (`UNAUTHENTICATED`).
-- Le renouvellement de présence par battement de cœur (`node:heartbeat` → `node:heartbeat_ack`).
-- La détection de perte de contact (`checkLiveness`) et le basculement automatique en mode hors ligne.
-- La propagation des mises à jour d'état (`node:status`).
-- Le traitement direct des messages de protocole et la génération d'enveloppes d'erreurs (`core:error`).
-- Le fonctionnement complet du serveur HTTP (`/health`, `/status`, `/api/nodes`, `/api/projects`, `/api/message`).
-- Les options du CLI (`--help`, `--version`).
+Les suites de tests unitaires valident le fonctionnement de Nexus Core :
+- [`src/test/unit/nexus-core.unit.ts`](../src/test/unit/nexus-core.unit.ts) :
+  - Enregistrement de nœud (`node:welcome`, attribution de `sessionId`).
+  - Refus strict en cas de jeton d'authentification invalide (`UNAUTHENTICATED`).
+  - Renouvellement de présence par battement de cœur (`node:heartbeat` → `node:heartbeat_ack`).
+  - Détection de perte de contact (`checkLiveness`) et basculement automatique hors ligne.
+  - Propagation des mises à jour d'état (`node:status`).
+  - Traitement direct des messages de protocole et enveloppes d'erreurs (`core:error`).
+  - Fonctionnement complet du serveur HTTP (`/health`, `/status`, `/api/nodes`, `/api/projects`, `/api/message`).
+  - Options du CLI (`--help`, `--version`).
+- [`src/test/unit/desktop-connection.unit.ts`](../src/test/unit/desktop-connection.unit.ts) :
+  - Connexion WebSocket de bout en bout entre Desktop Node et Nexus Core.
+  - Heartbeats réguliers et maintien de liaison.
+  - Reconnexion automatique avec backoff exponentiel.
+  - Déconnexion et basculement immédiat hors ligne.

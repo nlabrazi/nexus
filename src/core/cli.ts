@@ -120,7 +120,7 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
     process.on('SIGTERM', shutdown);
 
     // Keep running
-    await new Promise<void>(() => { });
+    await new Promise<void>(() => {});
     return 0;
   } catch (error) {
     console.error(

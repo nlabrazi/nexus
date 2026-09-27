@@ -150,11 +150,13 @@ src/
 │   ├── cli.ts
 │   ├── nexus-core.ts
 │   ├── presence.ts
+│   ├── ws-connection.ts
 │   ├── types.ts
 │   └── index.ts
 ├── desktop/
 │   ├── cli.ts
 │   ├── node.ts
+│   ├── ws-client.ts
 │   ├── config.ts
 │   ├── types.ts
 │   └── index.ts
@@ -202,10 +204,10 @@ extension.ts
 └── VS Code lifecycle, commands, status bar, NexusRuntime instantiation
 
 core/ (nexus-core)
-└── Central coordination server, desktop presence tracking (heartbeat/liveness), HTTP protocol gateway
+└── Central coordination server, desktop presence tracking (heartbeat/liveness), HTTP & WebSocket RFC 6455 protocol gateway
 
 desktop/ (nexus-desktop)
-└── Standalone terminal Desktop Node daemon, CLI commands (start, status, exec), signal handling
+└── Standalone terminal Desktop Node daemon, CLI commands (start, status, exec), outbound authenticated WebSocket connection to Core
 
 NexusRuntime
 └── Unified headless agent orchestration (tasks, Brain, sessions, branches, models, cancellation)

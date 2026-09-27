@@ -1,4 +1,5 @@
 import { createServer, IncomingMessage, Server, ServerResponse } from 'node:http';
+import { Duplex } from 'node:stream';
 import { invalidMessageError, NexusProtocolError } from '../protocol/errors';
 import { createNexusMessage, parseNexusMessage, serializeNexusMessage } from '../protocol/messages';
 import {
@@ -9,10 +10,13 @@ import {
 } from '../protocol/types';
 import { NodePresenceManager } from './presence';
 import { CoreConfig, CoreStatusSnapshot } from './types';
+import { upgradeHttpToWebSocket, WebSocketServerConnection } from './ws-connection';
 
 export class NexusCore {
   private readonly presence: NodePresenceManager;
   private server?: Server;
+  private readonly wsConnections = new Set<WebSocketServerConnection>();
+  private readonly nodeWsConnections = new Map<string, WebSocketServerConnection>();
   private readonly startTime: number;
 
   constructor(private readonly config: CoreConfig) {
@@ -94,6 +98,10 @@ export class NexusCore {
     }
   }
 
+  getNodeConnection(nodeId: string): WebSocketServerConnection | undefined {
+    return this.nodeWsConnections.get(nodeId);
+  }
+
   async start(): Promise<void> {
     this.presence.startLivenessMonitoring();
 
@@ -105,6 +113,46 @@ export class NexusCore {
         this.handleHttpRequest(req, res).catch((err) => {
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: String(err) }));
+        });
+      });
+
+      this.server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+        const conn = upgradeHttpToWebSocket(req, socket, head);
+        if (!conn) {
+          return;
+        }
+
+        this.wsConnections.add(conn);
+        let boundNodeId: string | undefined;
+
+        conn.on('message', async (raw: string) => {
+          try {
+            const message = parseNexusMessage(raw);
+            const reply = await this.processMessage(message);
+            if (message.type === 'node:hello' && reply?.type === 'node:welcome') {
+              boundNodeId = (message.payload as NodeHelloPayload).nodeId;
+              this.nodeWsConnections.set(boundNodeId, conn);
+            }
+            if (reply) {
+              conn.send(serializeNexusMessage(reply));
+            }
+          } catch (err) {
+            const errorMsg = createNexusMessage('core:error', {
+              code: 'INVALID_MESSAGE',
+              message: err instanceof Error ? err.message : String(err),
+            });
+            conn.send(serializeNexusMessage(errorMsg));
+          }
+        });
+
+        conn.on('close', () => {
+          this.wsConnections.delete(conn);
+          if (boundNodeId) {
+            if (this.nodeWsConnections.get(boundNodeId) === conn) {
+              this.nodeWsConnections.delete(boundNodeId);
+              this.presence.markOffline(boundNodeId);
+            }
+          }
         });
       });
 
@@ -120,7 +168,16 @@ export class NexusCore {
   async stop(): Promise<void> {
     this.presence.stopLivenessMonitoring();
 
+    for (const conn of this.wsConnections) {
+      conn.close();
+    }
+    this.wsConnections.clear();
+    this.nodeWsConnections.clear();
+
     if (this.server) {
+      if (typeof this.server.closeAllConnections === 'function') {
+        this.server.closeAllConnections();
+      }
       await new Promise<void>((resolve) => {
         this.server?.close(() => resolve());
       });
