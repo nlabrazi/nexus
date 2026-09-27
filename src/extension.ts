@@ -74,11 +74,12 @@ export async function activate(context: vscode.ExtensionContext) {
 
   const statusCommand = vscode.commands.registerCommand('nexus.status', async () => {
     const workspace = vscode.workspace.workspaceFolders?.[0];
-
     const workspaceName = workspace?.name ?? 'No workspace';
-
-    const telegramToken = await context.secrets.get('nexus.telegram.botToken');
-
+    const status = await nexusRuntime?.getStatus();
+    const activeBackend = status?.activeBackend ?? 'codex';
+    vscode.window.showInformationMessage(
+      `Nexus active — Workspace: ${workspaceName} (${activeBackend})`
+    );
   });
 
   const configureTelegramCommand = vscode.commands.registerCommand(

@@ -146,6 +146,12 @@ Nexus is not intended to replace VS Code, Git, Codex, or Antigravity. It acts as
 ```text
 src/
 ├── extension.ts
+├── desktop/
+│   ├── cli.ts
+│   ├── node.ts
+│   ├── config.ts
+│   ├── types.ts
+│   └── index.ts
 ├── runtime/
 │   ├── nexus-runtime.ts
 │   ├── workspace.ts
@@ -188,6 +194,9 @@ Responsibilities:
 ```text
 extension.ts
 └── VS Code lifecycle, commands, status bar, NexusRuntime instantiation
+
+desktop/ (nexus-desktop)
+└── Standalone terminal Desktop Node daemon, CLI commands (start, status, exec), signal handling
 
 NexusRuntime
 └── Unified headless agent orchestration (tasks, Brain, sessions, branches, models, cancellation)
@@ -508,6 +517,7 @@ Detailed documentation:
 - [Nexus Brain spike](docs/nexus-brain.md)
 - [Nexus Protocol](docs/nexus-protocol.md)
 - [Agent Runtime Isolation](docs/runtime-isolation.md)
+- [Desktop Node](docs/desktop-node.md)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -666,6 +676,7 @@ Detailed test documentation:
 - [Nexus Brain spike](docs/nexus-brain.md)
 - [Nexus Protocol](docs/nexus-protocol.md)
 - [Agent Runtime Isolation](docs/runtime-isolation.md)
+- [Desktop Node](docs/desktop-node.md)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
