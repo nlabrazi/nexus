@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import { createNexusMessage, serializeNexusMessage } from '../protocol/messages';
 import {
   NexusProtocolError,
+  TaskBackend,
   TaskCompletedPayload,
   TaskFailedPayload,
   TaskProgressPayload,
@@ -289,7 +290,12 @@ export class TaskRouter extends EventEmitter {
     return this.tasks.get(taskId);
   }
 
-  listTasks(filter?: { status?: RemoteTaskStatus; nodeId?: string }): readonly RemoteTask[] {
+  listTasks(filter?: {
+    status?: RemoteTaskStatus;
+    nodeId?: string;
+    backend?: TaskBackend;
+    projectId?: string;
+  }): readonly RemoteTask[] {
     const all = Array.from(this.tasks.values());
     if (!filter) {
       return all;
@@ -299,6 +305,12 @@ export class TaskRouter extends EventEmitter {
         return false;
       }
       if (filter.nodeId && t.nodeId !== filter.nodeId) {
+        return false;
+      }
+      if (filter.backend && t.backend !== filter.backend) {
+        return false;
+      }
+      if (filter.projectId && t.projectId !== filter.projectId) {
         return false;
       }
       return true;

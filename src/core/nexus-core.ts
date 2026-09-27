@@ -10,6 +10,7 @@ import {
   NodeHeartbeatPayload,
   NodeHelloPayload,
   NodeStatusPayload,
+  TaskBackend,
   TaskCompletedPayload,
   TaskFailedPayload,
   TaskProgressPayload,
@@ -141,7 +142,12 @@ export class NexusCore extends EventEmitter {
     return this.taskRouter.getTask(taskId);
   }
 
-  listTasks(filter?: { status?: RemoteTaskStatus; nodeId?: string }): readonly RemoteTask[] {
+  listTasks(filter?: {
+    status?: RemoteTaskStatus;
+    nodeId?: string;
+    backend?: TaskBackend;
+    projectId?: string;
+  }): readonly RemoteTask[] {
     return this.taskRouter.listTasks(filter);
   }
 
@@ -411,8 +417,21 @@ export class NexusCore extends EventEmitter {
     }
 
     if (method === 'GET' && pathname === '/api/tasks') {
+      const statusParam = url.searchParams.get('status') as RemoteTaskStatus | null;
+      const backendParam = url.searchParams.get('backend') as TaskBackend | null;
+      const projectIdParam = url.searchParams.get('projectId') ?? undefined;
+      const nodeIdParam = url.searchParams.get('nodeId') ?? undefined;
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(this.listTasks()));
+      res.end(
+        JSON.stringify(
+          this.listTasks({
+            status: statusParam ?? undefined,
+            backend: backendParam ?? undefined,
+            projectId: projectIdParam,
+            nodeId: nodeIdParam,
+          })
+        )
+      );
       return;
     }
 
@@ -434,6 +453,7 @@ export class NexusCore extends EventEmitter {
               projectId: body.projectId,
               nodeId: body.nodeId,
               sessionId: body.sessionId,
+              taskId: body.taskId,
             },
             body.timeoutMs
           );
@@ -446,6 +466,7 @@ export class NexusCore extends EventEmitter {
             projectId: body.projectId,
             nodeId: body.nodeId,
             sessionId: body.sessionId,
+            taskId: body.taskId,
           });
           res.writeHead(202, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(task));
