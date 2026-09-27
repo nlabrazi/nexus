@@ -8,7 +8,14 @@ export interface TelegramPeer {
   chatId: number;
 }
 
-export type ApprovalRequest = CodexApprovalRequest;
+export type ApprovalRequest =
+  | CodexApprovalRequest
+  | {
+      kind: 'inspection';
+      agentName: string;
+      details: string;
+      expiresAt: number;
+    };
 export type ApprovalHandler = (
   request: ApprovalRequest,
   signal: AbortSignal
@@ -39,7 +46,7 @@ export class TelegramApprovals {
     const agentName = request.agentName ?? 'Codex';
     const seconds = Math.ceil((request.expiresAt - Date.now()) / 1000);
     const text = [
-      `🔐 ${agentName} — ${request.kind === 'command' ? 'commande' : 'modification de fichiers'}`,
+      `🔐 ${agentName} — ${request.kind === 'inspection' ? 'inspection en lecture seule' : request.kind === 'command' ? 'commande' : 'modification de fichiers'}`,
       `Sans réponse sous ${seconds} s : refus automatique.`,
       request.details,
     ].join('\n\n');

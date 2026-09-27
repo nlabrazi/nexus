@@ -36,6 +36,8 @@ export class FakeProcess extends EventEmitter {
       }
       if (message.method === 'initialize') {
         this.receive({ id: message.id, result: {} });
+      } else if (message.method === 'account/read') {
+        this.receive({ id: message.id, result: { account: { type: 'chatgpt' } } });
       } else if (message.method === 'model/list') {
         this.receive({ id: message.id, result: { data: this.models, nextCursor: null } });
       } else if (message.method === 'account/rateLimits/read') {
@@ -56,7 +58,16 @@ export class FakeProcess extends EventEmitter {
           status: { type: 'idle' },
         };
         this.threads.set(id, thread);
-        this.receive({ id: message.id, result: { thread } });
+        const restricted = (message.params as { sandbox?: string }).sandbox === 'read-only';
+        this.receive({
+          id: message.id,
+          result: {
+            thread,
+            ...(restricted
+              ? { approvalPolicy: 'never', sandbox: { type: 'readOnly', networkAccess: false } }
+              : {}),
+          },
+        });
       } else if (message.method === 'thread/read' || message.method === 'thread/resume') {
         const thread = this.threads.get((message.params as { threadId: string }).threadId);
         this.receive(

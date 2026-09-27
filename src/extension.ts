@@ -23,6 +23,10 @@ import { AgentBackendType } from './telegram/status';
 import { registerSpeechTestCommand } from './speech/commands';
 import { createConfiguredSpeechService } from './speech/configuration';
 import { synthesizeAcknowledgement } from './speech/acknowledgement';
+import { ConversationalService } from './conversational/service';
+import { CodingAgentTools } from './conversational/tools';
+import { CodexProjectInspector } from './conversational/codex-inspector';
+import { CodexBrainModel } from './conversational/codex-model';
 
 let telegramService: TelegramService | undefined;
 let codexService: CodexService | undefined;
@@ -436,7 +440,45 @@ function startTelegramService(context: vscode.ExtensionContext, token: string): 
 
   const client = new TelegramClient(token);
 
-  telegramService = new TelegramService(context, client, {
+  const tools = new CodingAgentTools({
+    resolveWorkspace: () => workspaceGuard.validate(workspaceGuard.targetPath()),
+    inspector: new CodexProjectInspector((path) => workspaceGuard.validate(path)),
+    requestConsent: async (request, signal) => {
+      const decision = await service.requestApproval(
+        {
+          kind: 'inspection',
+          agentName: 'Nexus Brain',
+          details: `Projet : ${request.project.name}\nBranche : ${request.project.branch ?? 'sans dépôt'}\n\n${request.question}`,
+          expiresAt: request.expiresAt,
+        },
+        signal
+      );
+      return decision === 'accept';
+    },
+  });
+  const brain = new ConversationalService(new CodexBrainModel(), tools);
+  const service: TelegramService = new TelegramService(context, client, {
+    onBrainPrompt: async (message, signal) => {
+      const folders = vscode.workspace.workspaceFolders ?? [];
+      const folder = folders.length === 1 ? folders[0] : undefined;
+      const workspace = folder
+        ? await workspaceGuard.validate(folder.uri.fsPath).catch(() => undefined)
+        : undefined;
+      signal.throwIfAborted();
+      const reply = await brain.respond(
+        {
+          conversationId: JSON.stringify([
+            context.globalState.get<number>('nexus.telegram.allowedUserId'),
+            context.globalState.get<number>('nexus.telegram.allowedChatId'),
+            folder?.uri.toString(),
+          ]),
+          message,
+          project: folder ? { name: folder.name, branch: workspace?.git?.branch } : undefined,
+        },
+        signal
+      );
+      return reply.text;
+    },
     onRemotePrompt: handleRemoteCodexPrompt,
     synthesizeAcknowledgement: async (signal) => {
       if (!vscode.workspace.isTrusted) {
@@ -519,7 +561,8 @@ function startTelegramService(context: vscode.ExtensionContext, token: string): 
     },
   });
 
-  void telegramService.start();
+  telegramService = service;
+  void service.start();
 }
 
 async function handleRemoteCodexPrompt(prompt: string): Promise<RemotePromptReply> {

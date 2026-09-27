@@ -21,6 +21,7 @@ export type RemoteSessionAction = { type: 'new' } | { type: 'resume'; sessionId:
 export type RemoteBranchAction = { type: 'list' } | { type: 'switch'; name: string };
 
 export interface TelegramServiceOptions {
+  onBrainPrompt?: (prompt: string, signal: AbortSignal) => Promise<string>;
   transcribeVoice?: (audio: TelegramVoiceFile, signal: AbortSignal) => Promise<string>;
   synthesizeAcknowledgement?: (signal: AbortSignal) => Promise<Buffer>;
   onRemotePrompt?: RemotePromptHandler;
@@ -43,6 +44,8 @@ export class TelegramService {
   private running = false;
   private abortController?: AbortController;
   private voiceOperation?: AbortController;
+  private brainOperation?: AbortController;
+  private readonly onBrainPrompt?: TelegramServiceOptions['onBrainPrompt'];
   private remotePromptRunning = false;
   private remoteSessionRunning = false;
   private remoteBranchRunning = false;
@@ -88,6 +91,7 @@ export class TelegramService {
 
     if (typeof onRemotePromptOrOptions === 'object' && onRemotePromptOrOptions !== null) {
       const opts = onRemotePromptOrOptions;
+      this.onBrainPrompt = opts.onBrainPrompt;
       this.synthesizeAck = opts.synthesizeAcknowledgement;
       this.transcribeVoice = opts.transcribeVoice;
       this.onRemotePrompt = opts.onRemotePrompt;
@@ -247,6 +251,7 @@ export class TelegramService {
   }
 
   stop(): void {
+    this.brainOperation?.abort();
     this.cancelVoiceOperation();
     this.models.cancel();
     this.antigravityModels.cancel();
@@ -310,6 +315,7 @@ export class TelegramService {
         return;
       }
 
+      this.brainOperation?.abort();
       this.cancelVoiceOperation();
       this.approvals.cancelAll();
       this.continuations.cancelAll();
@@ -454,10 +460,12 @@ export class TelegramService {
         await this.client.sendMessage(chatId, 'Usage : /stop');
         return;
       }
-      if (!this.onStop && !this.onAntigravityStop && !this.voiceOperation) {
+      if (!this.onStop && !this.onAntigravityStop && !this.voiceOperation && !this.brainOperation) {
         await this.client.sendMessage(chatId, 'L’arrêt de Codex est indisponible.');
         return;
       }
+      const brainCancelled = this.brainOperation !== undefined;
+      this.brainOperation?.abort();
       const voiceCancelled = this.cancelVoiceOperation();
       let cancelled: boolean;
       let agentCancelled: boolean;
@@ -466,7 +474,11 @@ export class TelegramService {
         const agyCancelled = this.onAntigravityStop ? this.onAntigravityStop() : false;
         agentCancelled = codexCancelled || agyCancelled;
         cancelled =
-          voiceCancelled || agentCancelled || this.remotePromptRunning || this.remoteSessionRunning;
+          brainCancelled ||
+          voiceCancelled ||
+          agentCancelled ||
+          this.remotePromptRunning ||
+          this.remoteSessionRunning;
       } catch {
         const name = this.getActiveBackend() === 'antigravity' ? 'Antigravity' : 'Codex';
         await this.client.sendMessage(
@@ -482,6 +494,10 @@ export class TelegramService {
       this.remoteSessionRunning = false;
       this.approvals.cancelAll();
       this.continuations.cancelAll();
+      if (brainCancelled) {
+        await this.client.sendMessage(chatId, '⏹ Conversation Nexus et inspection annulées.');
+        return;
+      }
       if (voiceCancelled && !agentCancelled) {
         await this.client.sendMessage(chatId, '⏹ Traitement du message vocal annulé.');
         return;
@@ -549,6 +565,32 @@ export class TelegramService {
 
     if (text === '/ping') {
       await this.client.sendMessage(chatId, 'pong');
+    }
+
+    if (/^\/brain(?:\s|$)/.test(command)) {
+      const prompt = command.slice('/brain'.length).trim();
+      if (!prompt) {
+        await this.client.sendMessage(chatId, 'Usage : /brain <message>');
+        return;
+      }
+      if (!this.onBrainPrompt) {
+        await this.client.sendMessage(chatId, 'Nexus Brain est indisponible.');
+        return;
+      }
+      if (this.remotePromptRunning || this.remoteSessionRunning || this.remoteBranchRunning) {
+        await this.client.sendMessage(
+          chatId,
+          'Une requête est déjà en cours. Attendez sa fin ou utilisez /stop.'
+        );
+        return;
+      }
+      const controller = new AbortController();
+      this.brainOperation = controller;
+      this.remotePromptRunning = true;
+      this.models.cancel();
+      this.antigravityModels.cancel();
+      void this.runBrainPrompt(chatId, prompt, controller);
+      return;
     }
 
     if (text === '/codex') {
@@ -805,6 +847,37 @@ export class TelegramService {
       if (generation === this.operationGeneration) {
         this.remoteSessionRunning = false;
       }
+    }
+  }
+
+  private async runBrainPrompt(
+    chatId: number,
+    prompt: string,
+    controller: AbortController
+  ): Promise<void> {
+    const signal = AbortSignal.any([controller.signal, this.abortController!.signal]);
+    const generation = this.operationGeneration;
+    try {
+      await this.client.sendMessage(chatId, '💬 Nexus réfléchit…', 'plain', signal);
+      signal.throwIfAborted();
+      const response = await this.onBrainPrompt!(prompt, signal);
+      if (!signal.aborted && generation === this.operationGeneration) {
+        await this.client.sendMessage(chatId, response, 'markdown', signal);
+      }
+    } catch (error) {
+      if (!signal.aborted && generation === this.operationGeneration) {
+        await this.client
+          .sendMessage(
+            chatId,
+            `❌ ${error instanceof Error ? error.message : 'Nexus Brain est indisponible.'}`,
+            'plain',
+            signal
+          )
+          .catch(() => {});
+      }
+    } finally {
+      if (this.brainOperation === controller) this.brainOperation = undefined;
+      if (generation === this.operationGeneration) this.remotePromptRunning = false;
     }
   }
 
