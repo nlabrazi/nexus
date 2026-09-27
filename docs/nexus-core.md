@@ -60,6 +60,7 @@ Lorsqu'un port est configuré (`port > 0` ou `port: 0` pour un port éphémère)
 
 | Méthode | Chemin | Description | Réponse |
 | --- | --- | --- | --- |
+| `GET` | `/` | Application Web PWA (si `publicDir` configuré) | `200 text/html` (Nuxt PWA) |
 | `GET` | `/health` | Vérification de vivacité du serveur | `200 { "status": "ok", "version": "0.4.1" }` |
 | `GET` | `/status` | Snapshot de statut global | `200 CoreStatusSnapshot` (uptime, nœuds, projets, tâches) |
 | `GET` | `/api/nodes` | Liste des nœuds connectés | `200 ConnectedNode[]` |
@@ -68,8 +69,13 @@ Lorsqu'un port est configuré (`port > 0` ou `port: 0` pour un port éphémère)
 | `POST` | `/api/tasks` | Soumettre ou exécuter une tâche distante | `202 RemoteTask` (asynchrone) ou `200 TaskCompletedPayload` (si `wait: true`) |
 | `GET` | `/api/tasks/:id` | Détails et statut d'une tâche | `200 RemoteTask` (ou `404`) |
 | `POST` | `/api/tasks/:id/cancel` | Annuler une tâche en cours d'exécution | `200 { "taskId": "...", "cancelled": true }` |
+| `GET` | `/api/approvals` | Liste des approbations en attente | `200 PendingApproval[]` |
+| `POST` | `/api/approvals/:id/decide` | Soumettre une décision d'approbation | `200 PendingApproval` |
 | `POST` | `/api/message` | Envoi d'un message protocole JSON | `200 AnyNexusMessage` ou `204 No Content` |
+| `OPTIONS`| `*` | Requête preflight CORS | `204 No Content` (en-têtes CORS complets) |
 | `GET` (Upgrade) | `/ws` | Canal bidirectionnel temps réel pour Desktop Nodes | Connexion WebSocket RFC 6455 |
+
+> **Support CORS & PWA** : Tous les endpoints HTTP exposent les en-têtes `Access-Control-Allow-Origin: *`, autorisant l'accès direct depuis n'importe quelle application cliente ou environnement de développement Web. Si l'option `publicDir` (ou `NEXUS_PUBLIC_DIR`) est configurée, Core sert directement les fichiers statiques de l'application Nuxt PWA sur le port principal (par défaut 4040), avec support du routage SPA.
 
 ---
 

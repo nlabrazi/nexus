@@ -719,9 +719,13 @@ npm run desktop -- start --project /chemin/vers/projet
 # Run Nexus Core Server locally
 npm run core -- --port 4040 --token secret123
 
-# Docker (Nexus Core)
+# Web Mobile PWA Client
+npm run web:dev     # Démarre le serveur Nuxt en développement (http://localhost:3000)
+npm run web:build   # Génère les fichiers statiques PWA (.output/public)
+
+# Docker (Nexus Core + Web PWA intégrée)
 npm run docker:build  # Construit l'image Docker nexus-core
-npm run docker:up     # Démarre Nexus Core via Docker Compose
+npm run docker:up     # Démarre Nexus Core via Docker Compose (PWA sur http://localhost:4040)
 npm run docker:logs   # Affiche les logs en direct
 npm run docker:down   # Arrête et supprime les conteneurs
 

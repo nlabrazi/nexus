@@ -1,5 +1,7 @@
 import { EventEmitter } from 'node:events';
+import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer, IncomingMessage, Server, ServerResponse } from 'node:http';
+import { extname, join, resolve } from 'node:path';
 import { Duplex } from 'node:stream';
 import { invalidMessageError, NexusProtocolError } from '../protocol/errors';
 import { createNexusMessage, parseNexusMessage, serializeNexusMessage } from '../protocol/messages';
@@ -28,6 +30,25 @@ import {
   SubmitTaskOptions,
 } from './types';
 import { upgradeHttpToWebSocket, WebSocketServerConnection } from './ws-connection';
+
+const MIME_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.webmanifest': 'application/manifest+json',
+  '.txt': 'text/plain; charset=utf-8',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.ttf': 'font/ttf',
+};
 
 export class NexusCore extends EventEmitter {
   private readonly presence: NodePresenceManager;
@@ -355,6 +376,16 @@ export class NexusCore extends EventEmitter {
     const pathname = url.pathname;
     const method = req.method ?? 'GET';
 
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+
+    if (method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
     if (method === 'GET' && pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', version: '0.4.1' }));
@@ -547,6 +578,56 @@ export class NexusCore extends EventEmitter {
         );
       }
       return;
+    }
+
+    // Static file serving for PWA Web Client
+    if (method === 'GET' && this.config.publicDir && existsSync(this.config.publicDir)) {
+      const publicRoot = resolve(this.config.publicDir);
+      const targetPath = resolve(publicRoot, `.${pathname}`);
+
+      // Security: protect against directory traversal
+      if (!targetPath.startsWith(publicRoot)) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Fichier introuvable' }));
+        return;
+      }
+
+      if (existsSync(targetPath)) {
+        let stat = statSync(targetPath);
+        let filePath = targetPath;
+        if (stat.isDirectory()) {
+          filePath = join(targetPath, 'index.html');
+          if (existsSync(filePath)) {
+            stat = statSync(filePath);
+          }
+        }
+
+        if (stat.isFile()) {
+          const ext = extname(filePath).toLowerCase();
+          const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
+          res.writeHead(200, {
+            'Content-Type': contentType,
+            'Content-Length': stat.size,
+            'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000, immutable',
+          });
+          createReadStream(filePath).pipe(res);
+          return;
+        }
+      }
+
+      // SPA client-side fallback to index.html for HTML navigation requests
+      const accept = req.headers.accept ?? '';
+      const indexPath = join(publicRoot, 'index.html');
+      if (accept.includes('text/html') && existsSync(indexPath)) {
+        const stat = statSync(indexPath);
+        res.writeHead(200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Length': stat.size,
+          'Cache-Control': 'no-cache',
+        });
+        createReadStream(indexPath).pipe(res);
+        return;
+      }
     }
 
     res.writeHead(404, { 'Content-Type': 'application/json' });

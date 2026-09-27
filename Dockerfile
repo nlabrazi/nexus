@@ -16,6 +16,12 @@ COPY src/ ./src/
 # Compile production standalone bundle for Nexus Core
 RUN node esbuild.js --production
 
+# Build Nuxt PWA Web Client
+COPY web/package.json web/package-lock.json ./web/
+RUN cd web && npm ci
+COPY web/ ./web/
+RUN cd web && npm run generate
+
 # -------------------------------------------------------------
 # Stage 2: Runtime image (ultra-lightweight & non-root)
 # -------------------------------------------------------------
@@ -25,7 +31,8 @@ WORKDIR /app
 
 ENV NODE_ENV=production \
     NEXUS_CORE_PORT=4040 \
-    NEXUS_CORE_HOST=0.0.0.0
+    NEXUS_CORE_HOST=0.0.0.0 \
+    NEXUS_PUBLIC_DIR=/app/web
 
 # Create persistent state directory with appropriate permissions
 RUN mkdir -p /home/node/.nexus && chown -R node:node /home/node
@@ -33,8 +40,9 @@ RUN mkdir -p /home/node/.nexus && chown -R node:node /home/node
 # Use existing non-root user 'node' provided by node:alpine
 USER node
 
-# Copy only the compiled bundle and metadata
+# Copy compiled Core bundle, web assets, and metadata
 COPY --chown=node:node --from=builder /build/dist/core.js /app/core.js
+COPY --chown=node:node --from=builder /build/web/.output/public /app/web
 COPY --chown=node:node package.json /app/package.json
 
 EXPOSE 4040
