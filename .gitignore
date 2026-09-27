@@ -6,3 +6,5 @@ node_modules
 .nexus-dev/
 .nexus-speech/
 __pycache__/
+.env
+.env*.local

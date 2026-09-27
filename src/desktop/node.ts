@@ -351,10 +351,10 @@ export class DesktopNode {
       runtimeStatus,
       coreConnection: this.coreClient
         ? {
-            status: this.coreClient.getStatus(),
-            url: this.coreClient.getWsUrl(),
-            sessionId: this.coreClient.getSessionId(),
-          }
+          status: this.coreClient.getStatus(),
+          url: this.coreClient.getWsUrl(),
+          sessionId: this.coreClient.getSessionId(),
+        }
         : undefined,
     };
   }
@@ -441,6 +441,9 @@ export class DesktopNode {
     this.activeTaskAbortController = new AbortController();
     const signal = this.activeTaskAbortController.signal;
 
+    const preview = prompt.length > 70 ? `${prompt.slice(0, 67)}...` : prompt;
+    console.log(`[Nexus Desktop] 🚀 Tâche reçue [${backend}]: "${preview}"`);
+
     // Send task:progress (starting)
     this.coreClient?.send(
       createNexusMessage('task:progress', {
@@ -471,6 +474,7 @@ export class DesktopNode {
             text,
           })
         );
+        console.log('[Nexus Desktop] ✅ Tâche Brain terminée avec succès.');
       } else {
         this.coreClient?.send(
           createNexusMessage('task:progress', {
@@ -503,6 +507,8 @@ export class DesktopNode {
             filesChanged: result.filesChanged ? [...result.filesChanged] : undefined,
           })
         );
+        const summary = result.fileSummary ? ` (${result.fileSummary})` : '';
+        console.log(`[Nexus Desktop] ✅ Tâche ${backend} terminée avec succès.${summary}`);
       }
     } catch (err: unknown) {
       const isCancelled =
@@ -513,6 +519,7 @@ export class DesktopNode {
             err.message.toLowerCase().includes('abort')));
 
       if (isCancelled) {
+        console.log(`[Nexus Desktop] ⏹ Tâche ${backend} annulée.`);
         this.coreClient?.send(
           createNexusMessage('task:failed', {
             taskId,
@@ -524,6 +531,7 @@ export class DesktopNode {
         );
       } else {
         const errorMessage = err instanceof Error ? err.message : String(err);
+        console.error(`[Nexus Desktop] ❌ Tâche ${backend} échouée : ${errorMessage}`);
         this.coreClient?.send(
           createNexusMessage('task:failed', {
             taskId,

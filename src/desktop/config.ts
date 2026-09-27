@@ -139,12 +139,20 @@ export function resolveDesktopConfig(
   // Auth token
   const authToken =
     cliOptions?.authToken?.trim() ??
+    env.NEXUS_CORE_AUTH_TOKEN?.trim() ??
     env.NEXUS_AUTH_TOKEN?.trim() ??
+    (env.NEXUS_CORE_AUTH_TOKENS ? env.NEXUS_CORE_AUTH_TOKENS.split(',')[0].trim() : undefined) ??
     fileConfig.authToken?.trim() ??
     '';
 
   const coreUrl =
     cliOptions?.core?.trim() ?? env.NEXUS_CORE_URL?.trim() ?? fileConfig.coreUrl?.trim();
+
+  if (coreUrl && !authToken) {
+    throw new Error(
+      "Jeton d'authentification manquant pour se connecter à Nexus Core. Spécifiez --token <token> ou la variable NEXUS_CORE_AUTH_TOKEN."
+    );
+  }
 
   const protectedBranches = cliOptions?.protectedBranches ?? fileConfig.protectedBranches;
 

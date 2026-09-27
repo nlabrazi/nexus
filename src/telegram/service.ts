@@ -91,7 +91,7 @@ export class FileTelegramStorage implements TelegramStateStorage {
             this.store.set(k, v);
           }
         }
-      } catch { }
+      } catch {}
     }
     if (initialValues) {
       for (const [k, v] of Object.entries(initialValues)) {
@@ -122,7 +122,7 @@ export class FileTelegramStorage implements TelegramStateStorage {
         obj[k] = v;
       }
       writeFileSync(this.filePath, JSON.stringify(obj, null, 2), 'utf-8');
-    } catch { }
+    } catch {}
   }
 }
 
@@ -961,7 +961,7 @@ export class TelegramService {
             'plain',
             signal
           )
-          .catch(() => { });
+          .catch(() => {});
       }
     } finally {
       if (this.brainOperation === controller) {

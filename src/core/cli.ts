@@ -35,6 +35,10 @@ EXEMPLES:
 `;
 
 export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promise<number> {
+  try {
+    process.loadEnvFile?.();
+  } catch {}
+
   const optionsConfig = {
     port: { type: 'string' as const, short: 'p' },
     host: { type: 'string' as const, short: 'H' },
@@ -112,6 +116,7 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
       process.env.TELEGRAM_BOT_TOKEN ??
       process.env.NEXUS_TELEGRAM_TOKEN;
     let telegram: ReturnType<typeof createCoreTelegramService> | undefined;
+    let telegramPolling: Promise<void> | undefined;
 
     if (telegramToken) {
       telegram = createCoreTelegramService(core, telegramToken);
@@ -129,7 +134,7 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
           );
         }
       }
-      await telegram.service.start();
+      telegramPolling = telegram.service.start();
     }
 
     console.log('================================================================');
@@ -155,6 +160,11 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
       console.log('\nInterruption reçue, arrêt de Nexus Core...');
       if (telegram) {
         await telegram.service.stop();
+        if (telegramPolling) {
+          try {
+            await telegramPolling;
+          } catch {}
+        }
       }
       await core.stop();
       console.log('Nexus Core arrêté avec succès.');
@@ -165,7 +175,7 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
     process.on('SIGTERM', shutdown);
 
     // Keep running
-    await new Promise<void>(() => { });
+    await new Promise<void>(() => {});
     return 0;
   } catch (error) {
     console.error(

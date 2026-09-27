@@ -205,11 +205,18 @@ export class AntigravityClient {
     // Nexus acts as the supervisor that gates actions via Telegram approvals.
     args.push('--dangerously-skip-permissions');
 
+    const childEnv = workspaceEnvironment();
+    if (childEnv.PATH) {
+      childEnv.PATH = childEnv.PATH.split(':')
+        .filter((d) => d.trim().length > 0 && (d.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(d)))
+        .join(':');
+    }
+
     let child: ChildProcessWithoutNullStreams;
     try {
       child = spawn(this.binaryPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: workspaceEnvironment(),
+        env: childEnv,
       });
     } catch (error) {
       throw processError(error);
@@ -634,13 +641,13 @@ export class AntigravityClient {
 
     const cumulativeTotal = existing
       ? {
-          totalTokens: existing.total.totalTokens + breakdown.totalTokens,
-          inputTokens: existing.total.inputTokens + breakdown.inputTokens,
-          cachedInputTokens: existing.total.cachedInputTokens + breakdown.cachedInputTokens,
-          outputTokens: existing.total.outputTokens + breakdown.outputTokens,
-          reasoningOutputTokens:
-            existing.total.reasoningOutputTokens + breakdown.reasoningOutputTokens,
-        }
+        totalTokens: existing.total.totalTokens + breakdown.totalTokens,
+        inputTokens: existing.total.inputTokens + breakdown.inputTokens,
+        cachedInputTokens: existing.total.cachedInputTokens + breakdown.cachedInputTokens,
+        outputTokens: existing.total.outputTokens + breakdown.outputTokens,
+        reasoningOutputTokens:
+          existing.total.reasoningOutputTokens + breakdown.reasoningOutputTokens,
+      }
       : breakdown;
 
     const usage: ConversationTokenUsage = {

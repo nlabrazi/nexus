@@ -27,6 +27,9 @@ ENV NODE_ENV=production \
     NEXUS_CORE_PORT=4040 \
     NEXUS_CORE_HOST=0.0.0.0
 
+# Create persistent state directory with appropriate permissions
+RUN mkdir -p /home/node/.nexus && chown -R node:node /home/node
+
 # Use existing non-root user 'node' provided by node:alpine
 USER node
 

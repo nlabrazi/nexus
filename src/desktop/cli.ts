@@ -96,6 +96,10 @@ function createTerminalApprovalHandler(): (
 }
 
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<number> {
+  try {
+    process.loadEnvFile?.();
+  } catch {}
+
   const optionsConfig = {
     project: { type: 'string' as const, short: 'p' },
     name: { type: 'string' as const, short: 'n' },
