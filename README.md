@@ -640,6 +640,8 @@ Detailed test documentation:
 - [Gemini Antigravity errors](docs/antigravity-errors.md)
 - [Workspace safety](docs/workspace-safety.md)
 - [Telegram approvals](docs/telegram-approvals.md)
+- [Nexus Brain spike](docs/nexus-brain.md)
+- [Nexus Protocol](docs/nexus-protocol.md)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
