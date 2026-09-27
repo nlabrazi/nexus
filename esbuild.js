@@ -28,6 +28,7 @@ async function main() {
     entryPoints: {
       extension: 'src/extension.ts',
       desktop: 'src/desktop/cli.ts',
+      core: 'src/core/cli.ts',
     },
     bundle: true,
     format: 'cjs',

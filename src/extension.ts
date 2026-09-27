@@ -120,7 +120,8 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.window.showInformationMessage(`Nexus connected to @${data.result?.username}`);
     } catch (error) {
       vscode.window.showErrorMessage(
-        `Nexus: Unable to connect to Telegram: ${error instanceof Error ? error.message : String(error)
+        `Nexus: Unable to connect to Telegram: ${
+          error instanceof Error ? error.message : String(error)
         }`
       );
     }
@@ -169,7 +170,8 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage(`Nexus: Codex session started — ${sessionId}`);
       } catch (error) {
         vscode.window.showErrorMessage(
-          `Nexus: Unable to start Codex session: ${error instanceof Error ? error.message : String(error)
+          `Nexus: Unable to start Codex session: ${
+            error instanceof Error ? error.message : String(error)
           }`
         );
       }

@@ -8,6 +8,10 @@ import { resolveDesktopConfig } from './config';
 import { DesktopNode } from './node';
 import { TaskBackend } from './types';
 
+export * from './types';
+export * from './config';
+export * from './node';
+
 const VERSION = '0.4.1';
 
 const HELP_TEXT = `
