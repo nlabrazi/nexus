@@ -133,6 +133,9 @@ export class TelegramCoreBridge {
       onProjectAction: async (action) => {
         return this.handleProjectAction(action);
       },
+      onMemoryAction: async (action) => {
+        return this.handleMemoryAction(action);
+      },
       onSessionAction: async (action) => {
         return this.handleSessionAction(action);
       },
@@ -322,6 +325,49 @@ export class TelegramCoreBridge {
     } catch (err) {
       return `❌ Impossible de basculer sur le projet "${action.projectId}" : ${err instanceof Error ? err.message : String(err)}`;
     }
+  }
+
+  private async handleMemoryAction(
+    action: { type: 'show' } | { type: 'add'; title: string; decision: string } | { type: 'clear' }
+  ): Promise<string> {
+    const status = this.core.getStatus();
+    const primary = status.nodes.find((n) => n.online);
+    const activeProject = primary?.activeProject;
+    if (!activeProject) {
+      return 'Aucun projet actif sur les nœuds connectés pour la mémoire de décisions.';
+    }
+
+    const mem = this.core.getProjectMemory();
+    if (action.type === 'show') {
+      const snapshot = mem.getSnapshot(activeProject.path);
+      if (!snapshot.exists || snapshot.decisions.length === 0) {
+        return `🧠 **Mémoire de décisions : ${activeProject.name}**\nAucune décision consignée (fichier \`.nexus/memory.md\` vierge).`;
+      }
+      const lines = [
+        `🧠 **Mémoire de décisions : ${activeProject.name}** (${snapshot.decisions.length} décision${snapshot.decisions.length > 1 ? 's' : ''}) :`,
+      ];
+      for (const d of snapshot.decisions) {
+        lines.push(
+          `• **[${d.date}] ${d.title}** (\`${d.status}\`)\n  ID: \`${d.id}\`\n  ${d.decision}${d.context ? `\n  _Contexte : ${d.context}_` : ''}`
+        );
+      }
+      return lines.join('\n\n');
+    }
+
+    if (action.type === 'add') {
+      const recorded = mem.recordDecision(activeProject.path, {
+        title: action.title,
+        decision: action.decision,
+      });
+      return `✅ Décision consignée avec succès dans **${activeProject.name}** (ID: \`${recorded.id}\`).`;
+    }
+
+    if (action.type === 'clear') {
+      mem.clearMemory(activeProject.path);
+      return `🧹 Mémoire réinitialisée pour **${activeProject.name}**.`;
+    }
+
+    return 'Action non supportée.';
   }
 
   private async handleSessionAction(

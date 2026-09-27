@@ -1,6 +1,8 @@
 import { basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { assertSameWorkspace, WorkspaceIdentity } from '../workspace/guard';
+import { DecisionRecordInput, ProjectDecision, ProjectMemorySnapshot } from '../memory/types';
+import { ProjectMemory } from '../memory/project-memory';
 import { ConversationProjectContext } from './types';
 
 export interface ProjectStatus {
@@ -24,6 +26,7 @@ export interface CodingAgentToolsOptions {
   resolveWorkspace: () => Promise<WorkspaceIdentity>;
   inspector?: ProjectInspector;
   requestConsent?: (request: InspectionConsent, signal: AbortSignal) => Promise<boolean>;
+  projectMemory?: ProjectMemory;
 }
 
 const CONSENT_TIMEOUT_MS = 60_000;
@@ -31,8 +34,25 @@ const CONSENT_TIMEOUT_MS = 60_000;
 /** The model supplies a question; the application owns the target and authorization. */
 export class CodingAgentTools {
   private inspecting = false;
+  private readonly memory: ProjectMemory;
 
-  constructor(private readonly options: CodingAgentToolsOptions) {}
+  constructor(private readonly options: CodingAgentToolsOptions) {
+    this.memory = options.projectMemory ?? new ProjectMemory();
+  }
+
+  async getProjectMemory(signal: AbortSignal): Promise<ProjectMemorySnapshot> {
+    signal.throwIfAborted();
+    const workspace = await this.options.resolveWorkspace();
+    signal.throwIfAborted();
+    return this.memory.getSnapshot(workspace.root);
+  }
+
+  async recordDecision(input: DecisionRecordInput, signal: AbortSignal): Promise<ProjectDecision> {
+    signal.throwIfAborted();
+    const workspace = await this.options.resolveWorkspace();
+    signal.throwIfAborted();
+    return this.memory.recordDecision(workspace.root, input);
+  }
 
   async getProjectStatus(signal: AbortSignal): Promise<ProjectStatus> {
     signal.throwIfAborted();

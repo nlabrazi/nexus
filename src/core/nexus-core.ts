@@ -20,6 +20,8 @@ import { NodePresenceManager } from './presence';
 import { TaskRouter } from './task-router';
 import { SpeechAudio } from '../speech/types';
 import { SpeechToTextService } from '../speech/service';
+import { DecisionRecordInput, ProjectDecision, ProjectMemorySnapshot } from '../memory/types';
+import { ProjectMemory } from '../memory/project-memory';
 import {
   ApprovalCancelReason,
   ApprovalDecision,
@@ -62,6 +64,7 @@ export class NexusCore extends EventEmitter {
   private server?: Server;
   private readonly wsConnections = new Set<WebSocketServerConnection>();
   private readonly nodeWsConnections = new Map<string, WebSocketServerConnection>();
+  private readonly projectMemory = new ProjectMemory();
   private readonly startTime: number;
 
   constructor(private readonly config: CoreConfig) {
@@ -249,6 +252,67 @@ export class NexusCore extends EventEmitter {
       nodeId: targetNode.nodeId,
       nodeName: targetNode.nodeName,
     };
+  }
+
+  resolveProject(projectId?: string): NodeProjectSummary | undefined {
+    const nodes = this.presence.listNodes();
+    if (projectId) {
+      for (const node of nodes) {
+        const found = node.projects.find(
+          (p) =>
+            p.id === projectId ||
+            p.name.toLowerCase() === projectId.toLowerCase() ||
+            p.path === projectId
+        );
+        if (found) return found;
+      }
+      return undefined;
+    }
+    const primary = this.presence.getPrimaryOnlineNode();
+    return primary?.activeProject;
+  }
+
+  getProjectMemory(): ProjectMemory {
+    return this.projectMemory;
+  }
+
+  getProjectMemorySnapshot(projectId?: string): ProjectMemorySnapshot {
+    const project = this.resolveProject(projectId);
+    if (!project) {
+      throw new NexusProtocolError(
+        'PROJECT_NOT_FOUND',
+        projectId
+          ? `Projet introuvable : "${projectId}".`
+          : 'Aucun projet actif trouvé sur les nœuds connectés.'
+      );
+    }
+    return this.projectMemory.getSnapshot(project.path);
+  }
+
+  recordProjectDecision(input: DecisionRecordInput, projectId?: string): ProjectDecision {
+    const project = this.resolveProject(projectId);
+    if (!project) {
+      throw new NexusProtocolError(
+        'PROJECT_NOT_FOUND',
+        projectId
+          ? `Projet introuvable : "${projectId}".`
+          : 'Aucun projet actif trouvé sur les nœuds connectés.'
+      );
+    }
+    return this.projectMemory.recordDecision(project.path, input);
+  }
+
+  clearProjectMemory(projectId?: string): void {
+    const project = this.resolveProject(projectId);
+    if (!project) {
+      throw new NexusProtocolError(
+        'PROJECT_NOT_FOUND',
+        projectId
+          ? `Projet introuvable : "${projectId}".`
+          : 'Aucun projet actif trouvé sur les nœuds connectés.'
+      );
+    }
+    this.projectMemory.clearMemory(project.path);
   }
 
   getApprovalRelay(): ApprovalRelay {
@@ -582,6 +646,87 @@ export class NexusCore extends EventEmitter {
             code: err instanceof NexusProtocolError ? err.code : 'INTERNAL_ERROR',
           })
         );
+      }
+      return;
+    }
+
+    if (method === 'GET' && pathname === '/api/projects/memory') {
+      const projectIdParam = url.searchParams.get('projectId') ?? undefined;
+      try {
+        const snapshot = this.getProjectMemorySnapshot(projectIdParam);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(snapshot));
+      } catch (err) {
+        const statusCode =
+          err instanceof NexusProtocolError && err.code === 'PROJECT_NOT_FOUND' ? 404 : 500;
+        res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+      }
+      return;
+    }
+
+    if (method === 'POST' && pathname === '/api/projects/memory') {
+      const raw = await this.readRequestBody(req);
+      try {
+        let body: {
+          projectId?: string;
+          title?: string;
+          decision?: string;
+          context?: string;
+          status?: 'accepted' | 'superseded' | 'deprecated';
+        } = {};
+        try {
+          body = JSON.parse(raw);
+        } catch {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Payload JSON invalide.', code: 'INVALID_JSON' }));
+          return;
+        }
+
+        if (!body.title || !body.decision) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              error: 'Champs obligatoires manquants : title, decision',
+              code: 'INVALID_REQUEST',
+            })
+          );
+          return;
+        }
+
+        const validStatus =
+          body.status === 'superseded' || body.status === 'deprecated' ? body.status : 'accepted';
+        const recorded = this.recordProjectDecision(
+          {
+            title: body.title,
+            decision: body.decision,
+            context: body.context,
+            status: validStatus,
+          },
+          body.projectId
+        );
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(recorded));
+      } catch (err) {
+        const statusCode =
+          err instanceof NexusProtocolError && err.code === 'PROJECT_NOT_FOUND' ? 404 : 400;
+        res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+      }
+      return;
+    }
+
+    if (method === 'DELETE' && pathname === '/api/projects/memory') {
+      const projectIdParam = url.searchParams.get('projectId') ?? undefined;
+      try {
+        this.clearProjectMemory(projectIdParam);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ cleared: true }));
+      } catch (err) {
+        const statusCode =
+          err instanceof NexusProtocolError && err.code === 'PROJECT_NOT_FOUND' ? 404 : 400;
+        res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
       }
       return;
     }

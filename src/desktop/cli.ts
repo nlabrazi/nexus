@@ -29,6 +29,7 @@ COMMANDES:
   status          Vérifier la validité du projet et afficher l'état du runtime
   exec <prompt>   Exécuter un prompt directement sur le projet configuré et afficher le résultat
   projects        Gérer le registre explicite de projets (list, add, remove, set-default)
+  memory          Gérer la mémoire de décisions architecturales (show, add, clear)
 
 OPTIONS:
   -p, --project <path>     Chemin absolu ou relatif vers le répertoire du projet (ou via registre)
@@ -48,6 +49,9 @@ EXEMPLES:
   nexus-desktop projects add /chemin/vers/projet --name MonProjet
   nexus-desktop projects set-default MonProjet
   nexus-desktop projects remove MonProjet
+  nexus-desktop memory show
+  nexus-desktop memory add "Choix SQLite" "Utiliser SQLite pour la persistance locale"
+  nexus-desktop memory clear
 `;
 
 function createTerminalApprovalHandler(): (
@@ -340,7 +344,62 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
       return 0;
     }
 
-    console.error(`Commande inconnue : « ${command} ». Commandes valides : start, status, exec.`);
+    if (command === 'memory') {
+      const memorySub = positionals[1] ?? 'show';
+      await node.start();
+      const activeProject = node.getActiveProject();
+
+      if (memorySub === 'show' || memorySub === 'list') {
+        const snapshot = node.getProjectMemorySnapshot();
+        console.log(`\n🧠 MÉMOIRE DU PROJET : ${activeProject.name}`);
+        console.log(`• Fichier : ${snapshot.memoryFilePath}`);
+        console.log(
+          `• Existe  : ${snapshot.exists ? 'Oui' : 'Non (aucun fichier .nexus/memory.md)'}`
+        );
+        console.log(`• Décisions consignées : ${snapshot.decisions.length}`);
+        if (snapshot.decisions.length > 0) {
+          console.log('\n--- DÉCISIONS ARCHITECTURALES ---');
+          for (const d of snapshot.decisions) {
+            console.log(`• [${d.date}] ${d.title} (${d.status})`);
+            console.log(`  ID : ${d.id}`);
+            console.log(`  Décision : ${d.decision}`);
+            if (d.context) console.log(`  Contexte : ${d.context}`);
+            console.log('');
+          }
+        }
+      } else if (memorySub === 'add') {
+        const title = positionals[2];
+        const decisionText = positionals.slice(3).join(' ').trim();
+        if (!title || !decisionText) {
+          console.error('Erreur : Titre et texte de décision requis.');
+          console.error(
+            'Exemple : nexus-desktop memory add "Choix SQLite" "Utiliser SQLite pour la persistance locale"'
+          );
+          await node.stop();
+          return 1;
+        }
+        const recorded = node.recordProjectDecision({ title, decision: decisionText });
+        console.log(
+          `✅ Décision consignée avec succès (ID: ${recorded.id}) pour [${activeProject.name}]`
+        );
+      } else if (memorySub === 'clear') {
+        node.clearProjectMemory();
+        console.log(`🧹 Mémoire réinitialisée pour [${activeProject.name}]`);
+      } else {
+        console.error(
+          `Sous-commande de mémoire inconnue : ${memorySub}. Utilisez show, add ou clear.`
+        );
+        await node.stop();
+        return 1;
+      }
+
+      await node.stop();
+      return 0;
+    }
+
+    console.error(
+      `Commande inconnue : « ${command} ». Commandes valides : start, status, exec, projects, memory.`
+    );
     return 1;
   } catch (error) {
     console.error(`\n❌ Erreur : ${error instanceof Error ? error.message : String(error)}`);
