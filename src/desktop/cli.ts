@@ -6,16 +6,14 @@ import { ApprovalDecision } from '../codex/types';
 import { RuntimeApprovalRequest } from '../runtime/types';
 import { resolveDesktopConfig } from './config';
 import { DesktopNode } from './node';
+import { loadProjectRegistry } from './registry';
 import { TaskBackend } from './types';
 
 export * from './types';
 export * from './config';
 export * from './node';
 export * from './ws-client';
-
-export * from './types';
-export * from './config';
-export * from './node';
+export * from './registry';
 
 const VERSION = '0.4.1';
 
@@ -30,9 +28,10 @@ COMMANDES:
   start           Démarrer le Desktop Node en arrière-plan / premier plan (défaut)
   status          Vérifier la validité du projet et afficher l'état du runtime
   exec <prompt>   Exécuter un prompt directement sur le projet configuré et afficher le résultat
+  projects        Gérer le registre explicite de projets (list, add, remove, set-default)
 
 OPTIONS:
-  -p, --project <path>     Chemin absolu ou relatif vers le répertoire du projet (obligatoire ou via NEXUS_PROJECT_PATH)
+  -p, --project <path>     Chemin absolu ou relatif vers le répertoire du projet (ou via registre)
   -n, --name <name>        Nom lisible du projet ou du nœud
   -b, --backend <backend>  Backend agent par défaut (codex, antigravity, brain) [défaut: codex]
   -c, --config <file>      Fichier de configuration JSON
@@ -43,11 +42,12 @@ OPTIONS:
   -v, --version            Afficher la version
 
 EXEMPLES:
+  nexus-desktop start
   nexus-desktop start --project ./mon-projet
-  nexus-desktop start --project ./mon-projet --core ws://vps.example.com:4040 --token secret123
-  nexus-desktop status --project /home/user/code/app
-  nexus-desktop exec --project ./mon-projet --backend codex "Créer un script de build"
-  nexus-desktop exec --project ./mon-projet --backend brain "Que peux-tu me dire sur l'architecture ?"
+  nexus-desktop projects list
+  nexus-desktop projects add /chemin/vers/projet --name MonProjet
+  nexus-desktop projects set-default MonProjet
+  nexus-desktop projects remove MonProjet
 `;
 
 function createTerminalApprovalHandler(): (
@@ -151,6 +151,97 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
   }
 
   const command = positionals[0] && !positionals[0].startsWith('-') ? positionals[0] : 'start';
+
+  if (command === 'projects' || command === 'project') {
+    const subCommand = positionals[1] ?? 'list';
+    const registry = loadProjectRegistry();
+
+    if (subCommand === 'list') {
+      const list = registry.list();
+      const defaultProj = registry.getDefault();
+      console.log('\n📂 PROJETS ENREGISTRÉS DANS NEXUS');
+      console.log(`Registre : ${registry.getFilePath()}\n`);
+      if (list.length === 0) {
+        console.log('Aucun projet enregistré. Utilisez :');
+        console.log('  nexus-desktop projects add <chemin> [--name <nom>]');
+        return 0;
+      }
+      for (const p of list) {
+        const isDefault = p.id === defaultProj?.id;
+        const star = isDefault ? '⭐ [Défaut] ' : '   ';
+        console.log(`${star}• ${p.name} (id: ${p.id})`);
+        console.log(`     Chemin  : ${p.path}`);
+        if (p.defaultBackend) {
+          console.log(`     Backend : ${p.defaultBackend}`);
+        }
+      }
+      console.log(`\nTotal : ${list.length} projet(s)`);
+      return 0;
+    }
+
+    if (subCommand === 'add') {
+      const targetPath = positionals[2];
+      if (!targetPath) {
+        console.error('Erreur : Spécifiez le chemin du projet à ajouter.');
+        console.error('Usage  : nexus-desktop projects add <chemin> [--name <nom>]');
+        return 1;
+      }
+      try {
+        const backend =
+          values.backend === 'codex' || values.backend === 'antigravity'
+            ? values.backend
+            : undefined;
+        const added = registry.add({
+          path: targetPath,
+          name: values.name,
+          defaultBackend: backend,
+        });
+        console.log(`✅ Projet enregistré avec succès : "${added.name}" (id: ${added.id})`);
+        console.log(`   Chemin : ${added.path}`);
+        return 0;
+      } catch (err) {
+        console.error(`❌ Erreur : ${err instanceof Error ? err.message : String(err)}`);
+        return 1;
+      }
+    }
+
+    if (subCommand === 'remove' || subCommand === 'rm') {
+      const targetId = positionals[2];
+      if (!targetId) {
+        console.error('Erreur : Spécifiez l’ID ou le nom du projet à retirer.');
+        console.error('Usage  : nexus-desktop projects remove <id>');
+        return 1;
+      }
+      const removed = registry.remove(targetId);
+      if (removed) {
+        console.log(`✅ Projet retiré du registre : ${targetId}`);
+        return 0;
+      }
+      console.error(`❌ Projet introuvable dans le registre : ${targetId}`);
+      return 1;
+    }
+
+    if (subCommand === 'set-default' || subCommand === 'default') {
+      const targetId = positionals[2];
+      if (!targetId) {
+        console.error('Erreur : Spécifiez l’ID ou le nom du projet par défaut.');
+        console.error('Usage  : nexus-desktop projects set-default <id>');
+        return 1;
+      }
+      try {
+        const proj = registry.setDefault(targetId);
+        console.log(`⭐ Projet par défaut défini : "${proj.name}" (id: ${proj.id})`);
+        return 0;
+      } catch (e: unknown) {
+        console.error(`❌ ${e instanceof Error ? e.message : String(e)}`);
+        return 1;
+      }
+    }
+
+    console.error(`Sous-commande de projet inconnue : ${subCommand}`);
+    console.error('Sous-commandes disponibles : list, add, remove, set-default');
+    return 1;
+  }
 
   try {
     const config = resolveDesktopConfig({

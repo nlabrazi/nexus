@@ -130,6 +130,9 @@ export class TelegramCoreBridge {
       onBranchAction: async (action) => {
         return this.handleBranchAction(action);
       },
+      onProjectAction: async (action) => {
+        return this.handleProjectAction(action);
+      },
       onSessionAction: async (action) => {
         return this.handleSessionAction(action);
       },
@@ -273,7 +276,52 @@ export class TelegramCoreBridge {
       return lines.join('\n');
     }
 
-    return `Changement de branche vers "${action.name}" non supporté à distance sans session active.`;
+    if (action.type === 'switch') {
+      const matchingProject = status.projects.find(
+        (p) =>
+          p.id === action.name ||
+          p.name.toLowerCase() === action.name.toLowerCase() ||
+          p.path === action.name
+      );
+      if (matchingProject) {
+        await this.core.switchActiveProject(matchingProject.id);
+        this.currentProjectId = matchingProject.id;
+        return `✅ Projet actif basculé sur "${matchingProject.name}" (${matchingProject.path}).`;
+      }
+      return `Changement de branche vers "${action.name}" non supporté à distance sans session active.`;
+    }
+
+    return `Action non supportée.`;
+  }
+
+  private async handleProjectAction(
+    action: { type: 'list' } | { type: 'switch'; projectId: string }
+  ): Promise<string> {
+    const status = this.core.getStatus();
+    const projects = status.projects;
+
+    if (action.type === 'list') {
+      if (projects.length === 0) {
+        return 'Aucun projet enregistré sur les nœuds connectés.';
+      }
+      const lines = ['📁 **Projets enregistrés :**'];
+      for (const p of projects) {
+        const activeMarker = p.isActive ? ' 🟢 *(actif)*' : '';
+        lines.push(
+          `• **${p.name}** (\`${p.id}\`)${activeMarker}\n  📂 \`${p.path}\`${p.currentBranch ? ` (branche \`${p.currentBranch}\`)` : ''}`
+        );
+      }
+      lines.push('\nPour basculer : `/project <nom|id>` ou `/switch <nom>`');
+      return lines.join('\n');
+    }
+
+    try {
+      const switched = await this.core.switchActiveProject(action.projectId);
+      this.currentProjectId = switched.id;
+      return `✅ Projet actif basculé sur **${switched.name}** (\`${switched.path}\`).`;
+    } catch (err) {
+      return `❌ Impossible de basculer sur le projet "${action.projectId}" : ${err instanceof Error ? err.message : String(err)}`;
+    }
   }
 
   private async handleSessionAction(

@@ -179,13 +179,23 @@ export class NodePresenceManager extends EventEmitter {
 
   listProjects(): readonly NodeProjectSummary[] {
     const projects: NodeProjectSummary[] = [];
-    const seenPaths = new Set<string>();
+    const seen = new Set<string>();
 
     for (const node of this.getOnlineNodes()) {
       for (const proj of node.projects) {
-        if (!seenPaths.has(proj.path)) {
-          seenPaths.add(proj.path);
-          projects.push(proj);
+        const key = `${node.nodeId}:${proj.id || proj.path}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          const isActive =
+            node.activeProject?.id === proj.id ||
+            node.activeProject?.path === proj.path ||
+            node.activeProject?.name === proj.name;
+          projects.push({
+            ...proj,
+            isActive: Boolean(isActive),
+            nodeId: node.nodeId,
+            nodeName: node.nodeName,
+          });
         }
       }
     }

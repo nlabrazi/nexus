@@ -24,8 +24,10 @@ import {
   ApprovalCancelReason,
   ApprovalDecision,
   ApprovalRequestPayload,
+  ConnectedNode,
   CoreConfig,
   CoreStatusSnapshot,
+  NodeProjectSummary,
   PendingApproval,
   PendingApprovalStatus,
   RemoteTask,
@@ -167,6 +169,85 @@ export class NexusCore extends EventEmitter {
       projects,
       activeTasks: this.taskRouter.listTasks({ status: 'running' }).length,
       pendingApprovals: this.approvalRelay.getPendingCount(),
+    };
+  }
+
+  getProjectsWithStatus(): readonly NodeProjectSummary[] {
+    return this.presence.listProjects();
+  }
+
+  async switchActiveProject(projectId: string, targetNodeId?: string): Promise<NodeProjectSummary> {
+    const nodes = targetNodeId
+      ? [this.presence.getNode(targetNodeId)].filter((n): n is ConnectedNode => Boolean(n))
+      : this.presence.getOnlineNodes();
+
+    if (nodes.length === 0) {
+      if (targetNodeId) {
+        throw new NexusProtocolError(
+          'NODE_OFFLINE',
+          `Nœud introuvable ou hors ligne : ${targetNodeId}`
+        );
+      }
+      throw new NexusProtocolError(
+        'NODE_OFFLINE',
+        'Aucun nœud Nexus Desktop en ligne pour basculer de projet.'
+      );
+    }
+
+    let targetNode: ConnectedNode | undefined;
+    let targetProject: NodeProjectSummary | undefined;
+
+    for (const node of nodes) {
+      const found = node.projects.find(
+        (p) =>
+          p.id === projectId ||
+          p.name.toLowerCase() === projectId.toLowerCase() ||
+          p.path === projectId
+      );
+      if (found) {
+        targetNode = node;
+        targetProject = found;
+        break;
+      }
+    }
+
+    if (!targetNode || !targetProject) {
+      throw new NexusProtocolError(
+        'PROJECT_NOT_FOUND',
+        `Projet introuvable : "${projectId}". Vérifiez qu'il est bien enregistré sur le nœud.`
+      );
+    }
+
+    if (!targetNode.online) {
+      throw new NexusProtocolError(
+        'NODE_OFFLINE',
+        `Le nœud "${targetNode.nodeName}" associé au projet est hors ligne.`
+      );
+    }
+
+    targetNode.activeProject = targetProject;
+
+    const conn = this.getNodeConnection(targetNode.nodeId);
+    if (conn) {
+      conn.send(
+        serializeNexusMessage(
+          createNexusMessage('node:switch_project', {
+            projectId: targetProject.id,
+          })
+        )
+      );
+    }
+
+    this.emit('project:switched', {
+      nodeId: targetNode.nodeId,
+      project: targetProject,
+    });
+
+    return {
+      ...targetProject,
+      isActive: true,
+      nodeId: targetNode.nodeId,
+      nodeName: targetNode.nodeName,
     };
   }
 
@@ -435,7 +516,73 @@ export class NexusCore extends EventEmitter {
 
     if (method === 'GET' && pathname === '/api/projects') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(this.presence.listProjects()));
+      res.end(JSON.stringify(this.getProjectsWithStatus()));
+      return;
+    }
+
+    if (method === 'GET' && pathname === '/api/projects/active') {
+      const primary = this.presence.getPrimaryOnlineNode();
+      if (!primary?.activeProject) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Aucun projet actif trouvé.' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          ...primary.activeProject,
+          isActive: true,
+          nodeId: primary.nodeId,
+          nodeName: primary.nodeName,
+        })
+      );
+      return;
+    }
+
+    if (
+      method === 'POST' &&
+      (pathname === '/api/projects/active' || pathname === '/api/projects/switch')
+    ) {
+      const raw = await this.readRequestBody(req);
+      try {
+        let body: { projectId?: string; nodeId?: string } = {};
+        try {
+          body = JSON.parse(raw);
+        } catch {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Payload JSON invalide.', code: 'INVALID_JSON' }));
+          return;
+        }
+
+        if (!body.projectId) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              error: 'Champ obligatoire manquant : projectId',
+              code: 'INVALID_REQUEST',
+            })
+          );
+          return;
+        }
+
+        const project = await this.switchActiveProject(body.projectId, body.nodeId);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(project));
+      } catch (err) {
+        const statusCode =
+          err instanceof NexusProtocolError && err.code === 'NODE_OFFLINE'
+            ? 503
+            : err instanceof NexusProtocolError && err.code === 'PROJECT_NOT_FOUND'
+              ? 404
+              : 400;
+        res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            error: err instanceof Error ? err.message : String(err),
+            code: err instanceof NexusProtocolError ? err.code : 'INTERNAL_ERROR',
+          })
+        );
+      }
       return;
     }
 
@@ -685,16 +832,22 @@ export class NexusCore extends EventEmitter {
           audioData = Buffer.from(body.audioBase64, 'base64');
           fileName = body.fileName || 'recording.webm';
           mimeType = body.mimeType;
-          if (body.language) language = body.language;
+          if (body.language) {
+            language = body.language;
+          }
         } else {
           // Binary audio payload
           audioData = await this.readRequestBodyBuffer(req);
           mimeType = contentType.split(';')[0].trim() || undefined;
-          if (mimeType?.includes('ogg')) fileName = 'recording.oga';
-          else if (mimeType?.includes('wav')) fileName = 'recording.wav';
-          else if (mimeType?.includes('mp4') || mimeType?.includes('m4a'))
+          if (mimeType?.includes('ogg')) {
+            fileName = 'recording.oga';
+          } else if (mimeType?.includes('wav')) {
+            fileName = 'recording.wav';
+          } else if (mimeType?.includes('mp4') || mimeType?.includes('m4a')) {
             fileName = 'recording.m4a';
-          else fileName = 'recording.webm';
+          } else {
+            fileName = 'recording.webm';
+          }
         }
 
         if (audioData.byteLength === 0) {

@@ -169,9 +169,24 @@
             {{ primaryNode ? `💻 ${primaryNode.nodeName}` : '❌ Déconnecté' }}
           </span>
         </div>
-        <div class="context-item">
+        <div class="context-item project-selector">
           <span class="context-label">Projet :</span>
-          <span class="context-value project-pill">
+          <select
+            v-if="projectsList.length > 1"
+            :value="activeProjectId"
+            class="select-project"
+            :disabled="isSwitchingProject"
+            @change="handleSelectProject($event)"
+          >
+            <option
+              v-for="p in projectsList"
+              :key="p.id || p.path"
+              :value="p.id"
+            >
+              📁 {{ p.name }}
+            </option>
+          </select>
+          <span v-else class="context-value project-pill">
             📁 {{ activeProjectName }}
           </span>
         </div>
@@ -286,24 +301,6 @@
         <span>⚠️ Desktop Node déconnecté. Lancez <code>npm run desktop -- start</code> sur votre PC.</span>
       </div>
 
-      <!-- Voice Recording Wave Banner -->
-      <div v-if="isListening" class="voice-recording-banner">
-        <div class="voice-wave">
-          <span class="wave-bar"></span>
-          <span class="wave-bar"></span>
-          <span class="wave-bar"></span>
-          <span class="wave-bar"></span>
-          <span class="wave-bar"></span>
-        </div>
-        <div class="voice-status-text">
-          <span class="voice-caption">{{ interimTranscript ? interimTranscript : 'Écoute en cours... Parlez maintenant' }}</span>
-          <small class="voice-hint">Relâchez ou cliquez pour valider la saisie vocale</small>
-        </div>
-        <button type="button" class="btn-cancel-voice" title="Annuler la dictée" @click="cancelVoiceRecording">
-          Annuler ✕
-        </button>
-      </div>
-
       <!-- Chat Input Area -->
       <div class="chat-input-bar">
         <textarea
@@ -315,28 +312,6 @@
           :disabled="!isNodeReady || isSending"
           @keydown.enter.exact.prevent="submitMessage"
         ></textarea>
-        <!-- Push-to-Talk Mic Button -->
-        <button
-          type="button"
-          class="btn-mic"
-          :class="{
-            'is-listening': isListening,
-            'is-processing': isProcessingAudio
-          }"
-          :disabled="!isNodeReady || isSending"
-          :title="isListening ? 'Relâcher ou cliquer pour terminer' : 'Push-to-Talk : maintenir ou cliquer pour dicter'"
-          aria-label="Push-to-talk vocal"
-          @mousedown.prevent="startPushToTalk"
-          @mouseup.prevent="stopPushToTalk"
-          @mouseleave.prevent="onMicMouseLeave"
-          @touchstart.prevent="startPushToTalk"
-          @touchend.prevent="stopPushToTalk"
-          @touchcancel.prevent="stopPushToTalk"
-        >
-          <span v-if="isProcessingAudio" class="spinning">⏳</span>
-          <span v-else-if="isListening" class="mic-active-pulse">🔴</span>
-          <span v-else class="mic-icon">🎙️</span>
-        </button>
         <button
           type="button"
           class="btn-send"
@@ -672,6 +647,15 @@
                 </div>
               </div>
               <span v-if="isProjectActive(project)" class="badge badge-active">Actif</span>
+              <button
+                v-else
+                type="button"
+                class="btn-switch-project"
+                :disabled="isSwitchingProject"
+                @click="switchProject(project.id || project.path)"
+              >
+                {{ switchingProjectId === (project.id || project.path) ? 'Basculement...' : 'Basculer' }}
+              </button>
             </div>
 
             <div class="project-footer">
@@ -888,6 +872,7 @@ interface ProjectInfo {
   path: string;
   currentBranch?: string;
   lastActive?: number;
+  isActive?: boolean;
 }
 
 interface CoreStatusData {
@@ -1105,12 +1090,63 @@ const isNodeReady = computed(() => {
 });
 
 const activeProjectName = computed(() => {
-  return primaryNode.value?.activeProject?.name || coreStatus.value?.projects[0]?.name || 'nexus';
+  return (
+    primaryNode.value?.activeProject?.name ||
+    coreStatus.value?.projects?.find((p) => p.isActive)?.name ||
+    coreStatus.value?.projects[0]?.name ||
+    'nexus'
+  );
+});
+
+const activeProjectId = computed(() => {
+  return (
+    primaryNode.value?.activeProject?.id ||
+    coreStatus.value?.projects?.find((p) => p.isActive)?.id ||
+    coreStatus.value?.projects[0]?.id ||
+    ''
+  );
 });
 
 const projectsList = computed(() => {
   return coreStatus.value?.projects || [];
 });
+
+const isSwitchingProject = ref(false);
+const switchingProjectId = ref<string | null>(null);
+
+async function switchProject(projectId: string) {
+  if (!projectId || isSwitchingProject.value) return;
+  isSwitchingProject.value = true;
+  switchingProjectId.value = projectId;
+  try {
+    const res = await fetch(`${coreUrl.value}/api/projects/switch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken.value ? { Authorization: `Bearer ${authToken.value}` } : {}),
+      },
+      body: JSON.stringify({ projectId }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Erreur HTTP ${res.status}`);
+    }
+    await fetchStatus();
+  } catch (err: any) {
+    console.error('Erreur basculement projet:', err);
+    errorMessage.value = `Échec du changement de projet: ${err.message}`;
+  } finally {
+    isSwitchingProject.value = false;
+    switchingProjectId.value = null;
+  }
+}
+
+function handleSelectProject(event: Event) {
+  const target = event.target as HTMLSelectElement;
+  if (target?.value) {
+    void switchProject(target.value);
+  }
+}
 
 const canSend = computed(() => {
   return inputPrompt.value.trim().length > 0 && isNodeReady.value && !isSending.value;
@@ -1799,8 +1835,12 @@ function resetSettings() {
 }
 
 function isProjectActive(project: ProjectInfo): boolean {
+  if (project.isActive) return true;
   return onlineNodes.value.some(
-    (n) => n.activeProject?.name === project.name || n.activeProject?.path === project.path
+    (n) =>
+      n.activeProject?.name === project.name ||
+      n.activeProject?.path === project.path ||
+      (project.id && n.activeProject?.id === project.id)
   );
 }
 
@@ -2199,6 +2239,20 @@ body {
   padding: 2px 6px;
   border-radius: 4px;
   cursor: pointer;
+}
+
+.select-project {
+  background: #090d16;
+  border: 1px solid var(--border-color);
+  color: #38bdf8;
+  font-size: 0.74rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  max-width: 140px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 /* Floating Approval Alert Banner in Chat */
@@ -3158,6 +3212,24 @@ body {
 .badge-warning { background: rgba(245, 158, 11, 0.15); color: var(--color-warning); }
 .badge-neutral { background: rgba(255, 255, 255, 0.06); color: var(--text-muted); }
 .badge-active { background: rgba(56, 189, 248, 0.18); color: var(--color-brand); }
+.btn-switch-project {
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+  font-size: 0.75rem;
+  padding: 3px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-switch-project:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.25);
+  border-color: #38bdf8;
+}
+.btn-switch-project:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
 /* Node Card */
 .node-card { display: flex; flex-direction: column; gap: 14px; }

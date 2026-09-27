@@ -21,6 +21,7 @@ type RemotePromptHandler = (prompt: string) => Promise<string | RemotePromptRepl
 
 export type RemoteSessionAction = { type: 'new' } | { type: 'resume'; sessionId: string };
 export type RemoteBranchAction = { type: 'list' } | { type: 'switch'; name: string };
+export type RemoteProjectAction = { type: 'list' } | { type: 'switch'; projectId: string };
 
 export interface TelegramServiceOptions {
   onBrainPrompt?: (prompt: string, signal: AbortSignal) => Promise<string>;
@@ -31,6 +32,7 @@ export interface TelegramServiceOptions {
   onSessionAction?: (action: RemoteSessionAction) => Promise<string>;
   onStop?: () => boolean;
   onBranchAction?: (action: RemoteBranchAction) => Promise<string>;
+  onProjectAction?: (action: RemoteProjectAction) => Promise<string>;
   modelControls?: ModelControls;
   onRemoteAntigravityPrompt?: RemotePromptHandler;
   onAntigravitySessionAction?: (action: RemoteSessionAction) => Promise<string>;
@@ -151,6 +153,7 @@ export class TelegramService {
   private readonly onSessionAction?: (action: RemoteSessionAction) => Promise<string>;
   private readonly onStop?: () => boolean;
   private readonly onBranchAction?: (action: RemoteBranchAction) => Promise<string>;
+  private readonly onProjectAction?: (action: RemoteProjectAction) => Promise<string>;
   private readonly onRemoteAntigravityPrompt?: RemotePromptHandler;
   private readonly onAntigravitySessionAction?: (action: RemoteSessionAction) => Promise<string>;
   private readonly onAntigravityStop?: () => boolean;
@@ -187,6 +190,7 @@ export class TelegramService {
       this.onSessionAction = opts.onSessionAction;
       this.onStop = opts.onStop;
       this.onBranchAction = opts.onBranchAction;
+      this.onProjectAction = opts.onProjectAction;
       codexModelControls = opts.modelControls;
       this.onRemoteAntigravityPrompt = opts.onRemoteAntigravityPrompt;
       this.onAntigravitySessionAction = opts.onAntigravitySessionAction;
@@ -539,6 +543,45 @@ export class TelegramService {
       void this.runBranchCommand(
         chatId,
         name === '/branches' ? { type: 'list' } : { type: 'switch', name: branch },
+        this.abortController!.signal
+      );
+      return;
+    }
+    if (/^\/(projects|project)(?:\s|$)/.test(command)) {
+      const [name, targetProject, ...extra] = command.split(/\s+/);
+      if (
+        (name === '/projects' && targetProject !== undefined) ||
+        (name === '/project' && (!targetProject || extra.length > 0))
+      ) {
+        await this.client.sendMessage(
+          chatId,
+          name === '/projects' ? 'Usage : /projects' : 'Usage : /project <nom|id>'
+        );
+        return;
+      }
+      if (!this.onProjectAction) {
+        await this.client.sendMessage(chatId, 'La gestion des projets est indisponible.');
+        return;
+      }
+      if (
+        this.remoteBranchRunning ||
+        (name === '/project' && (this.remotePromptRunning || this.remoteSessionRunning))
+      ) {
+        const backendName = this.getActiveBackend() === 'antigravity' ? 'Antigravity' : 'Codex';
+        await this.client.sendMessage(
+          chatId,
+          `Une opération ou requête ${backendName} est en cours. Attendez sa fin.`
+        );
+        return;
+      }
+      this.remoteBranchRunning = true;
+      if (name === '/project') {
+        this.models.cancel();
+        this.antigravityModels.cancel();
+      }
+      void this.runProjectCommand(
+        chatId,
+        name === '/projects' ? { type: 'list' } : { type: 'switch', projectId: targetProject },
         this.abortController!.signal
       );
       return;
@@ -903,6 +946,27 @@ export class TelegramService {
         await this.client
           .sendMessage(chatId, `❌ ${error instanceof Error ? error.message : String(error)}`)
           .catch(() => console.error('[Telegram] Branch response delivery failed.'));
+      }
+    } finally {
+      this.remoteBranchRunning = false;
+    }
+  }
+
+  private async runProjectCommand(
+    chatId: number,
+    action: RemoteProjectAction,
+    signal: AbortSignal
+  ): Promise<void> {
+    try {
+      const response = await this.onProjectAction!(action);
+      if (!signal.aborted) {
+        await this.client.sendMessage(chatId, response, 'markdown');
+      }
+    } catch (error) {
+      if (!signal.aborted) {
+        await this.client
+          .sendMessage(chatId, `❌ ${error instanceof Error ? error.message : String(error)}`)
+          .catch(() => console.error('[Telegram] Project response delivery failed.'));
       }
     } finally {
       this.remoteBranchRunning = false;

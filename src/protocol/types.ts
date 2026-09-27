@@ -36,6 +36,9 @@ export interface NodeProjectSummary {
   readonly name: string;
   readonly path: string;
   readonly currentBranch?: string;
+  readonly isActive?: boolean;
+  readonly nodeId?: string;
+  readonly nodeName?: string;
 }
 
 export interface NodeCapabilities {
@@ -152,12 +155,17 @@ export interface CoreErrorPayload {
   readonly details?: unknown;
 }
 
+export interface NodeSwitchProjectPayload {
+  readonly projectId: string;
+}
+
 export interface NexusPayloadMap {
   'node:hello': NodeHelloPayload;
   'node:welcome': NodeWelcomePayload;
   'node:heartbeat': NodeHeartbeatPayload;
   'node:heartbeat_ack': NodeHeartbeatAckPayload;
   'node:status': NodeStatusPayload;
+  'node:switch_project': NodeSwitchProjectPayload;
   'task:start': TaskStartPayload;
   'task:cancel': TaskCancelPayload;
   'task:progress': TaskProgressPayload;

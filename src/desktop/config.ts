@@ -2,12 +2,14 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { basename, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { loadProjectRegistry } from './registry';
 import { DesktopNodeConfig, DesktopProjectConfig, TaskBackend } from './types';
 
 const VALID_BACKENDS = new Set<TaskBackend>(['codex', 'antigravity', 'brain']);
 
 export interface CliConfigOptions {
   readonly project?: string;
+  readonly projects?: readonly string[];
   readonly name?: string;
   readonly nodeId?: string;
   readonly nodeName?: string;
@@ -15,6 +17,7 @@ export interface CliConfigOptions {
   readonly core?: string;
   readonly backend?: string;
   readonly config?: string;
+  readonly registryPath?: string;
   readonly protectedBranches?: readonly string[];
 }
 
@@ -55,7 +58,29 @@ export function resolveDesktopConfig(
   // Resolve projects
   const rawProjects: DesktopProjectConfig[] = [];
 
-  // 1. Projects from config file
+  // 1. Projects from Registry (~/.nexus/projects.json)
+  const registry = loadProjectRegistry(cliOptions?.registryPath ?? env.NEXUS_PROJECTS_REGISTRY);
+  const defaultRegProj = registry.getDefault();
+  for (const regProj of registry.list()) {
+    // Put default project first, others after
+    if (regProj.id === defaultRegProj?.id) {
+      rawProjects.unshift({
+        id: regProj.id,
+        name: regProj.name,
+        path: regProj.path,
+        protectedBranches: regProj.protectedBranches ? [...regProj.protectedBranches] : undefined,
+      });
+    } else {
+      rawProjects.push({
+        id: regProj.id,
+        name: regProj.name,
+        path: regProj.path,
+        protectedBranches: regProj.protectedBranches ? [...regProj.protectedBranches] : undefined,
+      });
+    }
+  }
+
+  // 2. Projects from config file
   if (Array.isArray(fileConfig.projects)) {
     for (const proj of fileConfig.projects) {
       if (proj && typeof proj.path === 'string') {
@@ -64,7 +89,16 @@ export function resolveDesktopConfig(
     }
   }
 
-  // 2. Project from CLI or ENV
+  // 3. Projects from multiple CLI arguments / comma-separated list
+  if (cliOptions?.projects) {
+    for (const p of cliOptions.projects) {
+      if (p.trim()) {
+        rawProjects.unshift({ path: p.trim() });
+      }
+    }
+  }
+
+  // 4. Project from CLI or ENV (--project)
   const cliProjectPath = cliOptions?.project ?? env.NEXUS_PROJECT_PATH ?? env.NEXUS_PROJECT;
   if (cliProjectPath) {
     const cliProjectName = cliOptions?.name ?? env.NEXUS_PROJECT_NAME;
@@ -77,7 +111,7 @@ export function resolveDesktopConfig(
 
   if (rawProjects.length === 0) {
     throw new Error(
-      'Aucun projet configuré. Spécifiez au moins un projet via --project <chemin>, la variable NEXUS_PROJECT_PATH ou un fichier de configuration.'
+      'Aucun projet configuré. Spécifiez au moins un projet via --project <chemin>, enregistrez-en un via `nexus-desktop projects add <chemin>`, ou définissez la variable NEXUS_PROJECT_PATH.'
     );
   }
 

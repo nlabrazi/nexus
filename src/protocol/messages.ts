@@ -14,6 +14,7 @@ const KNOWN_MESSAGE_TYPES = new Set<NexusMessageType>([
   'node:heartbeat',
   'node:heartbeat_ack',
   'node:status',
+  'node:switch_project',
   'task:start',
   'task:cancel',
   'task:progress',
@@ -184,6 +185,9 @@ function validatePayload(type: NexusMessageType, payload: unknown): void {
     case 'node:status':
       validateNodeStatus(payload);
       break;
+    case 'node:switch_project':
+      validateNodeSwitchProject(payload);
+      break;
     case 'task:start':
       validateTaskStart(payload);
       break;
@@ -291,6 +295,10 @@ function validateNodeStatus(p: Record<string, unknown>): void {
     assertNonEmptyString(p.activeProject.name, 'activeProject.name');
     assertNonEmptyString(p.activeProject.path, 'activeProject.path');
   }
+}
+
+function validateNodeSwitchProject(p: Record<string, unknown>): void {
+  assertNonEmptyString(p.projectId, 'projectId');
 }
 
 function validateTaskStart(p: Record<string, unknown>): void {

@@ -16,6 +16,7 @@ import {
   ApprovalDecision,
   ApprovalDecisionPayload,
   ApprovalKind,
+  NodeSwitchProjectPayload,
   TaskCancelPayload,
   TaskStartPayload,
 } from '../protocol/types';
@@ -110,8 +111,35 @@ export class DesktopNode {
     if (this.options?.runtime) {
       this.runtime = this.options.runtime;
     } else {
+      const delegatingGuard = {
+        validate: async (path: string) => {
+          const current = this.getActiveProject();
+          const guard =
+            this.guardMap.get(current.id) ?? this.guardMap.get(current.path) ?? activeGuard;
+          return guard.validate(path);
+        },
+        listBranches: async (path: string) => {
+          const current = this.getActiveProject();
+          const guard =
+            this.guardMap.get(current.id) ?? this.guardMap.get(current.path) ?? activeGuard;
+          return guard.listBranches(path);
+        },
+        switchBranch: async (path: string, branch: string) => {
+          const current = this.getActiveProject();
+          const guard =
+            this.guardMap.get(current.id) ?? this.guardMap.get(current.path) ?? activeGuard;
+          return guard.switchBranch(path, branch);
+        },
+        targetPath: () => {
+          const current = this.getActiveProject();
+          const guard =
+            this.guardMap.get(current.id) ?? this.guardMap.get(current.path) ?? activeGuard;
+          return guard.targetPath();
+        },
+      } as unknown as WorkspaceGuard;
+
       this.runtime = new NexusRuntime({
-        workspaceGuard: activeGuard,
+        workspaceGuard: delegatingGuard,
         targetPath: () => this.getActiveProject().path,
         defaultBackend: this.config.defaultBackend === 'antigravity' ? 'antigravity' : 'codex',
         requestApproval: (req, sig) => this.handleApprovalRequest(req, sig),
@@ -391,6 +419,29 @@ export class DesktopNode {
       case 'approval:cancelled':
         this.handleRemoteApprovalCancelled(message.payload as ApprovalCancelledPayload);
         break;
+      case 'node:switch_project':
+        this.handleRemoteSwitchProject(message.payload as NodeSwitchProjectPayload, message.id);
+        break;
+    }
+  }
+
+  private handleRemoteSwitchProject(payload: NodeSwitchProjectPayload, messageId?: string): void {
+    const { projectId } = payload;
+    try {
+      const activeProject = this.setActiveProject(projectId);
+      console.log(
+        `[Nexus Desktop] 🌿 Projet actif basculé sur "${activeProject.name}" (${activeProject.path})`
+      );
+      this.coreClient?.send(createNexusMessage('node:status', this.createStatusPayload()));
+    } catch (err) {
+      console.warn(`[Nexus Desktop] Échec du basculement de projet :`, err);
+      this.coreClient?.send(
+        createNexusMessage('core:error', {
+          code: 'PROJECT_NOT_FOUND',
+          message: err instanceof Error ? err.message : String(err),
+          targetMessageId: messageId,
+        })
+      );
     }
   }
 
