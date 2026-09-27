@@ -46,7 +46,7 @@ npm run desktop -- start --project /chemin/vers/mon-projet
 Sortie attendue :
 ```text
 ================================================================
-  🌟 NEXUS DESKTOP NODE v0.4.1
+  🌟 NEXUS DESKTOP NODE v0.4.2
 ================================================================
   • Nœud ID        : a1b2c3d4-e5f6-7890-abcd-ef1234567890
   • Nom            : STATION-DEV

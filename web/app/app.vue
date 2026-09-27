@@ -10,17 +10,28 @@
         <div class="brand-text">
           <div class="title-row">
             <h1 class="brand-title">NEXUS</h1>
-            <span class="version-tag">v0.4.1</span>
+            <span class="version-tag">v0.4.2</span>
           </div>
-          <span class="brand-sub">
-            {{ activeTab === 'chat' ? 'Brain Conversation' : (activeTab === 'activity' ? 'Live Activity' : 'Mobile
-            Bridge') }}
+          <div v-if="projectsList.length > 0" class="header-project-pill">
+            <select :value="activeProjectId" class="select-project-pill" :disabled="isSwitchingProject" @change="handleSelectProject($event)">
+              <option v-for="p in projectsList" :key="p.id || p.path" :value="p.id">📁 {{ p.name }}</option>
+            </select>
+          </div>
+          <span v-else class="brand-sub">
+            {{ activeTab === 'chat' ? 'Brain Conversation' : (activeTab === 'activity' ? 'Live Activity' : 'Mobile Bridge') }}
           </span>
         </div>
       </div>
 
       <!-- Header actions -->
       <div class="header-actions">
+        <!-- Compact Agent selector -->
+        <select v-model="selectedBackend" class="header-select-backend" title="Agent actif">
+          <option value="brain">🧠 Brain</option>
+          <option value="codex">⚡ Codex</option>
+          <option value="antigravity">✨ Antigravity</option>
+        </select>
+
         <!-- Approvals alert badge in header -->
         <button v-if="pendingApprovalsCount > 0" type="button" class="btn-approval-alert"
           title="Demande(s) d'approbation en attente" aria-label="Approbations en attente"
@@ -116,35 +127,6 @@
 
     <!-- TAB 1: BRAIN CHAT -->
     <main v-if="activeTab === 'chat'" class="chat-container">
-      <!-- Chat Sub-header (Context Bar) -->
-      <div class="chat-context-bar">
-        <div class="context-item">
-          <span class="context-label">Nœud :</span>
-          <span class="context-value" :class="primaryNode ? 'online' : 'offline'">
-            {{ primaryNode ? `💻 ${primaryNode.nodeName}` : '❌ Déconnecté' }}
-          </span>
-        </div>
-        <div class="context-item project-selector">
-          <span class="context-label">Projet :</span>
-          <select v-if="projectsList.length > 1" :value="activeProjectId" class="select-project"
-            :disabled="isSwitchingProject" @change="handleSelectProject($event)">
-            <option v-for="p in projectsList" :key="p.id || p.path" :value="p.id">
-              📁 {{ p.name }}
-            </option>
-          </select>
-          <span v-else class="context-value project-pill">
-            📁 {{ activeProjectName }}
-          </span>
-        </div>
-        <div class="context-item backend-selector">
-          <span class="context-label">Agent :</span>
-          <select v-model="selectedBackend" class="select-backend">
-            <option value="brain">🧠 Brain</option>
-            <option value="codex">⚡ Codex</option>
-            <option value="antigravity">✨ Antigravity</option>
-          </select>
-        </div>
-      </div>
 
       <!-- Floating Approval Alert Banner in Chat -->
       <div v-if="pendingApprovalsCount > 0 && activeApproval" class="approval-chat-banner"
@@ -155,8 +137,7 @@
             <strong>Action sensible requise</strong>
             <span class="badge-urgent-pill">{{ getApprovalRemainingSeconds(activeApproval.expiresAt) }}s</span>
           </div>
-          <p>{{ activeApproval.agentName }} attend votre autorisation pour : {{ formatApprovalKind(activeApproval.kind)
-            }}</p>
+          <p>{{ activeApproval.agentName }} attend votre autorisation pour : {{ formatApprovalKind(activeApproval.kind) }}</p>
         </div>
         <button type="button" class="btn-approval-banner-action">
           Examiner ›
@@ -176,7 +157,7 @@
 
           <div class="suggestions-grid">
             <button v-for="chip in quickChips" :key="chip" type="button" class="chip-btn"
-              :disabled="!isNodeReady || isSending" @click="sendPrompt(chip)">
+              :disabled="isSending" @click="sendPrompt(chip)">
               {{ chip }}
             </button>
           </div>
@@ -224,9 +205,10 @@
         </div>
       </div>
 
-      <!-- Offline Warning Bar (if Desktop Node offline) -->
-      <div v-if="!isNodeReady" class="node-offline-alert">
-        <span>⚠️ Desktop Node déconnecté. Lancez <code>npm run desktop -- start</code> sur votre PC.</span>
+      <!-- Subtle Offline Status Banner -->
+      <div v-if="!isNodeReady" class="node-offline-pill">
+        <span>💻 Desktop Node non connecté</span>
+        <button type="button" class="btn-retry-pill" @click="handleManualRefresh">Reconnecter</button>
       </div>
 
       <!-- Voice Recording Wave Banner -->
@@ -240,8 +222,7 @@
         </div>
         <div class="voice-status-text">
           <span class="voice-caption">
-            {{ interimTranscript ? interimTranscript : (isProcessingAudio ? 'Traitement audio en cours...' : 'Écoute en
-            cours... Parlez maintenant') }}
+            {{ interimTranscript ? interimTranscript : (isProcessingAudio ? 'Traitement audio en cours...' : 'Écoute en cours... Parlez maintenant') }}
           </span>
           <small class="voice-hint">
             {{ clickToggleActive ? 'Touchez le micro pour terminer' : 'Relâchez le micro pour terminer' }}
@@ -256,15 +237,14 @@
       <div class="chat-input-bar">
         <textarea ref="chatTextareaRef" v-model="inputPrompt" rows="1"
           placeholder="Message au Brain (ex: 'Quel est l’état du projet ?')..." class="chat-textarea"
-          :disabled="!isNodeReady || isSending" @keydown.enter.exact.prevent="submitMessage"></textarea>
-        <!-- Push-to-Talk Mic Button -->
+          :disabled="isSending" @keydown.enter.exact.prevent="submitMessage"></textarea>
+        <!-- Voice Input Mic Button -->
         <button type="button" class="btn-mic" :class="{
           'is-listening': isListening,
           'is-processing': isProcessingAudio
-        }" :disabled="!isNodeReady || isSending"
-          :title="isListening ? 'Relâcher ou toucher pour terminer' : 'Push-to-Talk : maintenir ou toucher pour dicter'"
-          aria-label="Push-to-talk vocal" @pointerdown.prevent="onMicPointerDown" @pointerup.prevent="onMicPointerUp"
-          @pointercancel.prevent="onMicPointerCancel">
+        }" :disabled="isSending"
+          :title="isListening ? 'Arrêter la dictée vocale' : 'Dictée vocale (toucher pour parler)'"
+          aria-label="Dictée vocale" @click="handleMicClick">
           <span v-if="isProcessingAudio" class="spinning">⏳</span>
           <span v-else-if="isListening" class="mic-active-pulse">🔴</span>
           <span v-else class="mic-icon">🎙️</span>
@@ -929,6 +909,22 @@ onMounted(async () => {
     // Initialize Voice / Speech Recognition
     initSpeechRecognition();
 
+    // Purge legacy ServiceWorker / CacheStorage to avoid stale cached assets
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        for (const r of registrations) {
+          r.unregister();
+        }
+      }).catch(() => {});
+    }
+    if ('caches' in window) {
+      caches.keys().then((names) => {
+        for (const name of names) {
+          caches.delete(name);
+        }
+      }).catch(() => {});
+    }
+
     // Listen for PWA install prompt
     window.addEventListener('beforeinstallprompt', (e: Event) => {
       e.preventDefault();
@@ -1046,7 +1042,7 @@ function handleSelectProject(event: Event) {
 }
 
 const canSend = computed(() => {
-  return inputPrompt.value.trim().length > 0 && isNodeReady.value && !isSending.value;
+  return inputPrompt.value.trim().length > 0 && !isSending.value;
 });
 
 const lastUpdatedText = computed(() => {
@@ -1313,14 +1309,23 @@ async function decideApproval(approvalId: string, decision: 'accept' | 'decline'
 }
 
 async function submitMessage() {
-  if (!canSend.value) return;
   const promptText = inputPrompt.value.trim();
+  if (!promptText || isSending.value) return;
+  if (!isNodeReady.value) {
+    errorMessage.value = "Desktop Node non connecté. Vérifiez que 'npm run desktop' tourne sur votre machine.";
+    return;
+  }
   inputPrompt.value = '';
   await sendPrompt(promptText);
 }
 
 async function sendPrompt(promptText: string) {
   if (!promptText || isSending.value) return;
+  if (!isNodeReady.value) {
+    inputPrompt.value = promptText;
+    errorMessage.value = "Desktop Node non connecté. Vérifiez que 'npm run desktop' tourne sur votre machine.";
+    return;
+  }
 
   const generatedTaskId = `task-${Date.now()}`;
   currentInFlightTaskId.value = generatedTaskId;
@@ -1583,17 +1588,20 @@ async function runNativeSpeechPopup() {
     const avail = await SpeechRecognition.available();
     if (!avail.available) {
       console.warn('SpeechRecognition unavailable');
+      errorMessage.value = "Reconnaissance vocale non disponible sur cet appareil.";
       return;
     }
     const perm = await SpeechRecognition.checkPermissions();
     if (perm.speechRecognition !== 'granted') {
       const req = await SpeechRecognition.requestPermissions();
       if (req.speechRecognition !== 'granted') {
+        errorMessage.value = "Autorisation du micro requise pour la commande vocale.";
         return;
       }
     }
     await triggerHaptic('press');
     isListening.value = true;
+    errorMessage.value = '';
     const result = await SpeechRecognition.start({
       language: 'fr-FR',
       maxResults: 3,
@@ -1606,10 +1614,10 @@ async function runNativeSpeechPopup() {
       const text = result.matches[0].trim();
       if (text) {
         appendTranscript(text);
-        if (autoSendVoice.value) {
+        if (autoSendVoice.value && isNodeReady.value) {
           setTimeout(() => {
             submitMessage();
-          }, 250);
+          }, 300);
         }
       }
     }
@@ -1622,8 +1630,35 @@ async function runNativeSpeechPopup() {
   }
 }
 
+async function handleMicClick() {
+  if (isSending.value) return;
+
+  if (Capacitor.isNativePlatform()) {
+    if (isListening.value) {
+      try {
+        await SpeechRecognition.stop();
+        await SpeechRecognition.removeAllListeners();
+      } catch { }
+      isListening.value = false;
+      return;
+    }
+    await runNativeSpeechPopup();
+    return;
+  }
+
+  // Web Browser fallback
+  if (isListening.value) {
+    clickToggleActive = false;
+    await stopPushToTalk();
+  } else {
+    clickToggleActive = true;
+    await startPushToTalk();
+  }
+}
+
 async function onMicPointerDown(e: PointerEvent) {
-  if (!isNodeReady.value || isSending.value) return;
+  if (Capacitor.isNativePlatform()) return;
+  if (isSending.value) return;
   const target = e.currentTarget as HTMLElement;
   if (target && target.setPointerCapture) {
     try {
@@ -1643,6 +1678,7 @@ async function onMicPointerDown(e: PointerEvent) {
 }
 
 async function onMicPointerUp(e: PointerEvent) {
+  if (Capacitor.isNativePlatform()) return;
   const target = e.currentTarget as HTMLElement;
   if (target && target.releasePointerCapture) {
     try {
@@ -1656,17 +1692,6 @@ async function onMicPointerUp(e: PointerEvent) {
   isPressingMic = false;
 
   if (pressDuration < 280) {
-    // Tap court : sur mobile Android natif, ouvre la boîte de dialogue vocale Google
-    if (Capacitor.isNativePlatform()) {
-      try {
-        await SpeechRecognition.stop();
-        await SpeechRecognition.removeAllListeners();
-      } catch { }
-      nativeSpeechActive = false;
-      isListening.value = false;
-      await runNativeSpeechPopup();
-      return;
-    }
     clickToggleActive = true;
     return;
   }
@@ -2213,6 +2238,63 @@ body {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+.header-project-pill {
+  margin-top: 2px;
+}
+
+.select-project-pill {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #38bdf8;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  cursor: pointer;
+  max-width: 140px;
+  outline: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-select-backend {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f1f5f9;
+  font-size: 0.78rem;
+  font-weight: 600;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  outline: none;
+  cursor: pointer;
+}
+
+.node-offline-pill {
+  margin: 8px 16px;
+  padding: 6px 12px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  color: #fca5a5;
+  font-size: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.btn-retry-pill {
+  background: rgba(239, 68, 68, 0.25);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
 }
 
 .header-actions {
