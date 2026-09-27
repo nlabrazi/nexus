@@ -1,4 +1,8 @@
 import {
+  ApprovalCancelReason,
+  ApprovalDecision,
+  ApprovalKind,
+  ApprovalRequestPayload,
   NodeCapabilities,
   NodeHeartbeatAckPayload,
   NodeHeartbeatPayload,
@@ -66,6 +70,23 @@ export interface ConnectedNode {
   activeProject?: NodeProjectSummary;
 }
 
+export type PendingApprovalStatus = 'pending' | 'approved' | 'declined' | 'timed_out' | 'cancelled';
+
+export interface PendingApproval {
+  readonly approvalId: string;
+  readonly taskId: string;
+  readonly nodeId: string;
+  readonly agentName: string;
+  readonly kind: ApprovalKind;
+  readonly details: string;
+  readonly expiresAt: number;
+  readonly createdAt: number;
+  status: PendingApprovalStatus;
+  decision?: ApprovalDecision;
+  decidedBy?: string;
+  decidedAt?: number;
+}
+
 export interface CoreStatusSnapshot {
   readonly uptimeSeconds: number;
   readonly totalNodes: number;
@@ -73,6 +94,7 @@ export interface CoreStatusSnapshot {
   readonly nodes: readonly ConnectedNode[];
   readonly projects: readonly NodeProjectSummary[];
   readonly activeTasks?: number;
+  readonly pendingApprovals?: number;
 }
 
 export interface CoreEventMap {
@@ -86,9 +108,17 @@ export interface CoreEventMap {
   'task:completed': (task: RemoteTask) => void;
   'task:failed': (task: RemoteTask) => void;
   'task:cancelled': (task: RemoteTask) => void;
+  'approval:request': (approval: PendingApproval) => void;
+  'approval:decided': (approval: PendingApproval) => void;
+  'approval:cancelled': (approval: PendingApproval) => void;
+  'approval:timeout': (approval: PendingApproval) => void;
 }
 
 export {
+  ApprovalCancelReason,
+  ApprovalDecision,
+  ApprovalKind,
+  ApprovalRequestPayload,
   NodeCapabilities,
   NodeHeartbeatAckPayload,
   NodeHeartbeatPayload,

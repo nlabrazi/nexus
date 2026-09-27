@@ -1,10 +1,24 @@
+import { randomUUID } from 'node:crypto';
 import { NexusRuntime } from '../runtime/nexus-runtime';
-import { RuntimeApprovalHandler, TurnTimeoutHandler } from '../runtime/types';
+import {
+  RuntimeApprovalHandler,
+  RuntimeApprovalRequest,
+  TurnTimeoutHandler,
+} from '../runtime/types';
 import { createStandaloneWorkspaceGuard } from '../runtime/workspace';
 import { WorkspaceGuard } from '../workspace/guard';
 import { BrainModel } from '../conversational/model';
 import { createNexusMessage } from '../protocol/messages';
-import { AnyNexusMessage, TaskCancelPayload, TaskStartPayload } from '../protocol/types';
+import {
+  AnyNexusMessage,
+  ApprovalCancelReason,
+  ApprovalCancelledPayload,
+  ApprovalDecision,
+  ApprovalDecisionPayload,
+  ApprovalKind,
+  TaskCancelPayload,
+  TaskStartPayload,
+} from '../protocol/types';
 import {
   DesktopBrainOptions,
   DesktopExecutionResult,
@@ -40,6 +54,14 @@ export class DesktopNode {
   private runtime?: NexusRuntime;
   private coreClient?: DesktopCoreClient;
   private readonly startTime: number;
+  private readonly pendingApprovals = new Map<
+    string,
+    {
+      resolve: (d: ApprovalDecision) => void;
+      reject: (err: unknown) => void;
+      timer: NodeJS.Timeout;
+    }
+  >();
 
   constructor(
     private readonly config: DesktopNodeConfig,
@@ -92,7 +114,7 @@ export class DesktopNode {
         workspaceGuard: activeGuard,
         targetPath: () => this.getActiveProject().path,
         defaultBackend: this.config.defaultBackend === 'antigravity' ? 'antigravity' : 'codex',
-        requestApproval: this.options?.requestApproval,
+        requestApproval: (req, sig) => this.handleApprovalRequest(req, sig),
         requestTurnTimeoutContinuation: this.options?.requestTurnTimeoutContinuation,
         brainModel: this.options?.brainModel,
       });
@@ -109,6 +131,7 @@ export class DesktopNode {
 
   async stop(): Promise<void> {
     this.state = 'draining';
+    this.cancelAllPendingApprovals('task_aborted');
     if (this.activeTaskAbortController) {
       this.activeTaskAbortController.abort(new Error('DesktopNode en cours d’arrêt.'));
       this.activeTaskAbortController = undefined;
@@ -328,10 +351,10 @@ export class DesktopNode {
       runtimeStatus,
       coreConnection: this.coreClient
         ? {
-            status: this.coreClient.getStatus(),
-            url: this.coreClient.getWsUrl(),
-            sessionId: this.coreClient.getSessionId(),
-          }
+          status: this.coreClient.getStatus(),
+          url: this.coreClient.getWsUrl(),
+          sessionId: this.coreClient.getSessionId(),
+        }
         : undefined,
     };
   }
@@ -361,6 +384,12 @@ export class DesktopNode {
         break;
       case 'task:cancel':
         this.handleRemoteTaskCancel(message.payload as TaskCancelPayload);
+        break;
+      case 'approval:decision':
+        this.handleRemoteApprovalDecision(message.payload as ApprovalDecisionPayload);
+        break;
+      case 'approval:cancelled':
+        this.handleRemoteApprovalCancelled(message.payload as ApprovalCancelledPayload);
         break;
     }
   }
@@ -507,6 +536,7 @@ export class DesktopNode {
       }
     } finally {
       if (this.activeTaskId === taskId) {
+        this.cancelAllPendingApprovals('task_aborted');
         this.activeTaskId = undefined;
         this.activeTaskAbortController = undefined;
         if (this.state === 'busy') {
@@ -526,8 +556,127 @@ export class DesktopNode {
       this.activeTaskAbortController.abort(new Error(reason ?? 'Annulé par l’utilisateur'));
     }
 
+    this.cancelAllPendingApprovals('task_aborted');
+
     if (this.runtime) {
       this.runtime.cancelCurrentWork();
     }
+  }
+
+  async handleApprovalRequest(
+    request: RuntimeApprovalRequest,
+    signal: AbortSignal
+  ): Promise<ApprovalDecision> {
+    if (signal.aborted) {
+      return 'decline';
+    }
+
+    // If executing a remote task and connected to Core, route approval to Core
+    const taskId = this.activeTaskId;
+    if (taskId && this.coreClient?.isConnected()) {
+      const approvalId = randomUUID();
+      const expiresAt = request.expiresAt > Date.now() ? request.expiresAt : Date.now() + 60_000;
+
+      return new Promise<ApprovalDecision>((resolve, reject) => {
+        const timeoutMs = Math.max(0, expiresAt - Date.now());
+        const timer = setTimeout(() => {
+          this.pendingApprovals.delete(approvalId);
+          resolve('decline'); // fail closed on timeout
+        }, timeoutMs);
+        timer.unref?.();
+
+        const onAbort = () => {
+          if (this.pendingApprovals.has(approvalId)) {
+            this.pendingApprovals.delete(approvalId);
+            clearTimeout(timer);
+            this.coreClient?.send(
+              createNexusMessage('approval:cancelled', {
+                approvalId,
+                taskId,
+                reason: 'task_aborted',
+              })
+            );
+            resolve('decline');
+          }
+        };
+
+        signal.addEventListener('abort', onAbort, { once: true });
+
+        this.pendingApprovals.set(approvalId, {
+          resolve: (decision) => {
+            signal.removeEventListener('abort', onAbort);
+            clearTimeout(timer);
+            this.pendingApprovals.delete(approvalId);
+            resolve(decision);
+          },
+          reject: (err) => {
+            signal.removeEventListener('abort', onAbort);
+            clearTimeout(timer);
+            this.pendingApprovals.delete(approvalId);
+            reject(err);
+          },
+          timer,
+        });
+
+        const kind: ApprovalKind = request.kind === 'inspection' ? 'consent' : request.kind;
+
+        const sent = this.coreClient?.send(
+          createNexusMessage('approval:request', {
+            approvalId,
+            taskId,
+            agentName: request.agentName ?? 'nexus-agent',
+            kind,
+            details: request.details,
+            expiresAt,
+          })
+        );
+
+        if (!sent) {
+          clearTimeout(timer);
+          signal.removeEventListener('abort', onAbort);
+          this.pendingApprovals.delete(approvalId);
+          resolve('decline');
+        }
+      });
+    }
+
+    // Fall back to local approval handler (CLI interactive prompt or custom handler)
+    if (this.options?.requestApproval) {
+      return this.options.requestApproval(request, signal);
+    }
+
+    // Fail closed if no approval handler configured
+    return 'decline';
+  }
+
+  private handleRemoteApprovalDecision(payload: ApprovalDecisionPayload): void {
+    const pending = this.pendingApprovals.get(payload.approvalId);
+    if (pending) {
+      pending.resolve(payload.decision);
+    }
+  }
+
+  private handleRemoteApprovalCancelled(payload: ApprovalCancelledPayload): void {
+    const pending = this.pendingApprovals.get(payload.approvalId);
+    if (pending) {
+      pending.resolve('decline');
+    }
+  }
+
+  private cancelAllPendingApprovals(reason: ApprovalCancelReason): void {
+    for (const [approvalId, pending] of this.pendingApprovals.entries()) {
+      clearTimeout(pending.timer);
+      if (this.activeTaskId && this.coreClient?.isConnected()) {
+        this.coreClient.send(
+          createNexusMessage('approval:cancelled', {
+            approvalId,
+            taskId: this.activeTaskId,
+            reason,
+          })
+        );
+      }
+      pending.resolve('decline');
+    }
+    this.pendingApprovals.clear();
   }
 }

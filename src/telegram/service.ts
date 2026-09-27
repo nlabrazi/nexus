@@ -38,6 +38,41 @@ export interface TelegramServiceOptions {
   setActiveBackend?: (backend: AgentBackendType) => Promise<void> | void;
 }
 
+export interface TelegramStateStorage {
+  get<T>(key: string): T | undefined;
+  get<T>(key: string, defaultValue: T): T;
+  get<T>(key: string, defaultValue?: T): T | undefined;
+  update(key: string, value: unknown): PromiseLike<void>;
+}
+
+export interface TelegramContextLike {
+  readonly globalState: TelegramStateStorage;
+}
+
+export class MemoryTelegramStorage implements TelegramStateStorage {
+  private readonly store = new Map<string, unknown>();
+
+  constructor(initialValues?: Record<string, unknown>) {
+    if (initialValues) {
+      for (const [k, v] of Object.entries(initialValues)) {
+        this.store.set(k, v);
+      }
+    }
+  }
+
+  get<T>(key: string, defaultValue?: T): T | undefined {
+    return (this.store.get(key) as T) ?? defaultValue;
+  }
+
+  async update(key: string, value: unknown): Promise<void> {
+    if (value === undefined) {
+      this.store.delete(key);
+    } else {
+      this.store.set(key, value);
+    }
+  }
+}
+
 export class TelegramService {
   private pairingCode?: string;
   private pairingExpiresAt = 0;
@@ -71,7 +106,7 @@ export class TelegramService {
   private activeBackend: AgentBackendType = 'codex';
 
   constructor(
-    private readonly context: vscode.ExtensionContext,
+    private readonly context: vscode.ExtensionContext | TelegramContextLike,
     private readonly client: TelegramClient,
     onRemotePromptOrOptions?: RemotePromptHandler | TelegramServiceOptions,
     getStatus?: () => NexusStatusSnapshot | Promise<NexusStatusSnapshot>,
@@ -873,11 +908,11 @@ export class TelegramService {
             'plain',
             signal
           )
-          .catch(() => {});
+          .catch(() => { });
       }
     } finally {
-      if (this.brainOperation === controller) this.brainOperation = undefined;
-      if (generation === this.operationGeneration) this.remotePromptRunning = false;
+      if (this.brainOperation === controller) { this.brainOperation = undefined; }
+      if (generation === this.operationGeneration) { this.remotePromptRunning = false; }
     }
   }
 

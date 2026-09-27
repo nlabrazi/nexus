@@ -11,11 +11,13 @@ export interface TelegramPeer {
 export type ApprovalRequest =
   | CodexApprovalRequest
   | {
-      kind: 'inspection';
-      agentName: string;
-      details: string;
-      expiresAt: number;
-    };
+    kind: 'command' | 'fileChange' | 'consent' | 'inspection';
+    agentName?: string;
+    details: string;
+    expiresAt: number;
+    taskId?: string;
+    approvalId?: string;
+  };
 export type ApprovalHandler = (
   request: ApprovalRequest,
   signal: AbortSignal
@@ -35,7 +37,7 @@ export class TelegramApprovals {
   constructor(
     private readonly client: TelegramClient,
     private readonly getPeer: () => TelegramPeer | undefined
-  ) {}
+  ) { }
 
   request(request: ApprovalRequest, signal: AbortSignal): Promise<ApprovalDecision> {
     const peer = this.getPeer();
@@ -45,8 +47,14 @@ export class TelegramApprovals {
 
     const agentName = request.agentName ?? 'Codex';
     const seconds = Math.ceil((request.expiresAt - Date.now()) / 1000);
+    const kindLabel =
+      request.kind === 'inspection' || request.kind === 'consent'
+        ? 'inspection en lecture seule'
+        : request.kind === 'command'
+          ? 'commande'
+          : 'modification de fichiers';
     const text = [
-      `🔐 ${agentName} — ${request.kind === 'inspection' ? 'inspection en lecture seule' : request.kind === 'command' ? 'commande' : 'modification de fichiers'}`,
+      `🔐 ${agentName} — ${kindLabel}`,
       `Sans réponse sous ${seconds} s : refus automatique.`,
       request.details,
     ].join('\n\n');

@@ -12,11 +12,17 @@ import {
   TaskFailedPayload,
   TaskProgressPayload,
 } from '../protocol/types';
+import { ApprovalRelay } from './approval-relay';
 import { NodePresenceManager } from './presence';
 import { TaskRouter } from './task-router';
 import {
+  ApprovalCancelReason,
+  ApprovalDecision,
+  ApprovalRequestPayload,
   CoreConfig,
   CoreStatusSnapshot,
+  PendingApproval,
+  PendingApprovalStatus,
   RemoteTask,
   RemoteTaskStatus,
   SubmitTaskOptions,
@@ -26,6 +32,7 @@ import { upgradeHttpToWebSocket, WebSocketServerConnection } from './ws-connecti
 export class NexusCore extends EventEmitter {
   private readonly presence: NodePresenceManager;
   private readonly taskRouter: TaskRouter;
+  private readonly approvalRelay: ApprovalRelay;
   private server?: Server;
   private readonly wsConnections = new Set<WebSocketServerConnection>();
   private readonly nodeWsConnections = new Map<string, WebSocketServerConnection>();
@@ -46,21 +53,47 @@ export class NexusCore extends EventEmitter {
       { defaultTaskTimeoutMs: config.defaultTaskTimeoutMs }
     );
 
+    this.approvalRelay = new ApprovalRelay((nodeId) => this.nodeWsConnections.get(nodeId));
+
     // Relay presence events
     this.presence.on('node:connected', (node) => this.emit('node:connected', node));
     this.presence.on('node:heartbeat', (node) => this.emit('node:heartbeat', node));
     this.presence.on('node:status', (node) => this.emit('node:status', node));
     this.presence.on('node:offline', (node) => {
       this.taskRouter.handleNodeDisconnected(node.nodeId);
+      this.approvalRelay.handleNodeDisconnected(node.nodeId);
       this.emit('node:offline', node);
     });
 
     // Relay task events
     this.taskRouter.on('task:started', (task) => this.emit('task:started', task));
     this.taskRouter.on('task:progress', (task) => this.emit('task:progress', task));
-    this.taskRouter.on('task:completed', (task) => this.emit('task:completed', task));
-    this.taskRouter.on('task:failed', (task) => this.emit('task:failed', task));
-    this.taskRouter.on('task:cancelled', (task) => this.emit('task:cancelled', task));
+    this.taskRouter.on('task:completed', (task) => {
+      this.approvalRelay.cancelTaskApprovals(task.taskId);
+      this.emit('task:completed', task);
+    });
+    this.taskRouter.on('task:failed', (task) => {
+      this.approvalRelay.cancelTaskApprovals(task.taskId);
+      this.emit('task:failed', task);
+    });
+    this.taskRouter.on('task:cancelled', (task) => {
+      this.approvalRelay.cancelTaskApprovals(task.taskId);
+      this.emit('task:cancelled', task);
+    });
+
+    // Relay approval events
+    this.approvalRelay.on('approval:request', (approval) =>
+      this.emit('approval:request', approval)
+    );
+    this.approvalRelay.on('approval:decided', (approval) =>
+      this.emit('approval:decided', approval)
+    );
+    this.approvalRelay.on('approval:cancelled', (approval) =>
+      this.emit('approval:cancelled', approval)
+    );
+    this.approvalRelay.on('approval:timeout', (approval) =>
+      this.emit('approval:timeout', approval)
+    );
   }
 
   getPresenceManager(): NodePresenceManager {
@@ -104,10 +137,41 @@ export class NexusCore extends EventEmitter {
       nodes,
       projects,
       activeTasks: this.taskRouter.listTasks({ status: 'running' }).length,
+      pendingApprovals: this.approvalRelay.getPendingCount(),
     };
   }
 
-  async processMessage(message: AnyNexusMessage): Promise<AnyNexusMessage | undefined> {
+  getApprovalRelay(): ApprovalRelay {
+    return this.approvalRelay;
+  }
+
+  decideApproval(
+    approvalId: string,
+    decision: ApprovalDecision,
+    decidedBy?: string
+  ): PendingApproval {
+    return this.approvalRelay.decideApproval(approvalId, decision, decidedBy);
+  }
+
+  cancelApproval(approvalId: string, reason?: ApprovalCancelReason): boolean {
+    return this.approvalRelay.cancelApproval(approvalId, reason);
+  }
+
+  getApproval(approvalId: string): PendingApproval | undefined {
+    return this.approvalRelay.getApproval(approvalId);
+  }
+
+  listApprovals(filter?: {
+    status?: PendingApprovalStatus;
+    taskId?: string;
+  }): readonly PendingApproval[] {
+    return this.approvalRelay.listApprovals(filter);
+  }
+
+  async processMessage(
+    message: AnyNexusMessage,
+    senderNodeId?: string
+  ): Promise<AnyNexusMessage | undefined> {
     try {
       switch (message.type) {
         case 'node:hello': {
@@ -141,6 +205,20 @@ export class NexusCore extends EventEmitter {
 
         case 'task:failed': {
           this.taskRouter.recordFailed(message.payload as TaskFailedPayload);
+          return undefined;
+        }
+
+        case 'approval:request': {
+          const payload = message.payload as ApprovalRequestPayload;
+          const task = this.taskRouter.getTask(payload.taskId);
+          const nodeId = senderNodeId || task?.nodeId || 'unknown-node';
+          this.approvalRelay.registerApproval(nodeId, payload);
+          return undefined;
+        }
+
+        case 'approval:cancelled': {
+          const payload = message.payload as { approvalId: string; reason?: ApprovalCancelReason };
+          this.approvalRelay.cancelApproval(payload.approvalId, payload.reason);
           return undefined;
         }
 
@@ -203,7 +281,7 @@ export class NexusCore extends EventEmitter {
         conn.on('message', async (raw: string) => {
           try {
             const message = parseNexusMessage(raw);
-            const reply = await this.processMessage(message);
+            const reply = await this.processMessage(message, boundNodeId);
             if (message.type === 'node:hello' && reply?.type === 'node:welcome') {
               boundNodeId = (message.payload as NodeHelloPayload).nodeId;
               this.nodeWsConnections.set(boundNodeId, conn);
@@ -227,6 +305,7 @@ export class NexusCore extends EventEmitter {
               this.nodeWsConnections.delete(boundNodeId);
               this.presence.markOffline(boundNodeId);
               this.taskRouter.handleNodeDisconnected(boundNodeId);
+              this.approvalRelay.handleNodeDisconnected(boundNodeId);
             }
           }
         });
@@ -384,6 +463,65 @@ export class NexusCore extends EventEmitter {
         const cancelled = await this.cancelTask(taskId, reason);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ taskId, cancelled }));
+        return;
+      }
+    }
+
+    if (method === 'GET' && pathname === '/api/approvals') {
+      const statusParam = url.searchParams.get('status') as PendingApprovalStatus | null;
+      const taskId = url.searchParams.get('taskId') ?? undefined;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(this.listApprovals({ status: statusParam ?? undefined, taskId })));
+      return;
+    }
+
+    if (pathname.startsWith('/api/approvals/')) {
+      const parts = pathname.slice('/api/approvals/'.length).split('/');
+      const approvalId = decodeURIComponent(parts[0]);
+
+      if (parts.length === 1 && method === 'GET') {
+        const approval = this.getApproval(approvalId);
+        if (!approval) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: `Demande d’approbation introuvable : ${approvalId}` }));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(approval));
+        return;
+      }
+
+      if (parts.length === 2 && parts[1] === 'decide' && method === 'POST') {
+        const raw = await this.readRequestBody(req);
+        try {
+          const body = JSON.parse(raw);
+          if (!body.decision || (body.decision !== 'accept' && body.decision !== 'decline')) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(
+              JSON.stringify({
+                error: 'Champ obligatoire requis : decision ("accept" | "decline")',
+              })
+            );
+            return;
+          }
+          const approval = this.decideApproval(approvalId, body.decision, body.decidedBy);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(approval));
+        } catch (err) {
+          const statusCode =
+            err instanceof NexusProtocolError && err.code === 'APPROVAL_TIMEOUT'
+              ? 410
+              : err instanceof NexusProtocolError && err.code === 'APPROVAL_NOT_FOUND'
+                ? 404
+                : 400;
+          res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+              code: err instanceof NexusProtocolError ? err.code : 'INTERNAL_ERROR',
+            })
+          );
+        }
         return;
       }
     }
