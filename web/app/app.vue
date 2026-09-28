@@ -20,18 +20,10 @@
       </div>
 
       <div class="header-right">
-        <button class="status-beacon" type="button" :class="connectionStatus === 'connected' && isNodeReady
-          ? 'online'
-          : connectionStatus
-          " :aria-label="connectionStatusText" @click="showSettings = true">
+        <button class="status-beacon" type="button" :class="runtimeStatus.toLowerCase()"
+          :aria-label="`Nexus : ${runtimeStatusText}. Ouvrir les paramètres`" @click="showSettings = true">
           <span class="beacon-dot" />
-          <span class="beacon-label">{{
-            connectionStatus === "connecting"
-              ? "SYNC"
-              : isNodeReady
-                ? "ON"
-                : "OFF"
-          }}</span>
+          <span class="beacon-label" role="status" aria-live="polite">{{ runtimeStatus }}</span>
         </button>
         <button type="button" class="header-menu-btn" aria-label="Menu des options"
           @click="showQuickMenu = !showQuickMenu">
@@ -561,6 +553,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
 import { createSpeechPlayback } from "./utils/speech-playback.mjs";
 import { cleanTextForSpeech } from "./utils/speech-text.mjs";
+import { getAssistantState, assistantStateLabels } from "./utils/assistant-state.mjs";
 import { Capacitor } from "@capacitor/core";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
 import { StatusBar, Style } from "@capacitor/status-bar";
@@ -708,6 +701,8 @@ let clockTimer: ReturnType<typeof setInterval> | null = null;
 // Chat State
 const inputPrompt = ref<string>("");
 const isSending = ref<boolean>(false);
+const inFlightBackend = ref<"brain" | "codex" | "antigravity" | null>(null);
+const lastTaskFailed = ref(false);
 const currentProgressMessage = ref<string>("");
 const currentInFlightTaskId = ref<string | null>(null);
 const messages = ref<ChatMessage[]>([]);
@@ -1212,6 +1207,16 @@ const lastUpdatedText = computed(() => {
 const runningTasks = computed(() =>
   tasks.value.filter((t) => t.status === "running"),
 );
+const runtimeStatus = computed(() => getAssistantState({
+  online: isNodeReady.value,
+  sending: isSending.value,
+  busy: primaryNode.value?.state === "busy",
+  backend: isSending.value ? inFlightBackend.value : tasks.value.find(task => task.taskId === primaryNode.value?.activeTaskId)?.backend,
+  speaking: isSpeaking.value,
+  failed: lastTaskFailed.value,
+}));
+const runtimeStatusText = computed(() => assistantStateLabels[runtimeStatus.value]);
+
 const runningTasksCount = computed(() => {
   return runningTasks.value.length || (coreStatus.value?.activeTasks ?? 0);
 });
@@ -1501,6 +1506,8 @@ async function sendPrompt(promptText: string) {
   scrollToBottom();
 
   isSending.value = true;
+  inFlightBackend.value = backend;
+  lastTaskFailed.value = false;
   currentProgressMessage.value = `Envoi au ${selectedBackendLabel(selectedBackend.value)}...`;
 
   try {
@@ -1543,6 +1550,7 @@ async function sendPrompt(promptText: string) {
       speakMessage(assistantMsg.text, assistantMsg.id);
     }
   } catch (err: any) {
+    lastTaskFailed.value = true;
     const errorMsg: ChatMessage = {
       id: `err-${Date.now()}`,
       role: "assistant",
@@ -1555,6 +1563,7 @@ async function sendPrompt(promptText: string) {
     saveMessages();
   } finally {
     isSending.value = false;
+    inFlightBackend.value = null;
     currentInFlightTaskId.value = null;
     currentProgressMessage.value = "";
     scrollToBottom();
@@ -1567,6 +1576,7 @@ async function sendPrompt(promptText: string) {
 function clearChat() {
   if (confirm("Voulez-vous effacer l’historique de conversation ?")) {
     messages.value = [];
+    lastTaskFailed.value = false;
     if (typeof window !== "undefined") {
       localStorage.removeItem("nexus_brain_messages");
     }

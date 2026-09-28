@@ -281,24 +281,24 @@ svg.icon {
   transition: all 0.3s ease;
 }
 
-.status-beacon.online .beacon-dot {
+.status-beacon.ready .beacon-dot {
   background: var(--success);
   box-shadow: var(--success-glow);
 }
 
-.status-beacon.online {
+.status-beacon.ready {
   color: var(--success);
   border-color: rgba(0, 255, 157, 0.25);
   background: rgba(0, 255, 157, 0.05);
 }
 
-.status-beacon.connecting .beacon-dot {
+.status-beacon.thinking .beacon-dot, .status-beacon.coding .beacon-dot, .status-beacon.speaking .beacon-dot {
   background: var(--warning);
   box-shadow: var(--warning-glow);
   animation: breathe 1.2s infinite;
 }
 
-.status-beacon.connecting {
+.status-beacon.thinking, .status-beacon.coding, .status-beacon.speaking {
   color: var(--warning);
   border-color: rgba(255, 170, 0, 0.25);
 }
@@ -2208,3 +2208,9 @@ dialog[open].sheet {
 .welcome-mark svg { width: 100%; height: 100%; }
 .welcome-title { font-size: clamp(1.5rem, 4vw, 2rem); line-height: 1.25; text-align: center; }
 .welcome-description { max-width: 32rem; margin: 0 0 1rem; color: var(--text-secondary, #9ba8b9); line-height: 1.6; text-align: center; }
+
+.status-beacon.error { color: var(--danger); }
+.status-beacon.offline { color: var(--muted-light); }
+@media (prefers-reduced-motion: reduce) {
+  .status-beacon .beacon-dot { animation: none; }
+}
