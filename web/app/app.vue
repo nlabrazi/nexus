@@ -75,6 +75,7 @@
         </div>
 
         <!-- Chat Messages -->
+        <TransitionGroup name="message-arrival" tag="div" class="message-list">
         <article v-for="msg in messages" :key="msg.id" class="message" :class="[msg.role, { 'is-error': msg.error }]">
           <div class="message-meta">
             <span>{{
@@ -95,12 +96,13 @@
             <NexusIcon name="folder" />{{ msg.fileSummary }}
           </p>
         </article>
+        </TransitionGroup>
 
         <!-- In-flight Task Progress -->
         <div v-if="isSending" class="task-progress" role="status">
-          <span class="busy-indicator" /><span>{{
+          <span class="activity-wave" aria-hidden="true"><i /><i /><i /></span><span>{{
             currentProgressMessage || "En cours…"
-          }}</span>
+          }}</span><span v-if="inFlightStartedAt" class="elapsed-time">{{ Math.max(0, Math.floor((now - inFlightStartedAt) / 1000)) }} s</span>
           <button v-if="currentInFlightTaskId" type="button" class="text-button danger"
             @click="cancelTask(currentInFlightTaskId)">
             <NexusIcon name="stop" />Arrêter
@@ -379,8 +381,15 @@
     </nav>
 
     <!-- SETTINGS SHEET -->
-    <NexusSheet v-model="showSettings" title="Connexion & préférences">
-      <form class="settings-form" @submit.prevent="saveSettings">
+    <NexusSheet v-model="showSettings" title="Votre espace Nexus">
+      <div class="settings-tabs" role="tablist" aria-label="Paramètres" @keydown="handleSettingsTabKey">
+        <button id="overview-tab" type="button" role="tab" :tabindex="settingsTab === 'overview' ? 0 : -1" :aria-selected="settingsTab === 'overview'" aria-controls="settings-overview" @click="settingsTab = 'overview'">Aperçu & quotas</button>
+        <button id="preferences-tab" type="button" role="tab" :tabindex="settingsTab === 'preferences' ? 0 : -1" :aria-selected="settingsTab === 'preferences'" aria-controls="settings-preferences" @click="settingsTab = 'preferences'">Voix & connexion</button>
+      </div>
+      <div v-show="settingsTab === 'overview'" id="settings-overview" role="tabpanel" aria-labelledby="overview-tab">
+        <NexusUsageDashboard :dashboard="usageDashboard" :loading="dashboardLoading" :error="dashboardError" :online="isNodeReady" :agent-label="selectedBackendLabel(selectedBackend)" :model-label="selectedModelLabel" :now="now" @refresh="fetchDashboard" />
+      </div>
+      <form v-show="settingsTab === 'preferences'" id="settings-preferences" role="tabpanel" aria-labelledby="preferences-tab" class="settings-form" @submit.prevent="saveSettings">
         <p>Reliez Nexus à votre poste de travail.</p>
         <div class="field">
           <label for="core-url">Adresse du serveur</label><input id="core-url" v-model="coreUrlInput" type="text"
@@ -404,11 +413,11 @@
             <label class="switch-field"><span>Activer la voix</span><input v-model="ttsEnabled" type="checkbox" role="switch" /></label>
             <label class="switch-field"><span>Lire aussi les réponses aux messages écrits<small>Une demande dictée reçoit une réponse vocale si la voix est activée.</small></span><input v-model="autoSpeak" :disabled="!ttsEnabled" type="checkbox" role="switch" /></label>
             <div class="field">
-              <label for="speech-voice">Voix</label>
+              <label for="speech-voice">Voix</label><small>Le mode automatique privilégie une voix française de France en ligne, si disponible. Le timbre dépend du moteur installé sur votre appareil.</small>
               <select id="speech-voice" v-model="speechVoice" :disabled="!ttsEnabled">
-                <option value="">Automatique (français)</option>
+                <option value="">Automatique · français de France</option>
                 <option v-if="speechVoice && !speechVoices.some(voice => voice.voiceURI === speechVoice)" :value="speechVoice">Voix enregistrée indisponible — choix automatique</option>
-                <option v-for="voice in speechVoices" :key="voice.voiceURI" :value="voice.voiceURI">{{ voice.name }} ({{ voice.lang }})</option>
+                <option v-for="voice in speechVoices" :key="voice.voiceURI" :value="voice.voiceURI">{{ voice.name }} · {{ voice.lang }} · {{ voice.localService ? "sur l’appareil" : "en ligne" }}</option>
               </select>
             </div>
             <div class="field">
@@ -550,6 +559,7 @@
 </template>
 
 <script setup lang="ts">
+import type { RuntimeDashboard } from "../../src/runtime/dashboard-types";
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
 import { TextToSpeech } from "@capacitor-community/text-to-speech";
 import { createNativeSpeechPlayback } from "./utils/native-speech-playback.mjs";
@@ -687,6 +697,12 @@ const coreUrlInput = ref<string>("");
 const authToken = ref<string>("");
 const authTokenInput = ref<string>("");
 const showSettings = ref<boolean>(false);
+const settingsTab = ref('overview');
+const usageDashboard = ref<RuntimeDashboard | null>(null);
+const dashboardLoading = ref(false);
+const dashboardError = ref('');
+let dashboardController: AbortController | undefined;
+let dashboardFetchedAt = 0;
 const isRefreshing = ref<boolean>(false);
 const connectionStatus = ref<"connecting" | "connected" | "error">(
   "connecting",
@@ -706,6 +722,7 @@ const inputPrompt = ref<string>("");
 const draftFromVoice = ref(false);
 watch(inputPrompt, (text) => { if (!text.trim()) draftFromVoice.value = false; }, { flush: "sync" });
 const isSending = ref<boolean>(false);
+const inFlightStartedAt = ref<number | null>(null);
 const inFlightBackend = ref<"brain" | "codex" | "antigravity" | null>(null);
 const lastTaskFailed = ref(false);
 
@@ -802,6 +819,48 @@ const currentSelectedModel = computed(() => {
   return agentModels.value[selectedBackend.value]?.selected || "";
 });
 
+const selectedModelLabel = computed(() => {
+  if (selectedBackend.value === 'brain' && usageDashboard.value) {
+    const selection = usageDashboard.value.brain.selection;
+    return selection === 'auto' ? 'Sélection automatique' : selection.replace(':', ' · ');
+  }
+  const actual = usageDashboard.value?.agents.find(agent => agent.id === selectedBackend.value)?.model;
+  return actual || currentBackendModels.value.find(model => model.model === currentSelectedModel.value)?.displayName || currentSelectedModel.value;
+});
+
+function handleSettingsTabKey(event: KeyboardEvent) {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  settingsTab.value = event.key === 'Home' ? 'overview' : event.key === 'End' ? 'preferences' : settingsTab.value === 'overview' ? 'preferences' : 'overview';
+  void nextTick(() => document.getElementById(`${settingsTab.value === 'overview' ? 'overview' : 'preferences'}-tab`)?.focus());
+}
+
+async function fetchDashboard() {
+  if (dashboardLoading.value || !coreUrl.value || !isNodeReady.value) return;
+  dashboardLoading.value = true;
+  dashboardFetchedAt = Date.now();
+  const controller = new AbortController();
+  dashboardController = controller;
+  const source = `${coreUrl.value}|${authToken.value}|${primaryNode.value?.nodeId}`;
+  try {
+    const query = primaryNode.value?.nodeId ? `?nodeId=${encodeURIComponent(primaryNode.value.nodeId)}` : '';
+    const response = await fetch(`${coreUrl.value.replace(/\/+$/, '')}/api/dashboard${query}`, {
+      headers: getRequestHeaders(), signal: AbortSignal.any([controller.signal, AbortSignal.timeout(9000)]),
+    });
+    if (!response.ok) throw new Error(response.status === 401 ? 'Renseignez le jeton Nexus dans Voix & connexion pour consulter les quotas.' : 'Dashboard indisponible. Vérifiez la connexion et la version du poste Nexus.');
+    const data = await response.json();
+    if (`${coreUrl.value}|${authToken.value}|${primaryNode.value?.nodeId}` !== source) return;
+    if (!data?.brain || !Array.isArray(data.agents)) throw new Error('Mettez à jour le poste Nexus pour afficher le dashboard.');
+    usageDashboard.value = data;
+    dashboardError.value = '';
+  } catch (error: any) {
+    if (!controller.signal.aborted) dashboardError.value = error?.message || 'Impossible d’actualiser les quotas.';
+  } finally {
+    dashboardLoading.value = false;
+    if (dashboardController === controller) dashboardController = undefined;
+  }
+}
+
 async function fetchModelsForBackend(backend: "brain" | "codex" | "antigravity") {
   if (!coreUrl.value) return;
   isLoadingModels.value = true;
@@ -849,6 +908,7 @@ async function handleSelectModel(modelName: string) {
     });
     if (res.ok) {
       agentModels.value[backend].selected = modelName;
+      void fetchDashboard();
       triggerHaptic("medium");
     } else {
       errorMessage.value = "Impossible de sélectionner ce modèle. Vérifiez sa configuration sur le poste Nexus.";
@@ -1068,6 +1128,7 @@ onMounted(async () => {
   fetchModelsForBackend(selectedBackend.value);
 
   pollTimer = setInterval(() => {
+    if ((showSettings.value || isSending.value) && Date.now() - dashboardFetchedAt > 5000) void fetchDashboard();
     fetchStatus(true);
     fetchTasks(true);
     fetchApprovals(true);
@@ -1081,6 +1142,7 @@ onMounted(async () => {
 onUnmounted(() => {
   window.visualViewport?.removeEventListener("resize", syncViewport);
   document.documentElement.style.removeProperty("--app-height");
+  dashboardController?.abort();
   if (pollTimer) clearInterval(pollTimer);
   if (clockTimer) clearInterval(clockTimer);
   if (fastApprovalTimer) clearInterval(fastApprovalTimer);
@@ -1202,6 +1264,16 @@ async function openProject(project: ProjectInfo) {
   )
     activeTab.value = "chat";
 }
+
+watch([coreUrl, authToken, () => primaryNode.value?.nodeId], () => {
+  dashboardController?.abort();
+  usageDashboard.value = null;
+  dashboardError.value = '';
+});
+watch([showSettings, isNodeReady], ([settings, ready]) => {
+  if (ready) void fetchDashboard();
+  else if (settings) settingsTab.value = 'preferences';
+});
 
 const canSend = computed(() => {
   return (
@@ -1529,6 +1601,7 @@ async function sendPrompt(promptText: string, fromVoice = false) {
   scrollToBottom();
 
   isSending.value = true;
+  inFlightStartedAt.value = Date.now();
   inFlightBackend.value = backend;
   lastTaskFailed.value = false;
 
@@ -1585,9 +1658,11 @@ async function sendPrompt(promptText: string, fromVoice = false) {
     saveMessages();
   } finally {
     isSending.value = false;
+    inFlightStartedAt.value = null;
     inFlightBackend.value = null;
     currentInFlightTaskId.value = null;
     scrollToBottom();
+    void fetchDashboard();
     // Refresh tasks and status
     fetchTasks(true);
     fetchStatus(true);
