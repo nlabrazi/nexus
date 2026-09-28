@@ -134,7 +134,7 @@
               msg.role === "user" ? "Vous" : selectedBackendLabel(msg.backend)
             }}</span>
             <div class="message-meta-actions">
-              <button v-if="msg.role === 'assistant'" type="button" class="icon-button tts-play-btn"
+              <button v-if="msg.role === 'assistant' && !msg.error && ttsAvailable" type="button" class="icon-button tts-play-btn"
                 :class="{ speaking: currentSpeakingId === msg.id && isSpeaking }"
                 :aria-label="currentSpeakingId === msg.id && isSpeaking ? 'Arrêter la lecture' : 'Écouter le message vocalement'"
                 @click="toggleSpeakMessage(msg)">
@@ -178,6 +178,11 @@
         <div v-if="errorMessage && isNodeReady" class="inline-error" role="alert">
           {{ errorMessage }}
         </div>
+
+        <p v-if="speechError" class="inline-error" role="status">
+          {{ speechError }}
+          <button type="button" class="text-button" @click="speechError = ''">Fermer</button>
+        </p>
 
         <!-- Voice Recognition Interim Notice -->
         <div v-if="isListening || isProcessingAudio" class="voice-hud-notice" role="status">
@@ -579,6 +584,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
+import { createSpeechPlayback } from "./utils/speech-playback.mjs";
 import { Capacitor } from "@capacitor/core";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
 import { StatusBar, Style } from "@capacitor/status-bar";
@@ -754,46 +760,22 @@ function cleanTextForSpeech(text: string): string {
     .trim();
 }
 
+const speechError = ref("");
+const ttsAvailable = ref(false);
+let speechPlayback: ReturnType<typeof createSpeechPlayback> | undefined;
+
 function stopSpeaking() {
-  if (typeof window !== "undefined" && "speechSynthesis" in window) {
-    window.speechSynthesis.cancel();
-  }
-  isSpeaking.value = false;
-  currentSpeakingId.value = null;
+  speechPlayback?.stop();
 }
 
 function speakMessage(text: string, messageId?: string) {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-  const clean = cleanTextForSpeech(text);
-  if (!clean) return;
-
-  stopSpeaking();
-
-  const utterance = new SpeechSynthesisUtterance(clean);
-  utterance.lang = "fr-FR";
-  utterance.rate = 1.05;
-  utterance.pitch = 1.0;
-
-  const voices = window.speechSynthesis.getVoices();
-  const frVoice = voices.find((v) => v.lang.startsWith("fr") || v.lang.includes("FR"));
-  if (frVoice) {
-    utterance.voice = frVoice;
+  speechError.value = "";
+  if (!ttsAvailable.value || !speechPlayback) {
+    speechError.value = "La lecture vocale n’est pas disponible sur cet appareil.";
+    return;
   }
-
-  utterance.onstart = () => {
-    isSpeaking.value = true;
-    currentSpeakingId.value = messageId || null;
-  };
-  utterance.onend = () => {
-    isSpeaking.value = false;
-    currentSpeakingId.value = null;
-  };
-  utterance.onerror = () => {
-    isSpeaking.value = false;
-    currentSpeakingId.value = null;
-  };
-
-  window.speechSynthesis.speak(utterance);
+  const clean = cleanTextForSpeech(text);
+  if (clean) speechPlayback.speak(clean, messageId);
 }
 
 function toggleSpeakMessage(msg: ChatMessage) {
@@ -986,6 +968,14 @@ let nativeRecorderActive = false;
 
 // Lifecycle
 onMounted(async () => {
+  ttsAvailable.value = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+  if (ttsAvailable.value) {
+    speechPlayback = createSpeechPlayback(window.speechSynthesis,
+      (text: string) => new SpeechSynthesisUtterance(text), {
+        onState: (speaking: boolean, id: string | null) => { isSpeaking.value = speaking; currentSpeakingId.value = id; },
+        onError: (message: string) => { speechError.value = message; },
+      });
+  }
   if (typeof window !== "undefined") {
     syncViewport();
     window.visualViewport?.addEventListener("resize", syncViewport);
@@ -1559,7 +1549,7 @@ async function sendPrompt(promptText: string) {
 
     messages.value.push(assistantMsg);
     saveMessages();
-    if (ttsEnabled.value && !assistantMsg.error) {
+    if (ttsEnabled.value && ttsAvailable.value && !assistantMsg.error) {
       speakMessage(assistantMsg.text, assistantMsg.id);
     }
   } catch (err: any) {

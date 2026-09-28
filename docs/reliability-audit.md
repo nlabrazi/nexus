@@ -60,3 +60,13 @@ diagnostic sans faux état connecté, audio invalide/timeout/annulation, nettoya
 vocal et remplacement d’une lecture. Exécuter compilation et suite unitaire à
 chaque lot ; générer le client Nuxt après les changements UI. Préserver pairing,
 contrôles workspace, sessions et approbations avec les tests existants.
+
+## Essai indépendant Piper du 28 septembre 2026
+
+Phrase française avec ponctuation, worker exécuté directement avec le modèle
+local Jessica : 932 ms de synthèse ; WAV PCM mono 22 050 Hz, 16 bits, 223 788 octets,
+5,074 s. Conversion FFmpeg vérifiée par ffprobe : Opus mono 48 kHz, 20 620 octets,
+5,080 s. Les deux fichiers passent aussi les nouveaux validateurs Nexus.
+Échantillons de cette session : `/tmp/nexus-tts-baseline.wav` et `.ogg`.
+Cette mesure valide le pipeline et la latence locale, pas une appréciation
+subjective de la voix ni la lecture sur un appareil Android réel.
