@@ -131,3 +131,6 @@ Validation : tests du contrôleur natif simulé (fin de lecture, segments succes
 annulation, remplacement, voix manquante, erreur et délai), tests de la politique
 « dictée → réponse vocale » et compilation de l’APK. L’écoute et la reconnaissance
 sur un téléphone physique restent à vérifier après installation.
+
+Le parcours complet de dictée est aussi testé avec un pont Android simulé :
+`node scripts/test-android-voice.cjs` après `npm run web:build`.
