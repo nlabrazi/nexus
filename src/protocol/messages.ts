@@ -15,6 +15,8 @@ const KNOWN_MESSAGE_TYPES = new Set<NexusMessageType>([
   'node:heartbeat_ack',
   'node:status',
   'node:switch_project',
+  'node:dashboard:get',
+  'node:dashboard:result',
   'node:models:list',
   'node:models:result',
   'node:models:select',
@@ -190,6 +192,20 @@ function validatePayload(type: NexusMessageType, payload: unknown): void {
       break;
     case 'node:switch_project':
       validateNodeSwitchProject(payload);
+      break;
+    case 'node:dashboard:get':
+      assertNonEmptyString(payload.requestId, 'requestId');
+      break;
+    case 'node:dashboard:result':
+      assertNonEmptyString(payload.requestId, 'requestId');
+      if (
+        payload.unavailable !== true &&
+        (!isRecord(payload.dashboard) ||
+          !isRecord(payload.dashboard.brain) ||
+          !Array.isArray(payload.dashboard.agents))
+      ) {
+        throw invalidMessageError('dashboard doit contenir brain et agents.');
+      }
       break;
     case 'node:models:list':
       validateNodeModelsList(payload);

@@ -1,3 +1,4 @@
+import { RuntimeDashboard, AgentDashboard, QuotaMetric } from './dashboard-types';
 import { basename, resolve } from 'node:path';
 import { AntigravityService } from '../antigravity/service';
 import { WorkspaceAntigravitySessionPersistence } from '../antigravity/persistence';
@@ -30,6 +31,7 @@ import {
 } from './types';
 
 export class NexusRuntime {
+  private readonly startedAt = Date.now();
   private readonly workspaceGuard: WorkspaceGuard;
   private readonly targetPathSupplier?: () => string;
   private readonly codexService: CodexService;
@@ -382,6 +384,60 @@ export class NexusRuntime {
         (this.brainModel as unknown as { setModel: (m: string) => void }).setModel(selection.model);
       }
     }
+  }
+
+  async getDashboard(): Promise<RuntimeDashboard> {
+    const [brain] = await Promise.all([
+      this.brainModel instanceof RoutedBrainModel
+        ? this.brainModel.getDashboard()
+        : Promise.resolve({
+            selection:
+              this.brainModel instanceof OllamaBrainModel
+                ? `ollama:${this.brainModel.getModel()}`
+                : this.brainModel instanceof CodexBrainModel
+                  ? 'codex'
+                  : 'custom',
+            providers: [],
+          }),
+      this.codexService.refreshStatus(),
+    ]);
+    const codex = this.codexService.getStatus();
+    const antigravity = this.antigravityService.getStatus();
+    const agents: AgentDashboard[] = (['codex', 'antigravity'] as const).map((id) => {
+      const status = id === 'codex' ? codex : antigravity;
+      const limits: QuotaMetric[] = [];
+      if (id === 'codex')
+        for (const [index, snapshot] of (codex.rateLimits ?? []).entries()) {
+          for (const key of ['primary', 'secondary'] as const) {
+            const window = snapshot[key];
+            if (!window || !Number.isFinite(window.usedPercent)) continue;
+            const used = Math.min(100, Math.max(0, window.usedPercent));
+            const minutes = window.windowDurationMins;
+            limits.push({
+              id: `${index}-${key}`,
+              label: `${snapshot.limitName ?? 'Codex'} · ${minutes ? (minutes >= 60 ? `${minutes / 60} h` : `${minutes} min`) : key === 'primary' ? 'fenêtre principale' : 'fenêtre secondaire'}`,
+              unit: 'percent',
+              limit: 100,
+              used,
+              remaining: 100 - used,
+              resetsAt: window.resetsAt ? window.resetsAt * 1000 : undefined,
+              observedAt: codex.rateLimitsUpdatedAt ?? Date.now(),
+            });
+          }
+        }
+      return {
+        id,
+        state: status.turn ? 'running' : status.sessionActive ? 'ready' : 'stopped',
+        model:
+          id === 'codex'
+            ? (codex.reroutedModel ?? status.model ?? status.modelSelection?.model)
+            : (status.model ?? status.modelSelection?.model),
+        totalTokens: status.tokenUsage?.total.totalTokens,
+        limits,
+        observedAt: status.tokenUsageUpdatedAt,
+      };
+    });
+    return { generatedAt: Date.now(), startedAt: this.startedAt, brain, agents };
   }
 
   async getStatus(targetPath?: string): Promise<NexusStatusSnapshot> {

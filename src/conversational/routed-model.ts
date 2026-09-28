@@ -1,3 +1,5 @@
+import { BrainDashboard, ProviderUsage } from '../runtime/dashboard-types';
+import { emptyProviderUsage } from './provider-usage';
 import { ModelMenu } from '../codex/types';
 import { logger } from '../logging/logger';
 import { BrainProviderError, CloudBrainModel, CloudProvider } from './cloud-model';
@@ -27,6 +29,9 @@ interface RoutedBrainOptions {
 /** Automatic failover is opt-in through the auto selection; explicit choices stay pinned. */
 export class RoutedBrainModel implements BrainModel {
   private readonly cloud: Route[];
+  private active?: BrainDashboard['active'];
+  private lastUsed?: BrainDashboard['lastUsed'];
+  private readonly localUsage: ProviderUsage;
   private readonly local: OllamaBrainModel;
   private selected: string;
   private readonly localModels = new Set<string>();
@@ -41,6 +46,7 @@ export class RoutedBrainModel implements BrainModel {
         model: env.NEXUS_BRAIN_MODEL,
         host: env.OLLAMA_HOST || env.OLLAMA_BASE_URL,
       });
+    this.localUsage = emptyProviderUsage('ollama', this.local.getModel(), true);
     this.localModels.add(this.local.getModel());
     this.cloud = CLOUD_DEFAULTS.flatMap(({ provider, model: defaultModel }) => {
       const prefix = provider.toUpperCase();
@@ -85,6 +91,24 @@ export class RoutedBrainModel implements BrainModel {
           provider: this.selected.slice(0, this.selected.indexOf(':')),
           model: this.selected.slice(this.selected.indexOf(':') + 1),
         };
+  }
+
+  async getDashboard(): Promise<BrainDashboard> {
+    await Promise.all(this.cloud.map((route) => (route.adapter as CloudBrainModel).refreshQuota()));
+    return {
+      selection: this.selected,
+      active: this.active ? { ...this.active } : undefined,
+      lastUsed: this.lastUsed ? { ...this.lastUsed } : undefined,
+      providers: [
+        ...CLOUD_DEFAULTS.map(({ provider, model }) => {
+          const route = this.cloud.find((candidate) => candidate.provider === provider);
+          return route
+            ? (route.adapter as CloudBrainModel).getUsage()
+            : emptyProviderUsage(provider, model, false);
+        }),
+        structuredClone({ ...this.localUsage, model: this.local.getModel() }),
+      ],
+    };
   }
 
   async listModels(): Promise<ModelMenu> {
@@ -146,6 +170,7 @@ export class RoutedBrainModel implements BrainModel {
     signal: AbortSignal
   ): Promise<BrainDecision> {
     signal.throwIfAborted();
+    const decisionStartedAt = Date.now();
     const deadline = AbortSignal.timeout(this.totalTimeoutMs);
     const combined = AbortSignal.any([signal, deadline]);
     // Snapshot the route before awaiting: changing the menu cannot redirect an in-flight turn.
@@ -162,10 +187,25 @@ export class RoutedBrainModel implements BrainModel {
     for (let i = 0; i < routes.length; i++) {
       const route = routes[i]!;
       const startedAt = Date.now();
+      const active = { provider: route.provider, model: route.model, startedAt };
+      this.active = active;
+      if (route.provider === 'ollama') {
+        this.localUsage.requests++;
+        this.localUsage.lastRequestAt = startedAt;
+      }
       try {
         combined.throwIfAborted();
         const result = await route.adapter.decide(messages, project, toolsAllowed, combined);
         combined.throwIfAborted();
+        this.lastUsed = {
+          provider: route.provider,
+          model:
+            route.adapter instanceof CloudBrainModel
+              ? (route.adapter.getUsage().actualModel ?? route.model)
+              : route.model,
+          completedAt: Date.now(),
+          durationMs: Date.now() - decisionStartedAt,
+        };
         logger.info('Brain', 'route', {
           provider: route.provider,
           model: route.model,
@@ -195,6 +235,8 @@ export class RoutedBrainModel implements BrainModel {
           model: next.model,
           status: 'started',
         });
+      } finally {
+        if (this.active === active) this.active = undefined;
       }
     }
     throw new BrainProviderError('brain', 'unavailable');

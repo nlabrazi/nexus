@@ -1,3 +1,4 @@
+import type { RuntimeDashboard } from '../runtime/dashboard-types';
 export const NEXUS_PROTOCOL_VERSION = 1;
 
 export type TaskBackend = 'codex' | 'antigravity' | 'brain';
@@ -201,7 +202,18 @@ export interface NodeModelsSelectPayload {
   readonly requestId?: string;
 }
 
+export interface NodeDashboardRequestPayload {
+  readonly requestId: string;
+}
+export interface NodeDashboardResultPayload {
+  readonly requestId: string;
+  readonly dashboard?: RuntimeDashboard;
+  readonly unavailable?: boolean;
+}
+
 export interface NexusPayloadMap {
+  'node:dashboard:get': NodeDashboardRequestPayload;
+  'node:dashboard:result': NodeDashboardResultPayload;
   'node:hello': NodeHelloPayload;
   'node:welcome': NodeWelcomePayload;
   'node:heartbeat': NodeHeartbeatPayload;

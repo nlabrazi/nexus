@@ -1,3 +1,5 @@
+import { RuntimeDashboard } from '../runtime/dashboard-types';
+import { NodeDashboardResultPayload } from '../protocol/types';
 import { logger, registerLogSecret } from '../logging/logger';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
@@ -73,6 +75,15 @@ export class NexusCore extends EventEmitter {
     {
       resolve: (payload: NodeModelsResultPayload) => void;
       reject: (err: unknown) => void;
+      timer: NodeJS.Timeout;
+    }
+  >();
+  private readonly pendingDashboardRequests = new Map<
+    string,
+    {
+      nodeId: string;
+      resolve: (value: RuntimeDashboard) => void;
+      reject: (error: Error) => void;
       timer: NodeJS.Timeout;
     }
   >();
@@ -432,6 +443,17 @@ export class NexusCore extends EventEmitter {
           return undefined;
         }
 
+        case 'node:dashboard:result': {
+          const payload = message.payload as NodeDashboardResultPayload;
+          const pending = this.pendingDashboardRequests.get(payload.requestId);
+          if (pending && senderNodeId === pending.nodeId) {
+            clearTimeout(pending.timer);
+            this.pendingDashboardRequests.delete(payload.requestId);
+            if (payload.dashboard) pending.resolve(payload.dashboard);
+            else pending.reject(new Error('Dashboard indisponible sur le poste.'));
+          }
+          return undefined;
+        }
         case 'node:models:result': {
           const payload = message.payload as NodeModelsResultPayload;
           const reqId = payload.requestId || message.id;
@@ -543,6 +565,11 @@ export class NexusCore extends EventEmitter {
   }
 
   async stop(): Promise<void> {
+    for (const pending of this.pendingDashboardRequests.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error('Nexus Core arrêté.'));
+    }
+    this.pendingDashboardRequests.clear();
     this.presence.stopLivenessMonitoring();
 
     for (const [nodeId] of this.nodeWsConnections.entries()) {
@@ -671,6 +698,29 @@ export class NexusCore extends EventEmitter {
           JSON.stringify({
             error: err instanceof Error ? err.message : String(err),
             code: err instanceof NexusProtocolError ? err.code : 'INTERNAL_ERROR',
+          })
+        );
+      }
+      return;
+    }
+
+    if (method === 'GET' && pathname === '/api/dashboard') {
+      res.setHeader('Cache-Control', 'no-store');
+      const token = req.headers.authorization?.replace(/^Bearer /, '');
+      if (this.config.authTokens.length && (!token || !this.config.authTokens.includes(token))) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Jeton Nexus requis pour consulter les quotas.' }));
+        return;
+      }
+      try {
+        const dashboard = await this.getNodeDashboard(url.searchParams.get('nodeId') || undefined);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(dashboard));
+      } catch {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            error: 'Dashboard indisponible. Vérifiez la connexion et la version du poste Nexus.',
           })
         );
       }
@@ -1175,6 +1225,31 @@ export class NexusCore extends EventEmitter {
 
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Endpoint non trouvé' }));
+  }
+
+  async getNodeDashboard(nodeId?: string, timeoutMs = 7000): Promise<RuntimeDashboard> {
+    const node = nodeId ? this.presence.getNode(nodeId) : this.presence.getPrimaryOnlineNode();
+    const connection = node ? this.nodeWsConnections.get(node.nodeId) : undefined;
+    if (!node?.online || !connection) throw new Error('Poste indisponible.');
+    if (this.pendingDashboardRequests.size >= 32) throw new Error('Trop de demandes de dashboard.');
+    const requestId = randomUUID();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingDashboardRequests.delete(requestId);
+        reject(new Error('Délai dépassé pour le dashboard.'));
+      }, timeoutMs);
+      timer.unref?.();
+      this.pendingDashboardRequests.set(requestId, { nodeId: node.nodeId, resolve, reject, timer });
+      try {
+        connection.send(
+          serializeNexusMessage(createNexusMessage('node:dashboard:get', { requestId }))
+        );
+      } catch {
+        clearTimeout(timer);
+        this.pendingDashboardRequests.delete(requestId);
+        reject(new Error('Poste déconnecté.'));
+      }
+    });
   }
 
   async listNodeModels(

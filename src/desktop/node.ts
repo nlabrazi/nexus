@@ -558,12 +558,27 @@ export class DesktopNode {
       case 'node:switch_project':
         this.handleRemoteSwitchProject(message.payload as NodeSwitchProjectPayload, message.id);
         break;
+      case 'node:dashboard:get':
+        void this.handleDashboardRequest(message.payload.requestId);
+        break;
       case 'node:models:list':
         void this.handleRemoteModelsList(message.payload as NodeModelsListPayload, message.id);
         break;
       case 'node:models:select':
         void this.handleRemoteModelsSelect(message.payload as NodeModelsSelectPayload, message.id);
         break;
+    }
+  }
+
+  private async handleDashboardRequest(requestId: string): Promise<void> {
+    try {
+      if (!this.runtime) throw new Error('Runtime unavailable');
+      const dashboard = await this.runtime.getDashboard();
+      this.coreClient?.send(createNexusMessage('node:dashboard:result', { requestId, dashboard }));
+    } catch {
+      this.coreClient?.send(
+        createNexusMessage('node:dashboard:result', { requestId, unavailable: true })
+      );
     }
   }
 
