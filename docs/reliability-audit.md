@@ -70,3 +70,20 @@ local Jessica : 932 ms de synthèse ; WAV PCM mono 22 050 Hz, 16 bits, 223 788 o
 Échantillons de cette session : `/tmp/nexus-tts-baseline.wav` et `.ogg`.
 Cette mesure valide le pipeline et la latence locale, pas une appréciation
 subjective de la voix ni la lecture sur un appareil Android réel.
+
+
+## Bilan de la première itération
+
+Les lots de logging, erreurs structurées, persistance, diagnostics, stabilisation
+TTS, texte parlé, configuration vocale, simplification UI, statuts, feedback et
+notifications sont réalisés en commits séparés. La suite et les essais réels sont
+résumés dans [les validations](regression-tests.md#fiabilité-voix-et-interface).
+
+Les services, sessions, autorisations et contrôles workspace existants sont
+conservés. Le modèle Ollama configuré n’a pas été remplacé. L’interface principale
+montre le projet, l’agent et un état d’activité ; les modèles, la connexion et les
+informations détaillées restent disponibles dans les vues secondaires.
+
+La prochaine itération pourra traiter le brainstorm et les fournisseurs cloud
+(Cerebras, Groq, Gemini, OpenRouter et failover). Ils ne font pas partie de ce lot,
+conformément au périmètre confirmé. Aucune nouvelle clé API n’a été renseignée.

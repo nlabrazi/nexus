@@ -791,6 +791,18 @@ npx @vscode/vsce ls
 
 ---
 
+# Fiabilité, voix et diagnostic
+
+- [Logs persistants et commandes de diagnostic](docs/logging.md) : `Nexus: Diagnostics` dans VS Code, `/diagnostics` dans Telegram.
+- [Configuration vocale](docs/speech-voice.md) : activation, voix, vitesse et lecture automatique selon le client.
+- [Audit et périmètre de la première itération](docs/reliability-audit.md).
+- [Tests et validations](docs/regression-tests.md#fiabilité-voix-et-interface).
+
+Le client affiche les états READY, THINKING, CODING, SPEAKING, ERROR et OFFLINE.
+Les paramètres détaillés restent accessibles depuis les menus secondaires.
+
+---
+
 # 📄 License
 
 Nexus is proprietary software. All rights reserved.
