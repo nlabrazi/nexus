@@ -1,3 +1,5 @@
+import { splitSpeechText } from './speech-text.mjs';
+
 /** Browser speech lifecycle, independent of Vue and easy to exercise without an audio device. */
 export function createSpeechPlayback(engine, createUtterance, callbacks, timers = globalThis) {
   let generation = 0;
@@ -21,14 +23,7 @@ export function createSpeechPlayback(engine, createUtterance, callbacks, timers 
     stop();
     const current = generation;
     // Short utterances prevent the browser from stalling on long answers.
-    const words = text.trim().split(/\s+/).flatMap((word) => word.match(/[\s\S]{1,200}/gu) ?? []);
-    const chunks = [];
-    let chunk = '';
-    for (const word of words) {
-      if (chunk && chunk.length + 1 + word.length > 240) { chunks.push(chunk); chunk = ''; }
-      chunk += `${chunk ? ' ' : ''}${word}`;
-    }
-    if (chunk) chunks.push(chunk);
+    const chunks = splitSpeechText(text);
     if (!text.trim()) return;
     let index = 0;
     function fail() {

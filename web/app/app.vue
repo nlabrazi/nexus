@@ -585,6 +585,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
 import { createSpeechPlayback } from "./utils/speech-playback.mjs";
+import { cleanTextForSpeech } from "./utils/speech-text.mjs";
 import { Capacitor } from "@capacitor/core";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
 import { StatusBar, Style } from "@capacitor/status-bar";
@@ -750,15 +751,6 @@ function resizeComposer() {
 const ttsEnabled = ref<boolean>(true);
 const isSpeaking = ref<boolean>(false);
 const currentSpeakingId = ref<string | null>(null);
-
-function cleanTextForSpeech(text: string): string {
-  return text
-    .replace(/```[\s\S]*?```/g, "Bloc de code omis.")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/[#*_~>]/g, "")
-    .trim();
-}
 
 const speechError = ref("");
 const ttsAvailable = ref(false);
