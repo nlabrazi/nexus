@@ -92,3 +92,42 @@ Les états de connexion et d’avancement ont été vérifiés sans contacter le
 L’essai réel Piper et les mesures audio sont consignés dans
 [l’audit](reliability-audit.md). L’écoute sur un téléphone Android réel et
 l’appréciation du naturel de la voix restent des validations sur l’appareil cible.
+
+
+## Réponse Android et fournisseurs cloud — septembre 2026
+
+Validation de cette suite : **548 tests backend, 18 tests web, 2 tests d’intégration
+VS Code**, compilation/lint et génération Nuxt réussis. L’APK Android est reconstruite
+avec le plugin TTS natif ; elle est produite à la racine dans `nexus-debug.apk`.
+
+- `cloud-brain.unit.ts` : contrats des quatre API, JSON invalide, limites et refus,
+  classification des erreurs HTTP, délais, authentification sans clé dans l’URL.
+- `brain-routing.unit.ts` : ordre de repli, fournisseurs sans clé ignorés, sélection
+  locale isolée, annulation, délai global, changement de modèle pendant un appel,
+  absence de secrets et de conversations dans les logs.
+- `agent-runtime.unit.ts` : sélection cloud, statut et réponse via `executeTask`.
+- `web/test/native-speech-playback.test.mjs` : moteur natif simulé, annulation,
+  segments, délais, erreurs, voix et préférence de lecture selon l’origine vocale.
+
+Le test de l’application générée utilise Chromium et un pont Capacitor Android
+simulé, sans micro, service cloud ni téléphone :
+
+```sh
+npm run web:build
+node scripts/test-android-voice.cjs
+```
+
+Par défaut le script utilise `/usr/bin/google-chrome` ; `CHROME_BIN` permet de
+choisir Chromium. Sur un environnement de test isolé qui exige la désactivation
+du sandbox Chrome, utiliser `CHROME_NO_SANDBOX=1`.
+
+Ce parcours vérifie la dictée envoyée manuellement et automatiquement, la lecture
+native de la réponse finale malgré la lecture des messages écrits désactivée,
+le nettoyage du Markdown, la voix/vitesse, l’arrêt au micro, la remise à zéro d’un
+brouillon dicté effacé et le silence lorsque la voix est désactivée.
+L’ancienne vérification Chrome mobile des états et préférences reste réussie.
+
+Les tests cloud utilisent des réponses HTTP simulées. L’accès réel aux comptes
+sera vérifiable après saisie des clés. Le test Android simulé et la compilation
+ne vérifient pas le son physique : installer l’APK puis essayer « Écouter un
+exemple » et une demande dictée sur le téléphone cible.
