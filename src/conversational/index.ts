@@ -5,3 +5,5 @@ export * from './tools';
 export * from './codex-model';
 export * from './codex-inspector';
 export * from './ollama-model';
+export * from './cloud-model';
+export * from './routed-model';

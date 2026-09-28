@@ -1,3 +1,5 @@
+import { RoutedBrainModel } from '../../conversational/routed-model';
+import { OllamaBrainModel } from '../../conversational/ollama-model';
 import * as assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
@@ -283,5 +285,38 @@ suite('NexusRuntime isolated agent runtime', () => {
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true, force: true });
     }
+  });
+});
+
+suite('NexusRuntime cloud Brain integration', () => {
+  test('exposes provider selections and executes Brain through the selected cloud adapter', async (t) => {
+    t.mock.method(globalThis, 'fetch', async (url: string) => {
+      if (url.endsWith('/api/tags')) return new Response(JSON.stringify({ models: [] }));
+      assert.equal(url, 'https://api.groq.com/openai/v1/chat/completions');
+      return new Response(
+        JSON.stringify({
+          choices: [
+            { message: { content: JSON.stringify({ action: 'reply', text: 'Réponse cloud' }) } },
+          ],
+        })
+      );
+    });
+    const runtime = new NexusRuntime({
+      workspaceGuard: createStandaloneWorkspaceGuard('/mock/project'),
+      targetPath: () => '/mock/project',
+      brainModel: new RoutedBrainModel({
+        env: { GROQ_API_KEY: 'test-key' },
+        ollama: new OllamaBrainModel({ host: 'http://local.test', model: 'local' }),
+      }),
+    });
+    t.after(() => runtime.stop());
+    const menu = await runtime.listModels('brain');
+    const groq = menu.models.find((m) => m.model.startsWith('groq:'))!;
+    assert.ok(groq);
+    await runtime.selectModel('brain', { model: groq.model, effort: '' }, menu.context);
+    assert.equal((await runtime.listModels('brain')).selected?.model, groq.model);
+    assert.equal((await runtime.getStatus()).brain?.provider, 'groq');
+    const result = await runtime.executeTask('brain', 'Bonjour');
+    assert.equal(result.text, 'Réponse cloud');
   });
 });

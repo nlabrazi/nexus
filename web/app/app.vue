@@ -788,7 +788,7 @@ interface ModelItem {
 }
 
 const agentModels = ref<Record<string, { models: ModelItem[]; selected?: string }>>({
-  brain: { models: [], selected: "llama3.2:3b" },
+  brain: { models: [], selected: "" },
   codex: { models: [], selected: "" },
   antigravity: { models: [], selected: "" },
 });
@@ -850,9 +850,11 @@ async function handleSelectModel(modelName: string) {
     if (res.ok) {
       agentModels.value[backend].selected = modelName;
       triggerHaptic("medium");
+    } else {
+      errorMessage.value = "Impossible de sélectionner ce modèle. Vérifiez sa configuration sur le poste Nexus.";
     }
-  } catch (err) {
-    console.warn(`[Models] Échec de la sélection du modèle :`, err);
+  } catch {
+    errorMessage.value = "Impossible de joindre le poste pour changer de modèle.";
   }
 }
 
