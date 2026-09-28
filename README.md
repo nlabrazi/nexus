@@ -827,3 +827,5 @@ See [LICENSE](LICENSE) for the terms.
 
 [license-shield]: https://img.shields.io/badge/license-private-lightgrey?style=for-the-badge
 [license-url]: LICENSE
+
+- [Dashboard des agents, modèles et quotas](docs/usage-dashboard.md) : données mesurées, renouvellement des limites et actualisation dans les paramètres.
