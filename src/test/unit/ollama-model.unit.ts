@@ -100,14 +100,13 @@ suite('OllamaBrainModel adapter', () => {
   });
 
   test('decide reports actionable error when Ollama is unreachable and no fallback', async (t) => {
-    t.mock.method(globalThis, 'fetch', async () => {
+    const fetchMock = t.mock.method(globalThis, 'fetch', async () => {
       throw new Error('fetch failed ECONNREFUSED');
     });
 
+    // Local selection must not call Gemini even when its key exists.
     const originalGeminiKey = process.env.GEMINI_API_KEY;
-    delete process.env.GEMINI_API_KEY;
-    delete process.env.GOOGLE_GENAI_API_KEY;
-
+    process.env.GEMINI_API_KEY = 'unused-cloud-key';
     try {
       const model = new OllamaBrainModel({ host: 'http://127.0.0.1:11434' });
       await assert.rejects(
@@ -119,10 +118,10 @@ suite('OllamaBrainModel adapter', () => {
         ),
         /Impossible de contacter le moteur Nexus Brain local \(Ollama/
       );
+      assert.equal(fetchMock.mock.callCount(), 1);
     } finally {
-      if (originalGeminiKey) {
-        process.env.GEMINI_API_KEY = originalGeminiKey;
-      }
+      if (originalGeminiKey === undefined) delete process.env.GEMINI_API_KEY;
+      else process.env.GEMINI_API_KEY = originalGeminiKey;
     }
   });
 
