@@ -7,8 +7,7 @@ import {
   RuntimeApprovalRequest,
   TurnTimeoutHandler,
 } from '../runtime/types';
-import { createStandaloneWorkspaceGuard, getDefaultCodeDirectory } from '../runtime/workspace';
-import { isProjectDir } from './config';
+import { createStandaloneWorkspaceGuard } from '../runtime/workspace';
 import { WorkspaceGuard } from '../workspace/guard';
 import { BrainModel } from '../conversational/model';
 import { DecisionRecordInput, ProjectDecision, ProjectMemorySnapshot } from '../memory/types';
@@ -159,41 +158,40 @@ export class DesktopNode {
             isCurrent: p.id === current.id || p.path === current.path,
           }));
           try {
-            const codeDir = getDefaultCodeDirectory();
-            const scanDirs = [dirname(current.path)];
-            if (
-              existsSync(codeDir) &&
-              statSync(codeDir).isDirectory() &&
-              !scanDirs.includes(codeDir)
-            ) {
-              scanDirs.push(codeDir);
-            }
-            for (const dir of scanDirs) {
-              const isSystemDir =
-                dir === '/' || dir === '/tmp' || dir === '/home' || dir === '/var';
-              if (!isSystemDir && existsSync(dir) && statSync(dir).isDirectory()) {
-                const entries = readdirSync(dir, { withFileTypes: true });
-                for (const entry of entries) {
-                  if (
-                    entry.isDirectory() &&
-                    !entry.name.startsWith('.') &&
-                    entry.name !== 'node_modules'
-                  ) {
-                    const siblingPath = resolve(dir, entry.name);
-                    if (isProjectDir(siblingPath) && !list.some((p) => p.path === siblingPath)) {
-                      list.push({
-                        id: entry.name.toLowerCase().replace(/[^a-z0-9_-]/g, '-'),
-                        name: entry.name,
-                        path: siblingPath,
-                        currentBranch: undefined,
-                        isCurrent: false,
-                      });
-                    }
+            const parentDir = dirname(current.path);
+            const isSystemDir =
+              parentDir === '/' ||
+              parentDir === '/tmp' ||
+              parentDir === '/home' ||
+              parentDir === '/var';
+            if (!isSystemDir && existsSync(parentDir) && statSync(parentDir).isDirectory()) {
+              const entries = readdirSync(parentDir, { withFileTypes: true });
+              for (const entry of entries) {
+                if (
+                  entry.isDirectory() &&
+                  !entry.name.startsWith('.') &&
+                  entry.name !== 'node_modules'
+                ) {
+                  const siblingPath = resolve(parentDir, entry.name);
+                  const isProject =
+                    existsSync(resolve(siblingPath, '.git')) ||
+                    existsSync(resolve(siblingPath, 'package.json')) ||
+                    existsSync(resolve(siblingPath, '.nexus')) ||
+                    existsSync(resolve(siblingPath, 'Cargo.toml')) ||
+                    existsSync(resolve(siblingPath, 'pyproject.toml'));
+                  if (isProject && !list.some((p) => p.path === siblingPath)) {
+                    list.push({
+                      id: entry.name.toLowerCase().replace(/[^a-z0-9_-]/g, '-'),
+                      name: entry.name,
+                      path: siblingPath,
+                      currentBranch: undefined,
+                      isCurrent: false,
+                    });
                   }
                 }
               }
             }
-          } catch {}
+          } catch { }
           return list;
         },
         switchProject: (idOrPath) => {
@@ -284,9 +282,12 @@ export class DesktopNode {
       if (!found && existsSync(resolved) && statSync(resolved).isDirectory()) {
         const name = basename(resolved);
         const id = name.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
-        const guard = createStandaloneWorkspaceGuard(resolved, {
+        const guard = new WorkspaceGuard(() => ({
+          trusted: true,
+          folders: [{ scheme: 'file', path: resolved }],
+          dirtyDocuments: [],
           protectedBranches: this.config.protectedBranches ?? [],
-        });
+        }));
         const summary: NodeProjectSummary = {
           id,
           name,
@@ -298,28 +299,6 @@ export class DesktopNode {
         this.guardMap.set(summary.id, guard);
         this.guardMap.set(summary.path, guard);
         found = summary;
-      }
-      if (!found) {
-        const codeDir = getDefaultCodeDirectory();
-        const candidateUnderCode = resolve(codeDir, idOrPath);
-        if (existsSync(candidateUnderCode) && statSync(candidateUnderCode).isDirectory()) {
-          const name = basename(candidateUnderCode);
-          const id = name.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
-          const guard = createStandaloneWorkspaceGuard(candidateUnderCode, {
-            protectedBranches: this.config.protectedBranches ?? [],
-          });
-          const summary: NodeProjectSummary = {
-            id,
-            name,
-            path: candidateUnderCode,
-          };
-          this.projectSummaries.push(summary);
-          this.projectMap.set(summary.id, summary);
-          this.projectMap.set(summary.path, summary);
-          this.guardMap.set(summary.id, guard);
-          this.guardMap.set(summary.path, guard);
-          found = summary;
-        }
       }
     }
     if (!found) {
@@ -462,17 +441,10 @@ export class DesktopNode {
       throw new Error(`Projet cible introuvable : ${options?.projectId}`);
     }
 
-    const codeDir = getDefaultCodeDirectory();
-    const effectivePath = options?.projectId
-      ? targetProject.path
-      : existsSync(codeDir) && statSync(codeDir).isDirectory()
-        ? codeDir
-        : targetProject.path;
-
     this.state = 'busy';
     try {
       return await this.runtime.executeBrain(message, signal, {
-        targetPath: effectivePath,
+        targetPath: targetProject.path,
         conversationId: options?.conversationId,
       });
     } finally {
@@ -532,10 +504,10 @@ export class DesktopNode {
       runtimeStatus,
       coreConnection: this.coreClient
         ? {
-            status: this.coreClient.getStatus(),
-            url: this.coreClient.getWsUrl(),
-            sessionId: this.coreClient.getSessionId(),
-          }
+          status: this.coreClient.getStatus(),
+          url: this.coreClient.getWsUrl(),
+          sessionId: this.coreClient.getSessionId(),
+        }
         : undefined,
     };
   }

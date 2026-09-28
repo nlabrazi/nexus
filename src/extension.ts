@@ -22,7 +22,7 @@ import { AgentBackendType } from './telegram/status';
 import { registerSpeechTestCommand } from './speech/commands';
 import { createConfiguredSpeechService } from './speech/configuration';
 import { synthesizeAcknowledgement } from './speech/acknowledgement';
-import { NexusRuntime, getDefaultCodeDirectory } from './runtime';
+import { NexusRuntime } from './runtime';
 
 let nexusRuntime: NexusRuntime | undefined;
 let telegramService: TelegramService | undefined;
@@ -120,8 +120,7 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.window.showInformationMessage(`Nexus connected to @${data.result?.username}`);
     } catch (error) {
       vscode.window.showErrorMessage(
-        `Nexus: Unable to connect to Telegram: ${
-          error instanceof Error ? error.message : String(error)
+        `Nexus: Unable to connect to Telegram: ${error instanceof Error ? error.message : String(error)
         }`
       );
     }
@@ -170,8 +169,7 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage(`Nexus: Codex session started — ${sessionId}`);
       } catch (error) {
         vscode.window.showErrorMessage(
-          `Nexus: Unable to start Codex session: ${
-            error instanceof Error ? error.message : String(error)
+          `Nexus: Unable to start Codex session: ${error instanceof Error ? error.message : String(error)
           }`
         );
       }
@@ -404,17 +402,14 @@ function startTelegramService(context: vscode.ExtensionContext, token: string): 
 
   const service: TelegramService = new TelegramService(context, client, {
     onBrainPrompt: async (message, signal) => {
-      const codeDir = getDefaultCodeDirectory();
-      const targetPath = codeDir;
+      const folders = vscode.workspace.workspaceFolders ?? [];
+      const folder = folders.length === 1 ? folders[0] : undefined;
       const conversationId = JSON.stringify([
         context.globalState.get<number>('nexus.telegram.allowedUserId'),
         context.globalState.get<number>('nexus.telegram.allowedChatId'),
-        targetPath,
+        folder?.uri.toString(),
       ]);
-      return nexusRuntime!.executeBrain(message, signal, {
-        conversationId,
-        targetPath,
-      });
+      return nexusRuntime!.executeBrain(message, signal, { conversationId });
     },
     onRemotePrompt: handleRemoteCodexPrompt,
     synthesizeAcknowledgement: async (signal) => {

@@ -1664,121 +1664,73 @@ dialog[open].sheet {
   color: var(--text-bright);
 }
 
-/* Voice synthesis indicator & controls */
-.voice-speaking-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  background: rgba(223, 170, 130, 0.15);
-  border: 1px solid var(--accent);
-  border-radius: 9999px;
-  color: var(--accent);
-  cursor: pointer;
-  animation: pulse-speaking 1.8s infinite;
+/* Starters List in Sheet */
+.starters-sheet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-@keyframes pulse-speaking {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(223, 170, 130, 0.4);
-  }
-  50% {
-    box-shadow: 0 0 0 6px rgba(223, 170, 130, 0);
-  }
-}
-
-.speaking-wave {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  display: inline-block;
-}
-
-.message-meta-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.msg-speak-btn {
-  background: none;
-  border: none;
-  padding: 2px 4px;
-  color: var(--muted-light);
-  cursor: pointer;
-  border-radius: 4px;
-  display: inline-flex;
-  align-items: center;
-  transition: all 0.15s ease;
-}
-
-.msg-speak-btn:hover {
-  color: var(--accent);
-  background: rgba(223, 170, 130, 0.1);
-}
-
-.msg-speak-btn.speaking {
-  color: var(--accent);
-  animation: pulse-speaking 1.5s infinite;
-}
-
-/* Brain Handoff to Codex / Antigravity */
-.brain-handoff {
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(223, 170, 130, 0.15);
+.starter-card {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.brain-handoff-label {
-  font-size: 11px;
-  font-family: var(--font-mono);
-  color: var(--muted-light);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.handoff-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(16, 26, 46, 0.7);
   border: 1px solid var(--line);
-  color: var(--text-bright);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.15s ease;
+  text-align: left;
+  transition: all 0.2s ease;
 }
 
-.handoff-chip:hover {
-  background: rgba(223, 170, 130, 0.12);
+.starter-card:hover {
+  background: rgba(0, 240, 255, 0.1);
   border-color: var(--accent);
-  color: var(--accent);
+  box-shadow: 0 0 14px rgba(0, 240, 255, 0.2);
+  transform: translateX(2px);
 }
 
-.agent-card-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.starter-card-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(0, 240, 255, 0.12);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.starter-card-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.starter-card-content strong {
+  display: block;
+  font-size: 14px;
+  color: var(--text-bright);
   margin-bottom: 2px;
 }
 
-.agent-card-role-badge {
-  font-size: 10px;
-  font-family: var(--font-mono);
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(223, 170, 130, 0.12);
+.starter-card-content p {
+  font-size: 12px;
+  color: var(--muted-light);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.starter-card-arrow {
+  transform: rotate(90deg);
+  color: var(--muted);
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.starter-card:hover .starter-card-arrow {
   color: var(--accent);
-  border: 1px solid rgba(223, 170, 130, 0.25);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
 }
 
 /* Project Selection List in Sheet */
