@@ -39,6 +39,12 @@ export function context(): vscode.ExtensionContext {
 
 export class FakeTelegram extends TelegramClient {
   messages: string[] = [];
+  typing: number[] = [];
+
+  override async sendChatAction(chatId: number, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted();
+    this.typing.push(chatId);
+  }
   approvals: { text: string; keyboard: TelegramInlineKeyboard; messageId: number }[] = [];
   answers: string[] = [];
   closed: { messageId: number; text: string }[] = [];

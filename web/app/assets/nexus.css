@@ -2214,3 +2214,12 @@ dialog[open].sheet {
 @media (prefers-reduced-motion: reduce) {
   .status-beacon .beacon-dot { animation: none; }
 }
+
+/* Keep the project selector readable without colliding with the wider activity state. */
+.header-left, .header-right { flex-shrink: 0; }
+.project-pill { min-width: 0; width: 100%; }
+@media (max-width: 480px) {
+  .app-header { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; }
+  .header-center { grid-row: 2; grid-column: 1 / -1; justify-content: flex-start; }
+  .project-pill { width: auto; max-width: 100%; }
+}

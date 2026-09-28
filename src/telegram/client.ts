@@ -163,6 +163,15 @@ export class TelegramClient {
     }
   }
 
+  async sendChatAction(chatId: number, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted();
+    await this.call(
+      'sendChatAction',
+      { chat_id: chatId, action: 'typing' },
+      AbortSignal.any([signal, AbortSignal.timeout(3000)])
+    );
+  }
+
   async sendMessage(
     chatId: number,
     text: string,

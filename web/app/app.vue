@@ -12,7 +12,7 @@
       </div>
 
       <div class="header-center">
-        <button type="button" class="project-pill" aria-label="Changer de projet" @click="showProjectMenu = true">
+        <button type="button" class="project-pill" :aria-label="`Changer de projet : ${activeProjectName || 'aucun'}`" :title="activeProjectName" @click="showProjectMenu = true">
           <NexusIcon name="folder" />
           <span class="project-pill-name">{{ activeProjectName || "Projet..." }}</span>
           <NexusIcon name="down" />
@@ -553,7 +553,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
 import { createSpeechPlayback } from "./utils/speech-playback.mjs";
 import { cleanTextForSpeech } from "./utils/speech-text.mjs";
-import { getAssistantState, assistantStateLabels } from "./utils/assistant-state.mjs";
+import { getAssistantState, assistantStateLabels, getInteractionMessage } from "./utils/assistant-state.mjs";
 import { Capacitor } from "@capacitor/core";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
 import { StatusBar, Style } from "@capacitor/status-bar";
@@ -703,7 +703,7 @@ const inputPrompt = ref<string>("");
 const isSending = ref<boolean>(false);
 const inFlightBackend = ref<"brain" | "codex" | "antigravity" | null>(null);
 const lastTaskFailed = ref(false);
-const currentProgressMessage = ref<string>("");
+
 const currentInFlightTaskId = ref<string | null>(null);
 const messages = ref<ChatMessage[]>([]);
 const messagesScrollRef = ref<HTMLElement | null>(null);
@@ -1207,6 +1207,9 @@ const lastUpdatedText = computed(() => {
 const runningTasks = computed(() =>
   tasks.value.filter((t) => t.status === "running"),
 );
+const currentProgressMessage = computed(() => getInteractionMessage(
+  tasks.value.find(task => task.taskId === currentInFlightTaskId.value), inFlightBackend.value,
+));
 const runtimeStatus = computed(() => getAssistantState({
   online: isNodeReady.value,
   sending: isSending.value,
@@ -1508,7 +1511,6 @@ async function sendPrompt(promptText: string) {
   isSending.value = true;
   inFlightBackend.value = backend;
   lastTaskFailed.value = false;
-  currentProgressMessage.value = `Envoi au ${selectedBackendLabel(selectedBackend.value)}...`;
 
   try {
     const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/tasks`;
@@ -1565,7 +1567,6 @@ async function sendPrompt(promptText: string) {
     isSending.value = false;
     inFlightBackend.value = null;
     currentInFlightTaskId.value = null;
-    currentProgressMessage.value = "";
     scrollToBottom();
     // Refresh tasks and status
     fetchTasks(true);

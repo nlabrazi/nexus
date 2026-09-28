@@ -1,3 +1,4 @@
+import { startTyping } from './activity';
 import { formatDiagnostics } from '../diagnostics/status';
 import { getLoggingStatus } from '../logging/persistence';
 import { logger } from '../logging/logger';
@@ -839,6 +840,12 @@ export class TelegramService {
     let audio: TelegramVoiceFile | undefined;
     let phase: 'download' | 'transcription' | 'delivery' = 'delivery';
     let text: string | undefined;
+    const stopTyping = startTyping(
+      this.client,
+      chatId,
+      signal,
+      () => generation === this.operationGeneration
+    );
     try {
       if (!this.transcribeVoice) {
         throw new SpeechError('not_configured');
@@ -908,6 +915,7 @@ export class TelegramService {
           .catch(() => logger.error('Telegram', 'operation_failed'));
       }
     } finally {
+      stopTyping();
       audio?.data.fill(0);
       if (this.voiceOperation === controller) {
         this.voiceOperation = undefined;
@@ -1084,6 +1092,12 @@ export class TelegramService {
   ): Promise<void> {
     const signal = AbortSignal.any([controller.signal, this.abortController!.signal]);
     const generation = this.operationGeneration;
+    const stopTyping = startTyping(
+      this.client,
+      chatId,
+      signal,
+      () => generation === this.operationGeneration
+    );
     try {
       await this.client.sendMessage(chatId, '💬 Nexus réfléchit…', 'plain', signal);
       signal.throwIfAborted();
@@ -1103,6 +1117,7 @@ export class TelegramService {
           .catch(() => {});
       }
     } finally {
+      stopTyping();
       if (this.brainOperation === controller) {
         this.brainOperation = undefined;
       }
@@ -1118,6 +1133,12 @@ export class TelegramService {
     signal: AbortSignal,
     generation = this.operationGeneration
   ): Promise<void> {
+    const stopTyping = startTyping(
+      this.client,
+      chatId,
+      signal,
+      () => generation === this.operationGeneration
+    );
     try {
       await this.client.sendMessage(chatId, '⏳ Codex is working...');
       if (signal.aborted || generation !== this.operationGeneration) {
@@ -1146,6 +1167,7 @@ export class TelegramService {
           .catch(() => logger.error('Telegram', 'operation_failed'));
       }
     } finally {
+      stopTyping();
       if (generation === this.operationGeneration) {
         this.remotePromptRunning = false;
       }
@@ -1158,6 +1180,12 @@ export class TelegramService {
     signal: AbortSignal,
     generation = this.operationGeneration
   ): Promise<void> {
+    const stopTyping = startTyping(
+      this.client,
+      chatId,
+      signal,
+      () => generation === this.operationGeneration
+    );
     try {
       await this.client.sendMessage(chatId, '⏳ Gemini Antigravity is working...');
       if (signal.aborted || generation !== this.operationGeneration) {
@@ -1187,6 +1215,7 @@ export class TelegramService {
           .catch(() => logger.error('Telegram', 'operation_failed'));
       }
     } finally {
+      stopTyping();
       if (generation === this.operationGeneration) {
         this.remotePromptRunning = false;
       }
