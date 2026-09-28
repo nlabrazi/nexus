@@ -132,16 +132,12 @@
           <div class="message-meta">
             <span>{{
               msg.role === "user" ? "Vous" : selectedBackendLabel(msg.backend)
-            }}</span>
+              }}</span>
             <div class="message-meta-actions">
-              <button
-                v-if="msg.role === 'assistant'"
-                type="button"
-                class="icon-button tts-play-btn"
+              <button v-if="msg.role === 'assistant'" type="button" class="icon-button tts-play-btn"
                 :class="{ speaking: currentSpeakingId === msg.id && isSpeaking }"
                 :aria-label="currentSpeakingId === msg.id && isSpeaking ? 'Arrêter la lecture' : 'Écouter le message vocalement'"
-                @click="toggleSpeakMessage(msg)"
-              >
+                @click="toggleSpeakMessage(msg)">
                 <NexusIcon :name="currentSpeakingId === msg.id && isSpeaking ? 'stop' : 'speaker'" />
               </button>
               <time>{{ formatTime(msg.timestamp) }}</time>
@@ -157,7 +153,7 @@
         <div v-if="isSending" class="task-progress" role="status">
           <span class="busy-indicator" /><span>{{
             currentProgressMessage || "En cours…"
-          }}</span>
+            }}</span>
           <button v-if="currentInFlightTaskId" type="button" class="text-button danger"
             @click="cancelTask(currentInFlightTaskId)">
             <NexusIcon name="stop" />Arrêter
@@ -206,7 +202,8 @@
             <button type="button" class="agent-badge-btn" aria-label="Changer d'agent et de modèle"
               @click="openAgentPicker">
               <NexusIcon :name="selectedBackend === 'brain' ? 'sparkles' : 'zap'" class="agent-zap-icon" />
-              <span>{{ selectedBackendShortLabel(selectedBackend) }}<span v-if="currentSelectedModelShort" class="agent-model-pill">{{ currentSelectedModelShort }}</span></span>
+              <span>{{ selectedBackendShortLabel(selectedBackend) }}<span v-if="currentSelectedModelShort"
+                  class="agent-model-pill">{{ currentSelectedModelShort }}</span></span>
               <NexusIcon name="down" />
             </button>
 
@@ -240,7 +237,7 @@
       <button v-if="pendingApprovalsCount" type="button" class="approval-hud-pill" @click="showApprovalModal = true">
         <NexusIcon name="shield" /><span>{{ pendingApprovalsCount }} autorisation{{
           pendingApprovalsCount > 1 ? "s" : ""
-          }}
+        }}
           en attente</span>
         <NexusIcon name="chevron" />
       </button>
@@ -274,13 +271,13 @@
           <div class="task-line">
             <span class="task-status" :class="task.status"><span class="status-dot" />{{
               formatTaskStatus(task.status)
-              }}</span><time>{{ formatRelativeTime(task.createdAt) }}</time>
+            }}</span><time>{{ formatRelativeTime(task.createdAt) }}</time>
           </div>
           <h2>{{ task.prompt }}</h2>
           <div class="task-subline">
             <span>{{ selectedBackendLabel(task.backend) }}</span><span v-if="task.projectId">{{
               projectLabel(task.projectId)
-            }}</span><button v-if="task.status === 'running' || task.status === 'pending'" type="button"
+              }}</span><button v-if="task.status === 'running' || task.status === 'pending'" type="button"
               class="text-button danger" @click="cancelTask(task.taskId)">
               <NexusIcon name="stop" />Arrêter
             </button>
@@ -472,7 +469,7 @@
       <div v-if="activeApproval" class="approval-content">
         <div class="approval-heading">
           <NexusIcon name="shield" /><span>{{ activeApproval.agentName
-            }}<small>{{ formatApprovalKind(activeApproval.kind) }}</small></span>
+          }}<small>{{ formatApprovalKind(activeApproval.kind) }}</small></span>
         </div>
         <pre class="approval-code"><code>{{ activeApproval.details }}</code></pre>
         <p class="approval-expiry" :class="{
@@ -541,8 +538,7 @@
         <div class="sheet-section-title">AGENT IA</div>
         <div class="agent-sheet-list">
           <button v-for="agent in agentOptions" :key="agent.id" type="button" class="agent-card-row"
-            :class="{ selected: selectedBackend === agent.id }"
-            @click="handleSelectBackend(agent.id)">
+            :class="{ selected: selectedBackend === agent.id }" @click="handleSelectBackend(agent.id)">
             <div class="agent-card-icon">
               <NexusIcon :name="agent.id === 'brain' ? 'sparkles' : agent.id === 'codex' ? 'zap' : 'branch'" />
             </div>
@@ -563,8 +559,7 @@
 
         <div v-if="currentBackendModels.length" class="models-sheet-list">
           <button v-for="m in currentBackendModels" :key="m.id || m.model" type="button" class="model-card-row"
-            :class="{ selected: currentSelectedModel === m.model }"
-            @click="handleSelectModel(m.model)">
+            :class="{ selected: currentSelectedModel === m.model }" @click="handleSelectModel(m.model)">
             <div class="model-card-info">
               <div class="model-card-name">{{ m.displayName || m.model }}</div>
               <div v-if="m.description" class="model-card-desc">{{ m.description }}</div>
