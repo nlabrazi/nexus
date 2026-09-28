@@ -12,7 +12,7 @@
       </div>
 
       <div class="header-center">
-        <button type="button" class="project-pill" aria-label="Changer de projet" @click="showProjectMenu = true">
+        <button type="button" class="project-pill" :aria-label="`Changer de projet : ${activeProjectName || 'aucun'}`" :title="activeProjectName" @click="showProjectMenu = true">
           <NexusIcon name="folder" />
           <span class="project-pill-name">{{ activeProjectName || "Projet..." }}</span>
           <NexusIcon name="down" />
@@ -20,18 +20,10 @@
       </div>
 
       <div class="header-right">
-        <button class="status-beacon" type="button" :class="connectionStatus === 'connected' && isNodeReady
-          ? 'online'
-          : connectionStatus
-          " :aria-label="connectionStatusText" @click="showSettings = true">
+        <button class="status-beacon" type="button" :class="runtimeStatus.toLowerCase()"
+          :aria-label="`Nexus : ${runtimeStatusText}. Ouvrir les paramètres`" @click="showSettings = true">
           <span class="beacon-dot" />
-          <span class="beacon-label">{{
-            connectionStatus === "connecting"
-              ? "SYNC"
-              : isNodeReady
-                ? "ON"
-                : "OFF"
-          }}</span>
+          <span class="beacon-label" role="status" aria-live="polite">{{ runtimeStatus }}</span>
         </button>
         <button type="button" class="header-menu-btn" aria-label="Menu des options"
           @click="showQuickMenu = !showQuickMenu">
@@ -43,22 +35,9 @@
     <!-- Quick Overflow Menu Dropdown -->
     <div v-if="showQuickMenu" class="menu-backdrop" @click="showQuickMenu = false" />
     <div v-if="showQuickMenu" class="quick-menu" role="menu">
-      <div class="menu-section">
-        <span class="menu-section-title">AGENT IA</span>
-        <div class="agent-segment">
-          <button v-for="b in (['brain', 'codex', 'antigravity'] as const)" :key="b" type="button"
-            class="agent-pill-btn" :class="{ active: selectedBackend === b }"
-            @click="selectedBackend = b; showQuickMenu = false">
-            {{ selectedBackendShortLabel(b) }}
-          </button>
-        </div>
-      </div>
-
-      <div class="menu-divider" />
-
       <button type="button" class="menu-item" @click="toggleTts(); showQuickMenu = false">
         <NexusIcon :name="ttsEnabled ? 'speaker' : 'speakerOff'" />
-        <span>{{ ttsEnabled ? 'Réponse vocale active' : 'Réponse vocale coupée' }}</span>
+        <span>{{ ttsEnabled ? 'Voix activée' : 'Voix désactivée' }}</span>
       </button>
 
       <button type="button" class="menu-item" @click="showQuickMenu = false; showProjectMenu = true">
@@ -83,48 +62,16 @@
     <main v-if="activeTab === 'chat'" class="chat-view" aria-label="Discussion">
       <div ref="messagesScrollRef" class="messages-stream" role="log" aria-label="Messages" aria-live="polite"
         aria-relevant="additions text">
-        <!-- Minimalist Jarvis Holographic Standby Screen -->
         <div v-if="!messages.length" class="welcome-hud">
-          <div class="arc-reactor" aria-hidden="true">
-            <div class="core-ring outer" />
-            <div class="core-ring middle" />
-            <div class="core-glyph">
-              <NexusIcon name="nexus" />
-            </div>
-          </div>
-
-          <div class="hud-status-block">
-            <p class="hud-code">// NEXUS PROTOCOL v0.4</p>
-            <h1 class="hud-title">
-              {{
-                isNodeReady
-                  ? "SYSTÈME EN LIGNE"
-                  : connectionStatus === "connecting"
-                    ? "CONNEXION EN COURS…"
-                    : "POSTE HORS LIGNE"
-              }}
-            </h1>
-            <div class="hud-telemetry">
-              <span class="hud-pill" :class="{ ready: isNodeReady }">
-                <span class="beacon-dot" />
-                {{ isNodeReady ? "CORE ACTIF" : "EN ATTENTE" }}
-              </span>
-              <span v-if="activeProjectName" class="hud-pill project">
-                <NexusIcon name="folder" /> {{ activeProjectName }}
-              </span>
-            </div>
-          </div>
-
+          <span class="welcome-mark" aria-hidden="true"><NexusIcon name="nexus" /></span>
+          <h1 class="welcome-title">Que souhaitez-vous faire ?</h1>
+          <p class="welcome-description">{{ isNodeReady
+            ? "Explorez une idée avec Brain ou confiez du code à votre agent."
+            : "Connectez votre poste pour commencer. Votre brouillon reste disponible." }}</p>
           <button v-if="!isNodeReady && connectionStatus !== 'connecting'" type="button"
-            class="button primary hud-connect-btn" @click="
-              connectionStatus === 'error' || !coreUrl
-                ? (showSettings = true)
-                : (activeTab = 'dashboard')
-              ">
-            <NexusIcon name="settings" />
-            <span>Connecter mon poste</span>
+            class="button primary" @click="showSettings = true">
+            <NexusIcon name="settings" /><span>Connecter mon poste</span>
           </button>
-
         </div>
 
         <!-- Chat Messages -->
@@ -132,9 +79,9 @@
           <div class="message-meta">
             <span>{{
               msg.role === "user" ? "Vous" : selectedBackendLabel(msg.backend)
-              }}</span>
+            }}</span>
             <div class="message-meta-actions">
-              <button v-if="msg.role === 'assistant'" type="button" class="icon-button tts-play-btn"
+              <button v-if="msg.role === 'assistant' && !msg.error && ttsAvailable && ttsEnabled" type="button" class="icon-button tts-play-btn"
                 :class="{ speaking: currentSpeakingId === msg.id && isSpeaking }"
                 :aria-label="currentSpeakingId === msg.id && isSpeaking ? 'Arrêter la lecture' : 'Écouter le message vocalement'"
                 @click="toggleSpeakMessage(msg)">
@@ -153,7 +100,7 @@
         <div v-if="isSending" class="task-progress" role="status">
           <span class="busy-indicator" /><span>{{
             currentProgressMessage || "En cours…"
-            }}</span>
+          }}</span>
           <button v-if="currentInFlightTaskId" type="button" class="text-button danger"
             @click="cancelTask(currentInFlightTaskId)">
             <NexusIcon name="stop" />Arrêter
@@ -179,12 +126,17 @@
           {{ errorMessage }}
         </div>
 
+        <p v-if="speechError" class="inline-error" role="status">
+          {{ speechError }}
+          <button type="button" class="text-button" @click="speechError = ''">Fermer</button>
+        </p>
+
         <!-- Voice Recognition Interim Notice -->
         <div v-if="isListening || isProcessingAudio" class="voice-hud-notice" role="status">
           <span class="status-dot recording" /><span>{{
             interimTranscript ||
             (isProcessingAudio
-              ? "Transcription neuronale…"
+              ? "Transcription en cours…"
               : "Écoute en cours… Touchez pour terminer.")
           }}</span>
           <button type="button" class="icon-button" aria-label="Annuler la dictée" @click="cancelVoiceRecording">
@@ -195,15 +147,14 @@
         <form class="composer" @submit.prevent="submitMessage">
           <label for="message" class="sr-only">Votre message</label>
           <textarea id="message" ref="chatTextareaRef" v-model="inputPrompt" rows="1" :placeholder="isNodeReady
-            ? 'Donnez une instruction à Jarvis...'
+            ? 'Écrivez à Nexus…'
             : 'Poste hors ligne (brouillon actif)...'
             " :disabled="isSending" @keydown="handleComposerKeydown" @input="resizeComposer" />
           <div class="composer-tools">
             <button type="button" class="agent-badge-btn" aria-label="Changer d'agent et de modèle"
               @click="openAgentPicker">
               <NexusIcon :name="selectedBackend === 'brain' ? 'sparkles' : 'zap'" class="agent-zap-icon" />
-              <span>{{ selectedBackendShortLabel(selectedBackend) }}<span v-if="currentSelectedModelShort"
-                  class="agent-model-pill">{{ currentSelectedModelShort }}</span></span>
+              <span>{{ selectedBackendShortLabel(selectedBackend) }}</span>
               <NexusIcon name="down" />
             </button>
 
@@ -237,7 +188,7 @@
       <button v-if="pendingApprovalsCount" type="button" class="approval-hud-pill" @click="showApprovalModal = true">
         <NexusIcon name="shield" /><span>{{ pendingApprovalsCount }} autorisation{{
           pendingApprovalsCount > 1 ? "s" : ""
-        }}
+          }}
           en attente</span>
         <NexusIcon name="chevron" />
       </button>
@@ -271,13 +222,13 @@
           <div class="task-line">
             <span class="task-status" :class="task.status"><span class="status-dot" />{{
               formatTaskStatus(task.status)
-            }}</span><time>{{ formatRelativeTime(task.createdAt) }}</time>
+              }}</span><time>{{ formatRelativeTime(task.createdAt) }}</time>
           </div>
           <h2>{{ task.prompt }}</h2>
           <div class="task-subline">
             <span>{{ selectedBackendLabel(task.backend) }}</span><span v-if="task.projectId">{{
               projectLabel(task.projectId)
-              }}</span><button v-if="task.status === 'running' || task.status === 'pending'" type="button"
+            }}</span><button v-if="task.status === 'running' || task.status === 'pending'" type="button"
               class="text-button danger" @click="cancelTask(task.taskId)">
               <NexusIcon name="stop" />Arrêter
             </button>
@@ -446,6 +397,27 @@
         </div>
         <label class="switch-field"><span>Envoyer après la dictée<small>Désactivez pour relire avant
               l’envoi.</small></span><input v-model="autoSendVoice" type="checkbox" role="switch" /></label>
+        <details class="settings-details">
+          <summary>Voix</summary>
+          <p v-if="!ttsAvailable">La lecture vocale n’est pas disponible sur cet appareil.</p>
+          <template v-else>
+            <label class="switch-field"><span>Activer la voix</span><input v-model="ttsEnabled" type="checkbox" role="switch" /></label>
+            <label class="switch-field"><span>Lire aussi les réponses aux messages écrits<small>Une demande dictée reçoit une réponse vocale si la voix est activée.</small></span><input v-model="autoSpeak" :disabled="!ttsEnabled" type="checkbox" role="switch" /></label>
+            <div class="field">
+              <label for="speech-voice">Voix</label>
+              <select id="speech-voice" v-model="speechVoice" :disabled="!ttsEnabled">
+                <option value="">Automatique (français)</option>
+                <option v-if="speechVoice && !speechVoices.some(voice => voice.voiceURI === speechVoice)" :value="speechVoice">Voix enregistrée indisponible — choix automatique</option>
+                <option v-for="voice in speechVoices" :key="voice.voiceURI" :value="voice.voiceURI">{{ voice.name }} ({{ voice.lang }})</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="speech-rate">Vitesse : {{ speechRate.toFixed(1) }}×</label>
+              <input id="speech-rate" v-model.number="speechRate" :disabled="!ttsEnabled" type="range" min="0.8" max="1.3" step="0.1" />
+            </div>
+            <button type="button" class="text-button" :disabled="!ttsEnabled" @click="speakMessage('Bonjour. Nexus est prêt à vous écouter.')">Écouter un exemple</button>
+          </template>
+        </details>
         <p v-if="settingsError" class="inline-error" role="alert">
           {{ settingsError }}
         </p>
@@ -469,7 +441,7 @@
       <div v-if="activeApproval" class="approval-content">
         <div class="approval-heading">
           <NexusIcon name="shield" /><span>{{ activeApproval.agentName
-          }}<small>{{ formatApprovalKind(activeApproval.kind) }}</small></span>
+            }}<small>{{ formatApprovalKind(activeApproval.kind) }}</small></span>
         </div>
         <pre class="approval-code"><code>{{ activeApproval.details }}</code></pre>
         <p class="approval-expiry" :class="{
@@ -579,6 +551,12 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
+import { TextToSpeech } from "@capacitor-community/text-to-speech";
+import { createNativeSpeechPlayback } from "./utils/native-speech-playback.mjs";
+import { shouldSpeakReply } from "./utils/voice-reply.mjs";
+import { createSpeechPlayback } from "./utils/speech-playback.mjs";
+import { cleanTextForSpeech } from "./utils/speech-text.mjs";
+import { getAssistantState, assistantStateLabels, getInteractionMessage } from "./utils/assistant-state.mjs";
 import { Capacitor } from "@capacitor/core";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
 import { StatusBar, Style } from "@capacitor/status-bar";
@@ -725,8 +703,12 @@ let clockTimer: ReturnType<typeof setInterval> | null = null;
 
 // Chat State
 const inputPrompt = ref<string>("");
+const draftFromVoice = ref(false);
+watch(inputPrompt, (text) => { if (!text.trim()) draftFromVoice.value = false; }, { flush: "sync" });
 const isSending = ref<boolean>(false);
-const currentProgressMessage = ref<string>("");
+const inFlightBackend = ref<"brain" | "codex" | "antigravity" | null>(null);
+const lastTaskFailed = ref(false);
+
 const currentInFlightTaskId = ref<string | null>(null);
 const messages = ref<ChatMessage[]>([]);
 const messagesScrollRef = ref<HTMLElement | null>(null);
@@ -742,58 +724,43 @@ function resizeComposer() {
 
 // TTS State
 const ttsEnabled = ref<boolean>(true);
+const autoSpeak = ref(true);
+const speechRate = ref(1);
+const speechVoice = ref("");
+const speechVoices = ref<SpeechSynthesisVoice[]>([]);
+
+function refreshSpeechVoices() {
+  speechVoices.value = window.speechSynthesis.getVoices();
+}
+
+watch([ttsEnabled, autoSpeak, speechRate, speechVoice], () => {
+  if (!ttsEnabled.value) { stopSpeaking(); speechError.value = ""; }
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem("nexus_tts_enabled", String(ttsEnabled.value));
+    localStorage.setItem("nexus_tts_preferences", JSON.stringify({ autoSpeak: autoSpeak.value, rate: speechRate.value, voice: speechVoice.value }));
+  } catch { /* Preferences remain usable for this session when storage is unavailable. */ }
+});
 const isSpeaking = ref<boolean>(false);
 const currentSpeakingId = ref<string | null>(null);
 
-function cleanTextForSpeech(text: string): string {
-  return text
-    .replace(/```[\s\S]*?```/g, "Bloc de code omis.")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/[#*_~>]/g, "")
-    .trim();
-}
+const speechError = ref("");
+const ttsAvailable = ref(false);
+let speechPlayback: ReturnType<typeof createSpeechPlayback> | ReturnType<typeof createNativeSpeechPlayback> | undefined;
 
 function stopSpeaking() {
-  if (typeof window !== "undefined" && "speechSynthesis" in window) {
-    window.speechSynthesis.cancel();
-  }
-  isSpeaking.value = false;
-  currentSpeakingId.value = null;
+  return speechPlayback?.stop();
 }
 
 function speakMessage(text: string, messageId?: string) {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-  const clean = cleanTextForSpeech(text);
-  if (!clean) return;
-
-  stopSpeaking();
-
-  const utterance = new SpeechSynthesisUtterance(clean);
-  utterance.lang = "fr-FR";
-  utterance.rate = 1.05;
-  utterance.pitch = 1.0;
-
-  const voices = window.speechSynthesis.getVoices();
-  const frVoice = voices.find((v) => v.lang.startsWith("fr") || v.lang.includes("FR"));
-  if (frVoice) {
-    utterance.voice = frVoice;
+  speechError.value = "";
+  if (!ttsEnabled.value) return;
+  if (!ttsAvailable.value || !speechPlayback) {
+    speechError.value = "La lecture vocale n’est pas disponible sur cet appareil.";
+    return;
   }
-
-  utterance.onstart = () => {
-    isSpeaking.value = true;
-    currentSpeakingId.value = messageId || null;
-  };
-  utterance.onend = () => {
-    isSpeaking.value = false;
-    currentSpeakingId.value = null;
-  };
-  utterance.onerror = () => {
-    isSpeaking.value = false;
-    currentSpeakingId.value = null;
-  };
-
-  window.speechSynthesis.speak(utterance);
+  const clean = cleanTextForSpeech(text);
+  if (clean) speechPlayback.speak(clean, messageId, { rate: speechRate.value, voiceURI: speechVoice.value });
 }
 
 function toggleSpeakMessage(msg: ChatMessage) {
@@ -809,7 +776,6 @@ function toggleTts() {
   if (!ttsEnabled.value) {
     stopSpeaking();
   }
-  localStorage.setItem("nexus_tts_enabled", ttsEnabled.value ? "true" : "false");
   triggerHaptic("light");
 }
 
@@ -822,7 +788,7 @@ interface ModelItem {
 }
 
 const agentModels = ref<Record<string, { models: ModelItem[]; selected?: string }>>({
-  brain: { models: [], selected: "llama3.2:3b" },
+  brain: { models: [], selected: "" },
   codex: { models: [], selected: "" },
   antigravity: { models: [], selected: "" },
 });
@@ -834,12 +800,6 @@ const currentBackendModels = computed(() => {
 
 const currentSelectedModel = computed(() => {
   return agentModels.value[selectedBackend.value]?.selected || "";
-});
-
-const currentSelectedModelShort = computed(() => {
-  const model = currentSelectedModel.value;
-  if (!model) return "";
-  return model.split(":")[0].replace("gemini-2.5-", "").replace("gemini-", "");
 });
 
 async function fetchModelsForBackend(backend: "brain" | "codex" | "antigravity") {
@@ -890,9 +850,11 @@ async function handleSelectModel(modelName: string) {
     if (res.ok) {
       agentModels.value[backend].selected = modelName;
       triggerHaptic("medium");
+    } else {
+      errorMessage.value = "Impossible de sélectionner ce modèle. Vérifiez sa configuration sur le poste Nexus.";
     }
-  } catch (err) {
-    console.warn(`[Models] Échec de la sélection du modèle :`, err);
+  } catch {
+    errorMessage.value = "Impossible de joindre le poste pour changer de modèle.";
   }
 }
 
@@ -943,6 +905,25 @@ const isDecidingApproval = ref<boolean>(false);
 const approvalDecidingId = ref<string | null>(null);
 const activeApprovalIndex = ref<number>(0);
 
+const pendingApprovals = computed(() => {
+  return approvals.value.filter((a) => a.status === "pending");
+});
+
+const pendingApprovalsCount = computed(() => {
+  const localPending = pendingApprovals.value.length;
+  const statusPending = coreStatus.value?.pendingApprovals ?? 0;
+  return Math.max(localPending, statusPending);
+});
+
+const activeApproval = computed(() => {
+  if (pendingApprovals.value.length === 0) return null;
+  const idx = Math.min(
+    activeApprovalIndex.value,
+    pendingApprovals.value.length - 1,
+  );
+  return pendingApprovals.value[idx] || pendingApprovals.value[0] || null;
+});
+
 // Voice / Push-to-Talk State
 const isListening = ref<boolean>(false);
 const isProcessingAudio = ref<boolean>(false);
@@ -967,6 +948,27 @@ let nativeRecorderActive = false;
 
 // Lifecycle
 onMounted(async () => {
+  const speechCallbacks = {
+    onState: (speaking: boolean, id: string | null) => { isSpeaking.value = speaking; currentSpeakingId.value = id; },
+    onError: (message: string) => { speechError.value = message; },
+  };
+  if (Capacitor.isNativePlatform()) {
+    ttsAvailable.value = Capacitor.isPluginAvailable("TextToSpeech");
+    if (ttsAvailable.value) {
+      speechPlayback = createNativeSpeechPlayback(TextToSpeech, speechCallbacks);
+      void TextToSpeech.getSupportedVoices().then(({ voices }) => { speechVoices.value = voices; }).catch(() => {
+        speechError.value = "Vérifiez le moteur vocal et la voix française dans les paramètres Android.";
+      });
+    }
+  } else {
+    ttsAvailable.value = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+    if (ttsAvailable.value) {
+      refreshSpeechVoices();
+      window.speechSynthesis.addEventListener("voiceschanged", refreshSpeechVoices);
+      speechPlayback = createSpeechPlayback(window.speechSynthesis,
+        (text: string) => new SpeechSynthesisUtterance(text), speechCallbacks);
+    }
+  }
   if (typeof window !== "undefined") {
     syncViewport();
     window.visualViewport?.addEventListener("resize", syncViewport);
@@ -1014,6 +1016,15 @@ onMounted(async () => {
     if (savedTts !== null) {
       ttsEnabled.value = savedTts === "true";
     }
+
+    try {
+      const preferences = JSON.parse(localStorage.getItem("nexus_tts_preferences") || "null");
+      if (preferences && typeof preferences === "object") {
+        if (typeof preferences.autoSpeak === "boolean") autoSpeak.value = preferences.autoSpeak;
+        if (typeof preferences.rate === "number" && preferences.rate >= 0.8 && preferences.rate <= 1.3) speechRate.value = preferences.rate;
+        if (typeof preferences.voice === "string") speechVoice.value = preferences.voice;
+      }
+    } catch { /* Ignore malformed saved preferences. */ }
 
     // Load persisted chat messages
     loadPersistedMessages();
@@ -1075,6 +1086,7 @@ onUnmounted(() => {
   if (fastApprovalTimer) clearInterval(fastApprovalTimer);
   cancelVoiceRecording();
   stopSpeaking();
+  if (!Capacitor.isNativePlatform() && ttsAvailable.value) window.speechSynthesis.removeEventListener("voiceschanged", refreshSpeechVoices);
 });
 
 let fastApprovalTimer: ReturnType<typeof setInterval> | null = null;
@@ -1213,6 +1225,19 @@ const lastUpdatedText = computed(() => {
 const runningTasks = computed(() =>
   tasks.value.filter((t) => t.status === "running"),
 );
+const currentProgressMessage = computed(() => getInteractionMessage(
+  tasks.value.find(task => task.taskId === currentInFlightTaskId.value), inFlightBackend.value,
+));
+const runtimeStatus = computed(() => getAssistantState({
+  online: isNodeReady.value,
+  sending: isSending.value,
+  busy: primaryNode.value?.state === "busy",
+  backend: isSending.value ? inFlightBackend.value : tasks.value.find(task => task.taskId === primaryNode.value?.activeTaskId)?.backend,
+  speaking: isSpeaking.value,
+  failed: lastTaskFailed.value,
+}));
+const runtimeStatusText = computed(() => assistantStateLabels[runtimeStatus.value]);
+
 const runningTasksCount = computed(() => {
   return runningTasks.value.length || (coreStatus.value?.activeTasks ?? 0);
 });
@@ -1258,25 +1283,7 @@ const taskFilterTabs = computed(() => [
   },
 ]);
 
-// Approvals Computeds
-const pendingApprovals = computed(() => {
-  return approvals.value.filter((a) => a.status === "pending");
-});
 
-const pendingApprovalsCount = computed(() => {
-  const localPending = pendingApprovals.value.length;
-  const statusPending = coreStatus.value?.pendingApprovals ?? 0;
-  return Math.max(localPending, statusPending);
-});
-
-const activeApproval = computed(() => {
-  if (pendingApprovals.value.length === 0) return null;
-  const idx = Math.min(
-    activeApprovalIndex.value,
-    pendingApprovals.value.length - 1,
-  );
-  return pendingApprovals.value[idx] || pendingApprovals.value[0] || null;
-});
 
 // Helper functions for Approvals
 function formatApprovalKind(kind?: string): string {
@@ -1489,14 +1496,16 @@ async function submitMessage() {
       "Votre poste est hors ligne. Reconnectez-le pour envoyer votre message.";
     return;
   }
+  const fromVoice = draftFromVoice.value;
   inputPrompt.value = "";
-  await sendPrompt(promptText);
+  await sendPrompt(promptText, fromVoice);
 }
 
-async function sendPrompt(promptText: string) {
+async function sendPrompt(promptText: string, fromVoice = false) {
   if (!promptText || isSending.value || isSwitchingProject.value) return;
   if (!isNodeReady.value) {
     inputPrompt.value = promptText;
+    draftFromVoice.value = fromVoice;
     errorMessage.value =
       "Votre poste est hors ligne. Reconnectez-le pour envoyer votre message.";
     return;
@@ -1520,7 +1529,8 @@ async function sendPrompt(promptText: string) {
   scrollToBottom();
 
   isSending.value = true;
-  currentProgressMessage.value = `Envoi au ${selectedBackendLabel(selectedBackend.value)}...`;
+  inFlightBackend.value = backend;
+  lastTaskFailed.value = false;
 
   try {
     const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/tasks`;
@@ -1558,10 +1568,11 @@ async function sendPrompt(promptText: string) {
 
     messages.value.push(assistantMsg);
     saveMessages();
-    if (ttsEnabled.value && !assistantMsg.error) {
+    if (shouldSpeakReply({ enabled: ttsEnabled.value, autoSpeak: autoSpeak.value, fromVoice, error: assistantMsg.error })) {
       speakMessage(assistantMsg.text, assistantMsg.id);
     }
   } catch (err: any) {
+    lastTaskFailed.value = true;
     const errorMsg: ChatMessage = {
       id: `err-${Date.now()}`,
       role: "assistant",
@@ -1574,8 +1585,8 @@ async function sendPrompt(promptText: string) {
     saveMessages();
   } finally {
     isSending.value = false;
+    inFlightBackend.value = null;
     currentInFlightTaskId.value = null;
-    currentProgressMessage.value = "";
     scrollToBottom();
     // Refresh tasks and status
     fetchTasks(true);
@@ -1586,6 +1597,7 @@ async function sendPrompt(promptText: string) {
 function clearChat() {
   if (confirm("Voulez-vous effacer l’historique de conversation ?")) {
     messages.value = [];
+    lastTaskFailed.value = false;
     if (typeof window !== "undefined") {
       localStorage.removeItem("nexus_brain_messages");
     }
@@ -1686,15 +1698,7 @@ function initSpeechRecognition() {
           interimTranscript.value = interimChunk;
         }
         if (finalChunk) {
-          const trimmed = finalChunk.trim();
-          if (trimmed) {
-            if (inputPrompt.value) {
-              inputPrompt.value += " " + trimmed;
-            } else {
-              inputPrompt.value = trimmed;
-            }
-          }
-          interimTranscript.value = "";
+          appendTranscript(finalChunk);
         }
       };
 
@@ -1765,10 +1769,12 @@ function appendTranscript(text: string) {
   } else {
     inputPrompt.value = trimmed;
   }
+  draftFromVoice.value = true;
   interimTranscript.value = "";
 }
 
 async function runNativeSpeechPopup() {
+  await stopSpeaking();
   try {
     const avail = await SpeechRecognition.available();
     if (!avail.available) {
@@ -1898,6 +1904,7 @@ async function onMicPointerCancel(e: PointerEvent) {
 }
 
 async function startPushToTalk() {
+  await stopSpeaking();
   if (!isNodeReady.value || isSending.value) return;
 
   speechRecordingStart = Date.now();

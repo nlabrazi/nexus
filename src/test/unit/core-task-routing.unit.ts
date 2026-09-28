@@ -26,7 +26,7 @@ suite('Nexus Core remote task routing, results, and cancellation', () => {
     const mockHello: NodeHelloPayload = {
       nodeId: 'node-alpha',
       nodeName: 'alpha-station',
-      version: '0.4.1',
+      version: '1.0.0',
       authToken: validToken,
       capabilities: {
         backends: ['codex', 'antigravity', 'brain'],

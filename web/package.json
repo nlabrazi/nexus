@@ -1,9 +1,10 @@
 {
   "name": "web",
-  "version": "0.4.2",
+  "version": "1.0.0",
   "type": "module",
   "private": true,
   "scripts": {
+    "test:unit": "node --test test/*.test.mjs",
     "build": "nuxt build",
     "dev": "nuxt dev",
     "generate": "nuxt generate",
@@ -15,6 +16,7 @@
   },
   "dependencies": {
     "@capacitor-community/speech-recognition": "^7.0.1",
+    "@capacitor-community/text-to-speech": "6.1.0",
     "@capacitor/android": "^7.6.9",
     "@capacitor/cli": "^7.6.9",
     "@capacitor/core": "^7.6.9",

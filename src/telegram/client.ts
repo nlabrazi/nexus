@@ -1,3 +1,4 @@
+import { registerLogSecret } from '../logging/logger';
 import {
   TelegramFile,
   TelegramGetMeResponse,
@@ -41,7 +42,9 @@ function checkVoiceSize(size: number | undefined): void {
 }
 
 export class TelegramClient {
-  constructor(private readonly token: string) {}
+  constructor(private readonly token: string) {
+    registerLogSecret(token);
+  }
 
   async getMe(): Promise<TelegramGetMeResponse> {
     const response = await fetch(`https://api.telegram.org/bot${this.token}/getMe`);
@@ -158,6 +161,15 @@ export class TelegramClient {
       // Download URLs contain the bot token. Never expose raw transport errors.
       throw new TelegramVoiceDownloadError('download_failed');
     }
+  }
+
+  async sendChatAction(chatId: number, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted();
+    await this.call(
+      'sendChatAction',
+      { chat_id: chatId, action: 'typing' },
+      AbortSignal.any([signal, AbortSignal.timeout(3000)])
+    );
   }
 
   async sendMessage(

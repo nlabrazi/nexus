@@ -30,7 +30,7 @@ suite('Telegram Core Bridge and routing', () => {
   const mockHello: NodeHelloPayload = {
     nodeId: 'desktop-node-telegram',
     nodeName: 'station-telegram',
-    version: '0.4.1',
+    version: '1.0.0',
     authToken: validToken,
     capabilities: {
       backends: ['codex', 'antigravity', 'brain'],

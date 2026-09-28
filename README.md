@@ -137,9 +137,9 @@ Nexus is not intended to replace VS Code, Git, Codex, or Antigravity. It acts as
   - Nexus restores persisted session information (Codex and Antigravity) after reload or restart.
   - Session lifecycle is isolated per workspace to prevent cross-project contamination.
 
-- 🧠 **Nexus Brain (Ollama & Free Fallback)**
+- 🧠 **Nexus Brain (cloud providers & local fallback)**
   - Dedicated conversational intelligence for brainstorming, architectural discussions, and technical exchanges.
-  - Runs on local Ollama models (`llama3.2:3b`, etc.) by default, with free online Gemini API fallback.
+  - Routes through configured Cerebras, Groq, Gemini and free OpenRouter models, then local Ollama. Without API keys, only Ollama is used; local-only mode remains available. See [cloud setup](docs/brain-cloud.md).
   - Zero token consumption from paid Codex / Antigravity subscriptions during brainstorm and planning phases.
   - Unrestricted directory exploration starting by default in `/code` or `~/code`.
 
@@ -152,7 +152,7 @@ Nexus is not intended to replace VS Code, Git, Codex, or Antigravity. It acts as
   - Per-message replay controls and global quick toggle.
 
 - 🎛️ **Dynamic Agent & Model Switcher**
-  - Seamlessly switch between Brain (Ollama/Gemini), Codex, and Antigravity.
+  - Seamlessly switch between Brain (cloud or Ollama), Codex, and Antigravity.
   - Query installed models dynamically via `/api/models` and pick target model per agent.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -543,7 +543,8 @@ Detailed documentation:
 - [Gemini Antigravity sessions](docs/antigravity-sessions.md)
 - [Gemini Antigravity models](docs/antigravity-models.md)
 - [Gemini Antigravity errors](docs/antigravity-errors.md)
-- [Nexus Brain spike](docs/nexus-brain.md)
+- [Nexus Brain cloud providers and API key setup](docs/brain-cloud.md)
+- [Nexus Brain initial spike](docs/nexus-brain.md)
 - [Nexus Protocol](docs/nexus-protocol.md)
 - [Agent Runtime Isolation](docs/runtime-isolation.md)
 - [Desktop Node](docs/desktop-node.md)
@@ -703,7 +704,8 @@ Detailed test documentation:
 - [Gemini Antigravity errors](docs/antigravity-errors.md)
 - [Workspace safety](docs/workspace-safety.md)
 - [Telegram approvals](docs/telegram-approvals.md)
-- [Nexus Brain spike](docs/nexus-brain.md)
+- [Nexus Brain cloud providers and API key setup](docs/brain-cloud.md)
+- [Nexus Brain initial spike](docs/nexus-brain.md)
 - [Nexus Protocol](docs/nexus-protocol.md)
 - [Agent Runtime Isolation](docs/runtime-isolation.md)
 - [Desktop Node](docs/desktop-node.md)
@@ -788,6 +790,18 @@ npx @vscode/vsce ls
 - [ ] Public Marketplace publication if the project becomes suitable for general use
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+---
+
+# Fiabilité, voix et diagnostic
+
+- [Logs persistants et commandes de diagnostic](docs/logging.md) : `Nexus: Diagnostics` dans VS Code, `/diagnostics` dans Telegram.
+- [Configuration vocale](docs/speech-voice.md) : activation, voix, vitesse et lecture automatique selon le client.
+- [Audit et périmètre de la première itération](docs/reliability-audit.md).
+- [Tests et validations](docs/regression-tests.md#fiabilité-voix-et-interface).
+
+Le client affiche les états READY, THINKING, CODING, SPEAKING, ERROR et OFFLINE.
+Les paramètres détaillés restent accessibles depuis les menus secondaires.
 
 ---
 

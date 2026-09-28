@@ -1,3 +1,4 @@
+import { logger } from '../logging/logger';
 import { spawn, ChildProcessWithoutNullStreams } from 'node:child_process';
 
 import {
@@ -268,7 +269,7 @@ export class CodexClient {
       const message = chunk.toString().trim();
 
       if (message) {
-        console.log(`[Codex] ${message}`);
+        logger.debug('Codex', 'stderr_received');
       }
     });
 

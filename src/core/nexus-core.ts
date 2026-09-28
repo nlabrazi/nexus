@@ -1,3 +1,4 @@
+import { logger, registerLogSecret } from '../logging/logger';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { createReadStream, existsSync, statSync } from 'node:fs';
@@ -79,6 +80,8 @@ export class NexusCore extends EventEmitter {
 
   constructor(private readonly config: CoreConfig) {
     super();
+    for (const token of config.authTokens ?? []) registerLogSecret(token);
+    logger.info('Core', 'initialize', { status: 'started' });
     this.startTime = Date.now();
     this.presence = new NodePresenceManager({
       authTokens: config.authTokens,
@@ -274,7 +277,9 @@ export class NexusCore extends EventEmitter {
             p.name.toLowerCase() === projectId.toLowerCase() ||
             p.path === projectId
         );
-        if (found) return found;
+        if (found) {
+          return found;
+        }
       }
       return undefined;
     }
@@ -584,7 +589,7 @@ export class NexusCore extends EventEmitter {
 
     if (method === 'GET' && pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', version: '0.4.1' }));
+      res.end(JSON.stringify({ status: 'ok', version: '1.0.0' }));
       return;
     }
 

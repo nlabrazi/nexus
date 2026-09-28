@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
-import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { initializeLogging } from '../logging/persistence';
+import { logger, registerLogSecret } from '../logging/logger';
 import { parseArgs } from 'node:util';
 import { createCoreTelegramService } from '../telegram/core-bridge';
 import { NexusCore } from './nexus-core';
@@ -13,7 +14,7 @@ export * from './ws-connection';
 export * from './task-router';
 export * from './nexus-core';
 
-const VERSION = '0.4.1';
+const VERSION = '1.0.0';
 
 const HELP_TEXT = `
 Nexus Core Server (v${VERSION})
@@ -78,6 +79,7 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
   }
 
   const { values } = parsed;
+  if (values.token) registerLogSecret(values.token);
 
   if (values.help) {
     console.log(HELP_TEXT.trim());
@@ -88,6 +90,8 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
     console.log(`nexus-core v${VERSION}`);
     return 0;
   }
+
+  initializeLogging('core');
 
   const port = Number(values.port ?? process.env.NEXUS_CORE_PORT ?? 4040);
   const host = values.host ?? process.env.NEXUS_CORE_HOST ?? '127.0.0.1';
@@ -101,10 +105,11 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
       .map((t) => t.trim())
       .filter(Boolean);
   } else {
-    // Generate a temporary development token if none provided
-    const devToken = randomBytes(16).toString('hex');
-    authTokens = [devToken];
-    console.warn(`[Nexus Security] Aucun jeton spécifié. Jeton temporaire généré : ${devToken}`);
+    logger.error('Core', 'configure_auth', { status: 'missing_token' });
+    process.stderr.write(
+      'Configurez NEXUS_CORE_AUTH_TOKENS dans .env avant de démarrer Nexus Core.\n'
+    );
+    return 1;
   }
 
   try {

@@ -1,3 +1,4 @@
+import { logger } from '../logging/logger';
 import { randomBytes } from 'node:crypto';
 import { CodexModel, ModelControls, ModelMenu } from '../codex/types';
 import { TelegramPeer } from './approvals';
@@ -43,7 +44,7 @@ export class TelegramModels {
     if (this.opening) {
       await this.client
         .sendMessage(peer.chatId, 'La liste des modèles est en cours de chargement.')
-        .catch(() => console.warn('[Telegram] Model loading notice failed.'));
+        .catch(() => logger.warn('Telegram', 'delivery_failed'));
       return;
     }
     this.opening = true;
@@ -85,7 +86,7 @@ export class TelegramModels {
         this.cancel();
         await this.client
           .sendMessage(peer.chatId, `❌ ${error instanceof Error ? error.message : String(error)}`)
-          .catch(() => console.warn('[Telegram] Model menu delivery failed.'));
+          .catch(() => logger.warn('Telegram', 'delivery_failed'));
       }
     } finally {
       this.opening = false;
@@ -270,13 +271,13 @@ export class TelegramModels {
       void this.client
         .closeApprovalMessage(menu.peer.chatId, menu.messageId, text.slice(0, 4000))
         .catch(() => this.client.sendMessage(menu.peer.chatId, text.slice(0, 4000)))
-        .catch(() => console.warn('[Telegram] Model result delivery failed.'));
+        .catch(() => logger.warn('Telegram', 'delivery_failed'));
     }
   }
 
   private async answer(id: string, text: string): Promise<void> {
     await this.client
       .answerCallbackQuery(id, text)
-      .catch(() => console.warn('[Telegram] Model callback acknowledgement failed.'));
+      .catch(() => logger.warn('Telegram', 'delivery_failed'));
   }
 }

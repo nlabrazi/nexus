@@ -11,6 +11,7 @@ import { CodexProjectInspector } from '../conversational/codex-inspector';
 import { ConversationalService } from '../conversational/service';
 import { BrainModel } from '../conversational/model';
 import { OllamaBrainModel, listOllamaModels } from '../conversational/ollama-model';
+import { RoutedBrainModel } from '../conversational/routed-model';
 import { CodingAgentTools } from '../conversational/tools';
 import { ConversationProjectContext } from '../conversational/types';
 import { formatFileSummary } from '../telegram/file-summary';
@@ -120,7 +121,7 @@ export class NexusRuntime {
       options.brainModel ??
       (process.env.NEXUS_BRAIN_BACKEND === 'codex'
         ? new CodexBrainModel()
-        : new OllamaBrainModel());
+        : new RoutedBrainModel());
     this.brainModel = brainModel;
     this.conversationalService = new ConversationalService(brainModel, codingTools);
   }
@@ -322,6 +323,8 @@ export class NexusRuntime {
       return this.antigravityService.listModels(path);
     }
 
+    if (this.brainModel instanceof RoutedBrainModel) return this.brainModel.listModels();
+
     let availableModels: string[] = [];
     try {
       if (this.brainModel instanceof OllamaBrainModel) {
@@ -334,10 +337,10 @@ export class NexusRuntime {
     const currentModel =
       typeof (this.brainModel as unknown as { getModel?: () => string }).getModel === 'function'
         ? (this.brainModel as unknown as { getModel: () => string }).getModel()
-        : 'llama3.2:3b';
+        : 'qwen3.6:27b-mtp-q4_K_M';
 
     if (availableModels.length === 0) {
-      availableModels = [currentModel, 'llama3.2:3b', 'qwen3.6:27b', 'gemini-2.5-flash'];
+      availableModels = [currentModel];
     } else if (!availableModels.includes(currentModel)) {
       availableModels.unshift(currentModel);
     }
@@ -346,7 +349,8 @@ export class NexusRuntime {
       id: m,
       model: m,
       displayName: m,
-      description: m.includes('gemini') ? 'Modèle cloud Gemini' : 'Modèle local Ollama',
+      description:
+        this.brainModel instanceof OllamaBrainModel ? 'Modèle local Ollama' : 'Modèle Brain',
       isDefault: m === currentModel,
       defaultReasoningEffort: '',
       supportedReasoningEfforts: [{ reasoningEffort: '', description: 'Par défaut' }],
@@ -396,6 +400,12 @@ export class NexusRuntime {
       workspace,
       workspaceCount: workspace ? 1 : 0,
       activeBackend: this.activeBackend,
+      brain:
+        this.brainModel instanceof RoutedBrainModel
+          ? this.brainModel.getStatus()
+          : this.brainModel instanceof OllamaBrainModel
+            ? { provider: 'ollama', model: this.brainModel.getModel() }
+            : { provider: this.brainModel instanceof CodexBrainModel ? 'codex' : 'custom' },
       codex: this.codexService.getStatus(),
       antigravity: this.antigravityService.getStatus(),
     };

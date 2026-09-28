@@ -1,15 +1,27 @@
-import * as assert from 'node:assert';
-
-// You can import and use all API from the 'vscode' module
-// as well as import your extension to test it
+import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
-// import * as myExtension from '../../extension';
 
-suite('Extension Test Suite', () => {
-  vscode.window.showInformationMessage('Start all tests.');
+suite('Nexus extension integration', () => {
+  suiteSetup(async () => {
+    const extension = vscode.extensions.getExtension('nabster.nexus');
+    assert.ok(extension, 'Nexus must be installed in the extension test host');
+    await extension.activate();
+  });
 
-  test('Sample test', () => {
-    assert.strictEqual(-1, [1, 2, 3].indexOf(5));
-    assert.strictEqual(-1, [1, 2, 3].indexOf(0));
+  test('activation registers diagnostics and preserves the existing entry points', async () => {
+    const commands = new Set(await vscode.commands.getCommands(true));
+    for (const command of [
+      'nexus.diagnostics',
+      'nexus.status',
+      'nexus.pairTelegram',
+      'nexus.startCodexSession',
+      'nexus.startAntigravitySession',
+      'nexus.testSpeechToText',
+    ])
+      assert.ok(commands.has(command), `Missing command: ${command}`);
+  });
+
+  test('diagnostics can run without a workspace, credentials or an agent process', async () => {
+    await vscode.commands.executeCommand('nexus.diagnostics');
   });
 });

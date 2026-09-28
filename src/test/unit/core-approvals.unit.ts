@@ -343,7 +343,7 @@ suite('Nexus Core ApprovalRelay and REST endpoints', () => {
     const mockHello: NodeHelloPayload = {
       nodeId: 'desktop-node-approvals',
       nodeName: 'station-approvals',
-      version: '0.4.1',
+      version: '1.0.0',
       authToken: validToken,
       capabilities: {
         backends: ['codex', 'antigravity', 'brain'],

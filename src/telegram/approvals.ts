@@ -1,3 +1,4 @@
+import { logger } from '../logging/logger';
 import { randomBytes } from 'node:crypto';
 import { ApprovalDecision, CodexApprovalRequest } from '../codex/types';
 import { TelegramClient } from './client';
@@ -65,7 +66,7 @@ export class TelegramApprovals {
           peer.chatId,
           '⛔ Approbation refusée : les détails sont trop longs pour être affichés intégralement.'
         )
-        .catch(() => console.warn('[Telegram] Approval notice failed.'));
+        .catch(() => logger.warn('Telegram', 'delivery_failed'));
       return Promise.resolve('decline');
     }
 
@@ -177,14 +178,14 @@ export class TelegramApprovals {
   private close(chatId: number, messageId: number, status: string): void {
     void this.client
       .closeApprovalMessage(chatId, messageId, status)
-      .catch(() => console.warn('[Telegram] Unable to remove approval buttons.'));
+      .catch(() => logger.warn('Telegram', 'delivery_failed'));
   }
 
   private async answer(id: string, text: string): Promise<void> {
     try {
       await this.client.answerCallbackQuery(id, text);
     } catch {
-      console.warn('[Telegram] Unable to acknowledge approval callback.');
+      logger.warn('Telegram', 'delivery_failed');
     }
   }
 }

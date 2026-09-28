@@ -1,3 +1,4 @@
+import { logger } from '../logging/logger';
 import {
   ApprovalDecision,
   CodexApprovalHandler,
@@ -214,7 +215,7 @@ export class CodexApprovals {
       this.reply({ jsonrpc: '2.0', ...message });
     } catch {
       // The process may have exited. Never replay a decision to a new process.
-      console.warn('[Codex] Unable to deliver approval response.');
+      logger.warn('Codex', 'delivery_failed');
     }
   }
 }

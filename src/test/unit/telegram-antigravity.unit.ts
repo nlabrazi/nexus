@@ -128,7 +128,7 @@ suite('Telegram Antigravity & Multi-Backend Integration', () => {
     client.push(message(1, '/antigravity build feature'));
     await flush();
     assert.equal(calls[0], 'build feature');
-    assert.match(client.messages[0], /⏳ Gemini Antigravity is working.../);
+    assert.match(client.messages[0], /⏳ Nexus travaille…/);
     assert.match(client.messages[1], /Processed: build feature/);
     assert.match(client.messages[2], /Modified: index\.ts/);
 

@@ -1,3 +1,4 @@
+import { logger } from '../logging/logger';
 import { EventEmitter } from 'node:events';
 import { createNexusMessage, parseNexusMessage, serializeNexusMessage } from '../protocol/messages';
 import { AnyNexusMessage, CoreErrorPayload, NodeWelcomePayload } from '../protocol/types';
@@ -253,9 +254,7 @@ export class DesktopCoreClient extends EventEmitter {
           const errorPayload = message.payload as CoreErrorPayload;
           this.emit('core:error', errorPayload);
           if (errorPayload.code === 'UNAUTHENTICATED') {
-            console.error(
-              `[Nexus Security] Échec d'authentification auprès de Core : ${errorPayload.message}`
-            );
+            logger.error('Desktop', 'authenticate', { status: 'failed' });
             // Don't auto-reconnect on invalid auth token
             this.disconnect();
           }

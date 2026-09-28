@@ -45,7 +45,11 @@ suite('Telegram local voice transcription', () => {
     const codex = t.mock.fn(async () => 'Codex response');
     const antigravity = t.mock.fn(async () => 'Antigravity response');
     const sentAudio = t.mock.method(client, 'sendAcknowledgementAudio', async () => {
-      assert.ok(client.messages.includes('✅ Bien compris. Je prends en charge votre demande.'));
+      assert.ok(
+        client.messages.some((message) =>
+          message.includes('✅ Bien compris. Je prends en charge votre demande.')
+        )
+      );
       assert.equal(codex.mock.callCount(), 0);
     });
     const service = new TelegramService(context(), client, {
@@ -69,16 +73,15 @@ suite('Telegram local voice transcription', () => {
     assert.equal(transcribe.mock.calls[0].arguments[0], file);
     assert.equal(transcribe.mock.calls[0].arguments[1], download.mock.calls[0].arguments[1]);
     assert.equal(file.data.toString(), 'recorded voice');
-    assert.deepEqual(client.messages, [
-      '⏳ Téléchargement du message vocal…',
-      '⏳ Transcription locale du message vocal…',
-    ]);
+    assert.deepEqual(client.messages, ['🎙 Nexus traite votre message vocal…']);
 
     const text = '/codex **bonjour** <tag> & `code` 😀\n/stop\n/agy bonjour';
     pending.resolve(text);
     await flush();
 
-    assert.ok(client.messages.includes(`🎙 Transcription :\n\n${text}`));
+    assert.ok(
+      client.messages.some((message) => message.startsWith(`🎙 Transcription :\n\n${text}`))
+    );
     assert.equal(sentAudio.mock.callCount(), 1);
     assert.equal(codex.mock.callCount(), 1);
     assert.deepEqual(codex.mock.calls[0].arguments, [text]);
@@ -111,7 +114,11 @@ suite('Telegram local voice transcription', () => {
     await flush();
 
     assert.equal(transcribe.mock.callCount(), 1);
-    assert.ok(client.messages.includes('🎙 Transcription :\n\nBonjour Antigravity'));
+    assert.ok(
+      client.messages.includes(
+        '🎙 Transcription :\n\nBonjour Antigravity\n\n✅ Bien compris. Je prends en charge votre demande.'
+      )
+    );
     assert.equal(codex.mock.callCount(), 0);
     assert.equal(antigravity.mock.callCount(), 1);
     assert.deepEqual(antigravity.mock.calls[0].arguments, ['Bonjour Antigravity']);
@@ -166,7 +173,11 @@ suite('Telegram local voice transcription', () => {
       await flush();
 
       assert.equal(transcribe.mock.callCount(), 2);
-      assert.ok(client.messages.includes('🎙 Transcription :\n\nDeuxième essai'));
+      assert.ok(
+        client.messages.includes(
+          '🎙 Transcription :\n\nDeuxième essai\n\n✅ Bien compris. Je prends en charge votre demande.'
+        )
+      );
       assert.equal(codex.mock.callCount(), 1);
       assert.deepEqual(codex.mock.calls[0].arguments, ['Deuxième essai']);
       assert.equal(client.messages.at(-1), 'Deuxième réponse');
@@ -233,14 +244,14 @@ suite('Telegram local voice transcription', () => {
     );
   });
 
-  test('stop while the transcription progress message is pending prevents STT and clears the downloaded audio', async (t) => {
+  test('stop while the receipt notice is pending prevents download and STT', async (t) => {
     const client = new FakeTelegram();
     const file = audio();
-    t.mock.method(client, 'downloadVoice', async () => file);
+    const download = t.mock.method(client, 'downloadVoice', async () => file);
     const delivery = deferred<void>();
     t.mock.method(client, 'sendMessage', async (_chat: number, text: string) => {
       client.messages.push(text);
-      if (text === '⏳ Transcription locale du message vocal…') {
+      if (text === '🎙 Nexus traite votre message vocal…') {
         await delivery.promise;
       }
     });
@@ -255,14 +266,14 @@ suite('Telegram local voice transcription', () => {
 
     client.push(voice(1));
     await flush();
-    assert.ok(client.messages.includes('⏳ Transcription locale du message vocal…'));
+    assert.ok(client.messages.includes('🎙 Nexus traite votre message vocal…'));
     client.push(message(2, '/stop'));
     await flush();
     delivery.resolve();
     await flush();
 
     assert.equal(transcribe.mock.callCount(), 0);
-    assert.equal(isCleared(file), true);
+    assert.equal(download.mock.callCount(), 0);
     assert.equal(client.messages.at(-1), '⏹ Traitement du message vocal annulé.');
   });
 
@@ -327,8 +338,12 @@ suite('Telegram local voice transcription', () => {
     assert.equal(transcribe.mock.callCount(), 1);
     assert.equal(codex.mock.callCount(), 1);
     assert.deepEqual(codex.mock.calls[0].arguments, ['Action demandée']);
-    assert.ok(client.messages.includes('🎙 Transcription :\n\nAction demandée'));
-    assert.ok(client.messages.includes('⏳ Codex is working...'));
+    assert.ok(
+      client.messages.includes(
+        '🎙 Transcription :\n\nAction demandée\n\n✅ Bien compris. Je prends en charge votre demande.'
+      )
+    );
+    assert.ok(client.messages.some((message) => message.includes('✅ Bien compris.')));
 
     client.push(message(2, '/stop'));
     await flush();
@@ -395,7 +410,11 @@ suite('Telegram local voice transcription', () => {
       await flush();
 
       assert.equal(transcribe.mock.callCount(), 2);
-      assert.ok(client.messages.includes('🎙 Transcription :\n\nFresh'));
+      assert.ok(
+        client.messages.includes(
+          '🎙 Transcription :\n\nFresh\n\n✅ Bien compris. Je prends en charge votre demande.'
+        )
+      );
       assert.equal(codex.mock.callCount(), 1);
       assert.deepEqual(codex.mock.calls[0].arguments, ['Fresh']);
       assert.equal(client.messages.at(-1), 'Fresh result');

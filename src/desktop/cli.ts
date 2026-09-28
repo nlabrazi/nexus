@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { createInterface } from 'node:readline';
+import { initializeLogging } from '../logging/persistence';
+import { registerLogSecret } from '../logging/logger';
 import { parseArgs } from 'node:util';
 import { ApprovalDecision } from '../codex/types';
 import { RuntimeApprovalRequest } from '../runtime/types';
@@ -15,7 +17,7 @@ export * from './node';
 export * from './ws-client';
 export * from './registry';
 
-const VERSION = '0.4.1';
+const VERSION = '1.0.0';
 
 const HELP_TEXT = `
 Nexus Desktop Node (v${VERSION})
@@ -143,6 +145,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
   }
 
   const { values, positionals } = parsed;
+  if (values.token) registerLogSecret(values.token);
 
   if (values.help) {
     console.log(HELP_TEXT.trim());
@@ -153,6 +156,8 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
     console.log(`nexus-desktop v${VERSION}`);
     return 0;
   }
+
+  initializeLogging('desktop');
 
   const command = positionals[0] && !positionals[0].startsWith('-') ? positionals[0] : 'start';
 
@@ -363,7 +368,9 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
             console.log(`• [${d.date}] ${d.title} (${d.status})`);
             console.log(`  ID : ${d.id}`);
             console.log(`  Décision : ${d.decision}`);
-            if (d.context) console.log(`  Contexte : ${d.context}`);
+            if (d.context) {
+              console.log(`  Contexte : ${d.context}`);
+            }
             console.log('');
           }
         }

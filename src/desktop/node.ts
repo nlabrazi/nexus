@@ -1,3 +1,4 @@
+import { logger } from '../logging/logger';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
@@ -171,7 +172,9 @@ export class DesktopNode {
             }
 
             for (const root of scanRoots) {
-              if (!existsSync(root) || !statSync(root).isDirectory()) continue;
+              if (!existsSync(root) || !statSync(root).isDirectory()) {
+                continue;
+              }
               const entries = readdirSync(root, { withFileTypes: true });
               for (const entry of entries) {
                 if (
@@ -358,7 +361,7 @@ export class DesktopNode {
     return {
       nodeId: this.getNodeId(),
       nodeName: this.getNodeName(),
-      version: '0.4.2',
+      version: '1.0.0',
       authToken: authToken ?? this.config.authToken ?? '',
       capabilities: this.getCapabilities(),
       projects: this.getProjects(),
@@ -598,7 +601,7 @@ export class DesktopNode {
         })
       );
     } catch (err) {
-      console.warn(`[Nexus Desktop] Échec du listage des modèles (${payload.backend}) :`, err);
+      logger.warn('Desktop', 'list_models', { provider: payload.backend, status: 'failed' }, err);
     }
   }
 
@@ -622,9 +625,11 @@ export class DesktopNode {
         payload.context,
         targetProject?.path
       );
-      console.log(
-        `[Nexus Desktop] 🤖 Modèle pour ${payload.backend} défini sur "${payload.selection.model}"`
-      );
+      logger.info('Desktop', 'select_model', {
+        provider: payload.backend,
+        model: payload.selection.model,
+        status: 'success',
+      });
       const menu = await this.runtime.listModels(payload.backend, targetProject?.path);
       this.coreClient?.send(
         createNexusMessage('node:models:result', {
@@ -648,20 +653,18 @@ export class DesktopNode {
         })
       );
     } catch (err) {
-      console.warn(`[Nexus Desktop] Échec de sélection du modèle (${payload.backend}) :`, err);
+      logger.warn('Desktop', 'select_model', { provider: payload.backend, status: 'failed' }, err);
     }
   }
 
   private handleRemoteSwitchProject(payload: NodeSwitchProjectPayload, messageId?: string): void {
     const { projectId } = payload;
     try {
-      const activeProject = this.setActiveProject(projectId);
-      console.log(
-        `[Nexus Desktop] 🌿 Projet actif basculé sur "${activeProject.name}" (${activeProject.path})`
-      );
+      this.setActiveProject(projectId);
+      logger.info('Desktop', 'switch_project', { status: 'success' });
       this.coreClient?.send(createNexusMessage('node:status', this.createStatusPayload()));
     } catch (err) {
-      console.warn(`[Nexus Desktop] Échec du basculement de projet :`, err);
+      logger.warn('Desktop', 'switch_project', { status: 'failed' }, err);
       this.coreClient?.send(
         createNexusMessage('core:error', {
           code: 'PROJECT_NOT_FOUND',
@@ -719,8 +722,8 @@ export class DesktopNode {
     this.activeTaskAbortController = new AbortController();
     const signal = this.activeTaskAbortController.signal;
 
-    const preview = prompt.length > 70 ? `${prompt.slice(0, 67)}...` : prompt;
-    console.log(`[Nexus Desktop] 🚀 Tâche reçue [${backend}]: "${preview}"`);
+    const startedAt = Date.now();
+    logger.info('Desktop', 'task', { provider: backend, taskId, status: 'started' });
 
     // Send task:progress (starting)
     this.coreClient?.send(
@@ -752,7 +755,12 @@ export class DesktopNode {
             text,
           })
         );
-        console.log('[Nexus Desktop] ✅ Tâche Brain terminée avec succès.');
+        logger.info('Desktop', 'task', {
+          provider: backend,
+          taskId,
+          status: 'success',
+          durationMs: Date.now() - startedAt,
+        });
       } else {
         this.coreClient?.send(
           createNexusMessage('task:progress', {
@@ -785,8 +793,12 @@ export class DesktopNode {
             filesChanged: result.filesChanged ? [...result.filesChanged] : undefined,
           })
         );
-        const summary = result.fileSummary ? ` (${result.fileSummary})` : '';
-        console.log(`[Nexus Desktop] ✅ Tâche ${backend} terminée avec succès.${summary}`);
+        logger.info('Desktop', 'task', {
+          provider: backend,
+          taskId,
+          status: 'success',
+          durationMs: Date.now() - startedAt,
+        });
       }
     } catch (err: unknown) {
       const isCancelled =
@@ -797,7 +809,12 @@ export class DesktopNode {
             err.message.toLowerCase().includes('abort')));
 
       if (isCancelled) {
-        console.log(`[Nexus Desktop] ⏹ Tâche ${backend} annulée.`);
+        logger.info('Desktop', 'task', {
+          provider: backend,
+          taskId,
+          status: 'cancelled',
+          durationMs: Date.now() - startedAt,
+        });
         this.coreClient?.send(
           createNexusMessage('task:failed', {
             taskId,
@@ -809,7 +826,17 @@ export class DesktopNode {
         );
       } else {
         const errorMessage = err instanceof Error ? err.message : String(err);
-        console.error(`[Nexus Desktop] ❌ Tâche ${backend} échouée : ${errorMessage}`);
+        logger.error(
+          'Desktop',
+          'task',
+          {
+            provider: backend,
+            taskId,
+            status: 'failed',
+            durationMs: Date.now() - startedAt,
+          },
+          err
+        );
         this.coreClient?.send(
           createNexusMessage('task:failed', {
             taskId,
