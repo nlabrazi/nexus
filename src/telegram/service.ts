@@ -1,3 +1,4 @@
+import { logger } from '../logging/logger';
 import type * as vscode from 'vscode';
 import { randomInt } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -332,7 +333,7 @@ export class TelegramService {
           this.continuations.cancelAll();
           this.models.cancel();
           this.antigravityModels.cancel();
-          console.error('Telegram polling failed.');
+          logger.error('Telegram', 'operation_failed');
 
           await new Promise((resolve) => setTimeout(resolve, 3000));
         }
@@ -430,7 +431,7 @@ export class TelegramService {
 
       await this.client.sendMessage(chatId, '✅ Nexus paired successfully.');
 
-      console.log('Telegram account paired.');
+      logger.info('Telegram', 'event');
 
       return;
     }
@@ -898,7 +899,7 @@ export class TelegramService {
                 : 'Impossible d’envoyer la réponse du message vocal. Réessayez.';
         await this.client
           .sendMessage(chatId, `❌ ${message}`, 'plain', signal)
-          .catch(() => console.error('[Telegram] Voice response delivery failed.'));
+          .catch(() => logger.error('Telegram', 'operation_failed'));
       }
     } finally {
       audio?.data.fill(0);
@@ -964,7 +965,7 @@ export class TelegramService {
         await this.client.sendMessage(chatId, status, 'markdown');
       }
     } catch {
-      console.warn('[Telegram] Status delivery failed.');
+      logger.warn('Telegram', 'delivery_failed');
     } finally {
       this.statusRunning = false;
     }
@@ -984,7 +985,7 @@ export class TelegramService {
       if (!signal.aborted) {
         await this.client
           .sendMessage(chatId, `❌ ${error instanceof Error ? error.message : String(error)}`)
-          .catch(() => console.error('[Telegram] Branch response delivery failed.'));
+          .catch(() => logger.error('Telegram', 'operation_failed'));
       }
     } finally {
       this.remoteBranchRunning = false;
@@ -1005,7 +1006,7 @@ export class TelegramService {
       if (!signal.aborted) {
         await this.client
           .sendMessage(chatId, `❌ ${error instanceof Error ? error.message : String(error)}`)
-          .catch(() => console.error('[Telegram] Project response delivery failed.'));
+          .catch(() => logger.error('Telegram', 'operation_failed'));
       }
     } finally {
       this.remoteBranchRunning = false;
@@ -1026,7 +1027,7 @@ export class TelegramService {
       if (!signal.aborted) {
         await this.client
           .sendMessage(chatId, `❌ ${error instanceof Error ? error.message : String(error)}`)
-          .catch(() => console.error('[Telegram] Memory response delivery failed.'));
+          .catch(() => logger.error('Telegram', 'operation_failed'));
       }
     }
   }
@@ -1051,7 +1052,7 @@ export class TelegramService {
       if (!signal.aborted && generation === this.operationGeneration) {
         await this.client
           .sendMessage(chatId, `❌ ${error instanceof Error ? error.message : String(error)}`)
-          .catch(() => console.error('[Telegram] Session response delivery failed.'));
+          .catch(() => logger.error('Telegram', 'operation_failed'));
       }
     } finally {
       if (generation === this.operationGeneration) {
@@ -1126,7 +1127,7 @@ export class TelegramService {
       if (!signal.aborted && generation === this.operationGeneration) {
         await this.client
           .sendMessage(chatId, `❌ ${error instanceof Error ? error.message : String(error)}`)
-          .catch(() => console.error('[Telegram] Codex response delivery failed.'));
+          .catch(() => logger.error('Telegram', 'operation_failed'));
       }
     } finally {
       if (generation === this.operationGeneration) {
@@ -1163,11 +1164,11 @@ export class TelegramService {
         }
       }
     } catch (error) {
-      console.error('[Telegram] Antigravity turn error:', error);
+      logger.error('Telegram', 'operation_failed');
       if (!signal.aborted && generation === this.operationGeneration) {
         await this.client
           .sendMessage(chatId, `❌ ${error instanceof Error ? error.message : String(error)}`)
-          .catch(() => console.error('[Telegram] Antigravity response delivery failed.'));
+          .catch(() => logger.error('Telegram', 'operation_failed'));
       }
     } finally {
       if (generation === this.operationGeneration) {

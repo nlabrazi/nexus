@@ -1,3 +1,4 @@
+import { logger } from '../logging/logger';
 import { BrainDecision, BrainMessage, BrainModel } from './model';
 import { ConversationProjectContext } from './types';
 
@@ -126,10 +127,7 @@ export class OllamaBrainModel implements BrainModel {
               geminiKey
             );
           } catch (geminiErr: unknown) {
-            console.warn(
-              '[Nexus Brain] Fallback Gemini a également échoué :',
-              geminiErr instanceof Error ? geminiErr.message : geminiErr
-            );
+            logger.warn('Brain', 'gemini_fallback', { provider: 'gemini', status: 'failed' });
           }
         }
       }

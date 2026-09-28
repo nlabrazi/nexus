@@ -1,3 +1,4 @@
+import { logger } from '../logging/logger';
 import { randomBytes } from 'node:crypto';
 import { TelegramPeer } from './approvals';
 import { TelegramClient } from './client';
@@ -165,14 +166,14 @@ export class TelegramContinuations {
   private close(chatId: number, messageId: number, status: string): void {
     void this.client
       .closeApprovalMessage(chatId, messageId, status)
-      .catch(() => console.warn('[Telegram] Unable to remove continuation buttons.'));
+      .catch(() => logger.warn('Telegram', 'delivery_failed'));
   }
 
   private async answer(id: string, text: string): Promise<void> {
     try {
       await this.client.answerCallbackQuery(id, text);
     } catch {
-      console.warn('[Telegram] Unable to acknowledge continuation callback.');
+      logger.warn('Telegram', 'delivery_failed');
     }
   }
 }

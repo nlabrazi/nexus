@@ -1,3 +1,4 @@
+import { logger } from '../logging/logger';
 import { ChildProcessWithoutNullStreams, execFile, spawn } from 'node:child_process';
 import { workspaceEnvironment } from '../workspace/environment';
 import { AntigravityError, emptyResponseError, processError, turnTimeoutError } from './errors';
@@ -252,7 +253,7 @@ export class AntigravityClient {
         .map((l: string) => l.trim())
         .filter((l: string) => Boolean(l));
       for (const line of lines) {
-        console.warn(`[Antigravity stderr] ${line}`);
+        logger.debug('Antigravity', 'stderr_received');
         this.pushStderr(line);
       }
     });
@@ -325,9 +326,7 @@ export class AntigravityClient {
     const changedFiles = new Set<string>();
     let collectedResponse = '';
 
-    console.log(
-      `[Antigravity] Starting turn in conversation ${conversationId}: "${trimmedPrompt.slice(0, 100)}${trimmedPrompt.length > 100 ? '...' : ''}"`
-    );
+    logger.info('Antigravity', 'turn', { status: 'started' });
 
     return await new Promise<string>((resolve, reject) => {
       let settled = false;
@@ -403,9 +402,7 @@ export class AntigravityClient {
               ? `${step.tool_info.error.type ? `[${step.tool_info.error.type}] ` : ''}${step.tool_info.error.message}`
               : undefined;
 
-            console.log(
-              `[Antigravity] Tool ${toolName} [${toolState}]${toolError ? ` Error: ${toolError}` : ''}`
-            );
+            logger.debug('Antigravity', 'tool_event');
 
             let existingIdx = -1;
             for (let i = toolsCalled.length - 1; i >= 0; i--) {
@@ -422,7 +419,7 @@ export class AntigravityClient {
             }
 
             if (toolError) {
-              console.warn(`[Antigravity] Tool error on ${toolName}: ${toolError}`);
+              logger.warn('Antigravity', 'tool', { status: 'failed' });
             }
 
             if (step.tool_info?.parameters) {
@@ -473,9 +470,7 @@ export class AntigravityClient {
 
           if (res.status !== 'SUCCESS') {
             const turnStderr = this.recentStderr.slice(stderrStartIdx);
-            console.error(
-              `[Antigravity] Turn ended with non-success status: ${res.status}, error: ${res.error}`
-            );
+            logger.error('Antigravity', 'turn', { status: 'failed' });
             fail(
               new AntigravityError(
                 'turn_failed',
@@ -495,12 +490,7 @@ export class AntigravityClient {
           const responseText = (res.response || collectedResponse).trim();
           if (!responseText) {
             const turnStderr = this.recentStderr.slice(stderrStartIdx);
-            console.warn('[Antigravity] Turn completed with empty response.', {
-              toolsCalled,
-              changedFiles: [...changedFiles],
-              recentStderr: turnStderr,
-              pendingApprovals: this.approvals.getPendingCount(),
-            });
+            logger.warn('Antigravity', 'turn', { status: 'empty_response' });
             fail(
               emptyResponseError(
                 {
@@ -679,7 +669,7 @@ export class AntigravityClient {
         }
       } catch {
         // Non-JSON output from child process (e.g. startup banner, progress info, debug logs)
-        console.log(`[Antigravity stdout] ${line}`);
+        logger.debug('Antigravity', 'non_json_output');
         this.pushStderr(`[stdout] ${line}`);
       }
     }

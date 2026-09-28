@@ -1,3 +1,4 @@
+import { logger } from '../logging/logger';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, resolve } from 'node:path';
@@ -83,7 +84,7 @@ export class ProjectRegistry {
         };
       }
     } catch (err) {
-      console.warn(`[Nexus Registry] Avertissement: Impossible de parser ${this.filePath}:`, err);
+      logger.warn('Registry', 'delivery_failed');
     }
 
     return {
