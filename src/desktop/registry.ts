@@ -84,7 +84,7 @@ export class ProjectRegistry {
         };
       }
     } catch (err) {
-      logger.warn('Registry', 'delivery_failed');
+      logger.warn('Registry', 'load', { status: 'invalid_registry' }, err);
     }
 
     return {

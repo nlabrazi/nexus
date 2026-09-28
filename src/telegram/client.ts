@@ -1,3 +1,4 @@
+import { registerLogSecret } from '../logging/logger';
 import {
   TelegramFile,
   TelegramGetMeResponse,
@@ -41,7 +42,9 @@ function checkVoiceSize(size: number | undefined): void {
 }
 
 export class TelegramClient {
-  constructor(private readonly token: string) {}
+  constructor(private readonly token: string) {
+    registerLogSecret(token);
+  }
 
   async getMe(): Promise<TelegramGetMeResponse> {
     const response = await fetch(`https://api.telegram.org/bot${this.token}/getMe`);

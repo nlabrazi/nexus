@@ -601,7 +601,7 @@ export class DesktopNode {
         })
       );
     } catch (err) {
-      logger.warn('Desktop', 'list_models', { provider: payload.backend, status: 'failed' });
+      logger.warn('Desktop', 'list_models', { provider: payload.backend, status: 'failed' }, err);
     }
   }
 
@@ -653,7 +653,7 @@ export class DesktopNode {
         })
       );
     } catch (err) {
-      logger.warn('Desktop', 'select_model', { provider: payload.backend, status: 'failed' });
+      logger.warn('Desktop', 'select_model', { provider: payload.backend, status: 'failed' }, err);
     }
   }
 
@@ -664,7 +664,7 @@ export class DesktopNode {
       logger.info('Desktop', 'switch_project', { status: 'success' });
       this.coreClient?.send(createNexusMessage('node:status', this.createStatusPayload()));
     } catch (err) {
-      logger.warn('Desktop', 'switch_project', { status: 'failed' });
+      logger.warn('Desktop', 'switch_project', { status: 'failed' }, err);
       this.coreClient?.send(
         createNexusMessage('core:error', {
           code: 'PROJECT_NOT_FOUND',
@@ -826,12 +826,17 @@ export class DesktopNode {
         );
       } else {
         const errorMessage = err instanceof Error ? err.message : String(err);
-        logger.error('Desktop', 'task', {
-          provider: backend,
-          taskId,
-          status: 'failed',
-          durationMs: Date.now() - startedAt,
-        });
+        logger.error(
+          'Desktop',
+          'task',
+          {
+            provider: backend,
+            taskId,
+            status: 'failed',
+            durationMs: Date.now() - startedAt,
+          },
+          err
+        );
         this.coreClient?.send(
           createNexusMessage('task:failed', {
             taskId,

@@ -108,13 +108,32 @@ export class OllamaBrainModel implements BrainModel {
   ): Promise<BrainDecision> {
     signal.throwIfAborted();
 
+    const startedAt = Date.now();
     try {
-      return await this.callOllama(messages, project, toolsAllowed, signal);
+      const result = await this.callOllama(messages, project, toolsAllowed, signal);
+      logger.info('Brain', 'decide', {
+        provider: 'ollama',
+        model: this.modelName,
+        status: 'success',
+        durationMs: Date.now() - startedAt,
+      });
+      return result;
     } catch (ollamaErr: unknown) {
       if (signal.aborted) {
         throw ollamaErr;
       }
 
+      logger.warn(
+        'Brain',
+        'decide',
+        {
+          provider: 'ollama',
+          model: this.modelName,
+          status: 'failed',
+          durationMs: Date.now() - startedAt,
+        },
+        ollamaErr
+      );
       if (this.fallbackToGemini) {
         const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
         if (geminiKey) {
@@ -127,7 +146,12 @@ export class OllamaBrainModel implements BrainModel {
               geminiKey
             );
           } catch (geminiErr: unknown) {
-            logger.warn('Brain', 'gemini_fallback', { provider: 'gemini', status: 'failed' });
+            logger.warn(
+              'Brain',
+              'gemini_fallback',
+              { provider: 'gemini', status: 'failed' },
+              geminiErr
+            );
           }
         }
       }

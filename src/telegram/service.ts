@@ -882,8 +882,8 @@ export class TelegramService {
         if (audioReply && !signal.aborted && generation === this.operationGeneration) {
           await this.client.sendAcknowledgementAudio(chatId, audioReply, signal);
         }
-      } catch {
-        // The text acknowledgement has already been delivered.
+      } catch (error) {
+        logger.warn('TTS', 'acknowledge', { provider: 'piper', status: 'text_fallback' }, error);
       }
       text = trimmed;
     } catch (error) {
