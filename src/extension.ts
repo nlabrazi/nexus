@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { formatDiagnostics } from './diagnostics/status';
+import { getLoggingStatus } from './logging/persistence';
 import { initializeLogging } from './logging/persistence';
 import { logger } from './logging/logger';
 import * as vscode from 'vscode';
@@ -92,6 +95,20 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.window.showInformationMessage(
       `Nexus active — Workspace: ${workspaceName} (${activeBackend})`
     );
+  });
+
+  const diagnosticsCommand = vscode.commands.registerCommand('nexus.diagnostics', async () => {
+    const snapshot = await nexusRuntime!.getStatus();
+    const report = formatDiagnostics(
+      { ...snapshot, tts: getTtsDiagnostic() },
+      {
+        telegram: telegramService ? 'service démarré (connexion non vérifiée)' : 'non configuré',
+        lastError: logger.getLastError(),
+        logsAvailable: getLoggingStatus().available,
+      }
+    );
+    output.appendLine(report);
+    output.show(true);
   });
 
   const configureTelegramCommand = vscode.commands.registerCommand(
@@ -373,6 +390,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     registerSpeechTestCommand(context),
     statusCommand,
+    diagnosticsCommand,
     selectBackendCommand,
     configureTelegramCommand,
     testTelegramCommand,
@@ -448,6 +466,7 @@ function startTelegramService(context: vscode.ExtensionContext, token: string): 
       const status = await nexusRuntime!.getStatus();
       return {
         ...status,
+        tts: getTtsDiagnostic(),
         workspace: workspace ? { name: workspace.name, path: workspace.uri.fsPath } : undefined,
         workspaceCount: folders.length,
       };
@@ -565,4 +584,14 @@ async function runLocalAntigravitySessionAction(action: RemoteSessionAction): Pr
 export function deactivate() {
   telegramService?.stop();
   nexusRuntime?.stop();
+}
+
+function getTtsDiagnostic(): string {
+  const config = vscode.workspace.getConfiguration('nexus.speech.tts');
+  if (!config.get<boolean>('enabled', true)) return 'désactivé';
+  const python = config.get<string>('pythonPath', '');
+  const model = config.get<string>('modelPath', '');
+  return python && model && existsSync(python) && existsSync(model) && existsSync(`${model}.json`)
+    ? 'Piper configuré (synthèse et FFmpeg non vérifiés)'
+    : 'Piper indisponible (configuration locale incomplète)';
 }

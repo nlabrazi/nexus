@@ -4,6 +4,8 @@ import type { CodexServiceStatus } from '../codex/types';
 export type AgentBackendType = 'codex' | 'antigravity';
 
 export interface NexusStatusSnapshot {
+  brain?: { provider: string; model?: string };
+  tts?: string;
   workspace?: { name: string; path: string };
   workspaceCount: number;
   activeBackend?: AgentBackendType;

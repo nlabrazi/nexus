@@ -396,6 +396,10 @@ export class NexusRuntime {
       workspace,
       workspaceCount: workspace ? 1 : 0,
       activeBackend: this.activeBackend,
+      brain:
+        this.brainModel instanceof OllamaBrainModel
+          ? { provider: 'ollama', model: this.brainModel.getModel() }
+          : { provider: this.brainModel instanceof CodexBrainModel ? 'codex' : 'custom' },
       codex: this.codexService.getStatus(),
       antigravity: this.antigravityService.getStatus(),
     };

@@ -27,3 +27,9 @@ Ce filtre ne remplace pas la règle d’exclusion des contenus sensibles.
 Les réponses explicites des commandes CLI (aide, résultat demandé, appairage) ne
 sont pas recopiées dans ces fichiers. Core nécessite désormais un jeton configuré
 via `NEXUS_CORE_AUTH_TOKENS` ou `--token` : aucun jeton temporaire n’est imprimé.
+
+`Nexus: Diagnostics` ouvre un résumé dans le canal de sortie de l’extension.
+`/diagnostics` fournit le même format à l’utilisateur Telegram appairé, sans
+remplacer `/status`. Un modèle configuré n’est pas une preuve de disponibilité ;
+le diagnostic l’indique. Depuis Core, les états des processus agents distants sont
+signalés comme non vérifiés. La dernière erreur est celle du processus interrogé.

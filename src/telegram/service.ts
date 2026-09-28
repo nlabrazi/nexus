@@ -1,3 +1,5 @@
+import { formatDiagnostics } from '../diagnostics/status';
+import { getLoggingStatus } from '../logging/persistence';
 import { logger } from '../logging/logger';
 import type * as vscode from 'vscode';
 import { randomInt } from 'node:crypto';
@@ -727,9 +729,13 @@ export class TelegramService {
       return;
     }
 
-    if (text.trim() === '/status') {
+    if (text.trim() === '/status' || text.trim() === '/diagnostics') {
       if (!this.statusRunning) {
-        void this.runStatusCommand(chatId, this.abortController!.signal);
+        void this.runStatusCommand(
+          chatId,
+          this.abortController!.signal,
+          text.trim() === '/diagnostics'
+        );
       }
       return;
     }
@@ -939,7 +945,11 @@ export class TelegramService {
     }
   }
 
-  private async runStatusCommand(chatId: number, signal: AbortSignal): Promise<void> {
+  private async runStatusCommand(
+    chatId: number,
+    signal: AbortSignal,
+    diagnostics = false
+  ): Promise<void> {
     this.statusRunning = true;
     const peer = this.getApprovalPeer();
     try {
@@ -948,7 +958,13 @@ export class TelegramService {
         if (this.getStatus) {
           const snapshot = await this.getStatus();
           const activeBackend = snapshot.activeBackend ?? this.getActiveBackend();
-          status = formatTelegramStatus({ ...snapshot, activeBackend }, this.remotePromptRunning);
+          status = diagnostics
+            ? formatDiagnostics(snapshot, {
+                telegram: 'connecté et appairé',
+                lastError: logger.getLastError(),
+                logsAvailable: getLoggingStatus().available,
+              })
+            : formatTelegramStatus({ ...snapshot, activeBackend }, this.remotePromptRunning);
         } else {
           status = 'Statut indisponible.';
         }
@@ -962,7 +978,7 @@ export class TelegramService {
         current?.userId === peer.userId &&
         current.chatId === peer.chatId
       ) {
-        await this.client.sendMessage(chatId, status, 'markdown');
+        await this.client.sendMessage(chatId, status, diagnostics ? 'plain' : 'markdown');
       }
     } catch {
       logger.warn('Telegram', 'delivery_failed');

@@ -47,6 +47,7 @@ export const TELEGRAM_HELP = [
   '`/memory clear` — Réinitialiser la mémoire du projet actif.',
   '',
   '📡 **État et connexion**',
+  '`/diagnostics` — Résumer les services, la voix, les logs et la dernière erreur locale.',
   '`/status` — Afficher le projet, le modèle, l’activité, les tokens et les quotas.',
   '`/ping` — Vérifier la connexion ; Nexus répond « pong ».',
   '`/help` — Afficher cette aide.',

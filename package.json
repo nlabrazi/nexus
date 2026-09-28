@@ -104,6 +104,10 @@
     },
     "commands": [
       {
+        "command": "nexus.diagnostics",
+        "title": "Nexus: Diagnostics"
+      },
+      {
         "command": "nexus.testSpeechToText",
         "title": "Nexus: Test Local Speech-to-Text"
       },
