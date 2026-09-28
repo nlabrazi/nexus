@@ -41,6 +41,8 @@ const paths = {
     "m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3Z",
   cpu: "M4 4h16v16H4zM9 9h6v6H9zM9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 15h3M1 9h3M1 15h3",
   zap: "M13 2 3 14h9l-1 8 10-12h-9l1-8Z",
+  speaker: "M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14",
+  speakerOff: "M11 5L6 9H2v6h4l5 4V5zM23 9l-6 6M17 9l6 6",
 } as const;
 defineProps<{ name: keyof typeof paths }>();
 </script>

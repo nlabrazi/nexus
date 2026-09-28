@@ -20,6 +20,12 @@
       </div>
 
       <div class="header-right">
+        <button v-if="isSpeaking" type="button" class="voice-speaking-indicator"
+          aria-label="Couper la voix de l'assistant" title="Couper la voix"
+          @click="stopSpeaking">
+          <NexusIcon name="speaker" />
+          <span class="speaking-wave" />
+        </button>
         <button class="status-beacon" type="button" :class="connectionStatus === 'connected' && isNodeReady
             ? 'online'
             : connectionStatus
@@ -56,9 +62,14 @@
 
       <div class="menu-divider" />
 
-      <button type="button" class="menu-item" @click="showQuickMenu = false; showStartersModal = true">
-        <NexusIcon name="sparkles" />
-        <span>Suggestions de prompts</span>
+      <button type="button" class="menu-item" @click="vocalResponsesEnabled = !vocalResponsesEnabled">
+        <NexusIcon :name="vocalResponsesEnabled ? 'speaker' : 'speakerOff'" />
+        <span>Réponse vocale {{ vocalResponsesEnabled ? 'activée' : 'désactivée' }}</span>
+      </button>
+
+      <button v-if="isSpeaking" type="button" class="menu-item" @click="stopSpeaking(); showQuickMenu = false">
+        <NexusIcon name="speakerOff" />
+        <span>Couper la voix</span>
       </button>
 
       <button type="button" class="menu-item" @click="showQuickMenu = false; showProjectMenu = true">
@@ -124,13 +135,6 @@
             <NexusIcon name="settings" />
             <span>Connecter mon poste</span>
           </button>
-
-          <div v-else class="hud-actions-minimal">
-            <button type="button" class="hud-chip-button" @click="showStartersModal = true">
-              <NexusIcon name="sparkles" />
-              <span>✦ Suggestions de prompt</span>
-            </button>
-          </div>
         </div>
 
         <!-- Chat Messages -->
@@ -138,12 +142,31 @@
           <div class="message-meta">
             <span>{{
               msg.role === "user" ? "Vous" : selectedBackendLabel(msg.backend)
-              }}</span><time>{{ formatTime(msg.timestamp) }}</time>
+              }}</span>
+            <div class="message-meta-actions">
+              <button v-if="msg.role === 'assistant' && !msg.error" type="button" class="msg-speak-btn"
+                :class="{ speaking: speakingMessageId === msg.id }"
+                :title="speakingMessageId === msg.id ? 'Arrêter la lecture' : 'Écouter la réponse'"
+                :aria-label="speakingMessageId === msg.id ? 'Arrêter la lecture' : 'Écouter la réponse'"
+                @click="toggleSpeakMessage(msg)">
+                <NexusIcon :name="speakingMessageId === msg.id ? 'speakerOff' : 'speaker'" />
+              </button>
+              <time>{{ formatTime(msg.timestamp) }}</time>
+            </div>
           </div>
           <div class="message-content" v-html="renderMarkdown(msg.text)" />
           <p v-if="msg.fileSummary" class="file-summary">
             <NexusIcon name="folder" />{{ msg.fileSummary }}
           </p>
+          <div v-if="msg.role === 'assistant' && msg.backend === 'brain' && !msg.error" class="brain-handoff">
+            <span class="brain-handoff-label">Passer à l’action :</span>
+            <button type="button" class="handoff-chip" title="Mettre en place avec Codex" @click="switchToImplementation('codex')">
+              <NexusIcon name="zap" /> Codex
+            </button>
+            <button type="button" class="handoff-chip" title="Mettre en place avec Antigravity" @click="switchToImplementation('antigravity')">
+              <NexusIcon name="cpu" /> Antigravity
+            </button>
+          </div>
         </article>
 
         <!-- In-flight Task Progress -->
@@ -442,6 +465,7 @@
         </div>
         <label class="switch-field"><span>Envoyer après la dictée<small>Désactivez pour relire avant
               l’envoi.</small></span><input v-model="autoSendVoice" type="checkbox" role="switch" /></label>
+        <label class="switch-field"><span>Réponse vocale de l’assistant<small>L’assistant lit ses réponses à voix haute.</small></span><input v-model="vocalResponsesEnabled" type="checkbox" role="switch" /></label>
         <p v-if="settingsError" class="inline-error" role="alert">
           {{ settingsError }}
         </p>
@@ -528,23 +552,6 @@
       </div>
     </NexusSheet>
 
-    <!-- PROMPT SUGGESTIONS (STARTERS) SHEET -->
-    <NexusSheet v-model="showStartersModal" title="Suggestions de prompts">
-      <div class="starters-sheet-list">
-        <button v-for="starter in starters" :key="starter.label" type="button" class="starter-card"
-          @click="preparePrompt(starter.prompt)">
-          <div class="starter-card-icon">
-            <NexusIcon :name="starter.icon" />
-          </div>
-          <div class="starter-card-content">
-            <strong>{{ starter.label }}</strong>
-            <p>{{ starter.prompt }}</p>
-          </div>
-          <NexusIcon name="arrow" class="starter-card-arrow" />
-        </button>
-      </div>
-    </NexusSheet>
-
     <!-- AGENT SELECTOR SHEET -->
     <NexusSheet v-model="showAgentPickerSheet" title="Choisir l'agent IA">
       <div class="agent-sheet-list">
@@ -552,10 +559,13 @@
           :class="{ selected: selectedBackend === agent.id }"
           @click="selectedBackend = agent.id; showAgentPickerSheet = false">
           <div class="agent-card-icon">
-            <NexusIcon name="zap" />
+            <NexusIcon :name="agent.id === 'brain' ? 'nexus' : agent.id === 'codex' ? 'zap' : 'cpu'" />
           </div>
           <div class="agent-card-info">
-            <div class="agent-card-name">{{ agent.name }}</div>
+            <div class="agent-card-header">
+              <span class="agent-card-name">{{ agent.name }}</span>
+              <span class="agent-card-role-badge">{{ agent.role }}</span>
+            </div>
             <div class="agent-card-desc">{{ agent.description }}</div>
           </div>
           <span v-if="selectedBackend === agent.id" class="agent-selected-badge">
@@ -666,24 +676,26 @@ const selectedBackend = ref<"brain" | "codex" | "antigravity">("brain");
 // Quick Dropdowns & HUD Modals state
 const showQuickMenu = ref<boolean>(false);
 const showProjectMenu = ref<boolean>(false);
-const showStartersModal = ref<boolean>(false);
 const showAgentPickerSheet = ref<boolean>(false);
 
 const agentOptions = [
   {
     id: "brain" as const,
     name: "Nexus Brain",
-    description: "Orchestration & conversation globale",
+    role: "Brainstorm & Échange",
+    description: "Discussion libre, réflexion et exploration des dossiers sans modifier le code.",
   },
   {
     id: "codex" as const,
     name: "Codex",
-    description: "Modèle de code rapide & précis",
+    role: "Builder ciblé",
+    description: "Écriture de code et modifications directes sur le projet sélectionné.",
   },
   {
     id: "antigravity" as const,
     name: "Antigravity",
-    description: "Agent autonome multi-outils",
+    role: "Agent autonome",
+    description: "Résolution complexe, builds et tâches multi-fichiers sur le projet sélectionné.",
   },
 ];
 
@@ -723,45 +735,89 @@ const messages = ref<ChatMessage[]>([]);
 const messagesScrollRef = ref<HTMLElement | null>(null);
 const chatTextareaRef = ref<HTMLTextAreaElement | null>(null);
 
-const starters = [
-  {
-    label: "Faire le point",
-    prompt: "Fais le point sur le projet et les modifications en cours.",
-    icon: "activity" as const,
-  },
-  {
-    label: "Relire les changements",
-    prompt:
-      "Relis les modifications récentes et signale les problèmes éventuels.",
-    icon: "branch" as const,
-  },
-  {
-    label: "Générer un test",
-    prompt: "Propose un plan de test ou vérifie la couverture de nos fonctions clés.",
-    icon: "shield" as const,
-  },
-  {
-    label: "Structure du projet",
-    prompt: "Explique l'architecture et les composants essentiels du projet.",
-    icon: "folder" as const,
-  },
-];
+// Vocal Response (TTS) State
+const vocalResponsesEnabled = ref<boolean>(true);
+const isSpeaking = ref<boolean>(false);
+const speakingMessageId = ref<string | null>(null);
+
 const settingsError = ref("");
+
+function cleanMarkdownForSpeech(md: string): string {
+  if (!md) return "";
+  let clean = md;
+  // Replace code fences
+  clean = clean.replace(/```[\s\S]*?```/g, " un bloc de code. ");
+  // Inline code
+  clean = clean.replace(/`([^`]+)`/g, "$1");
+  // Links
+  clean = clean.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+  // Headings
+  clean = clean.replace(/^#+\s+(.*)$/gm, "$1.");
+  // Bold/italics
+  clean = clean.replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, "$1");
+  // Bullets
+  clean = clean.replace(/^\s*[-*+]\s+/gm, "");
+  // Blockquotes
+  clean = clean.replace(/^\s*>\s+/gm, "");
+  // Spaces & newlines
+  clean = clean.replace(/\n+/g, ". ").replace(/\s+/g, " ").trim();
+  return clean;
+}
+
+function speakMessage(text: string, messageId?: string) {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  stopSpeaking();
+  const cleaned = cleanMarkdownForSpeech(text);
+  if (!cleaned) return;
+
+  const utterance = new SpeechSynthesisUtterance(cleaned);
+  utterance.lang = "fr-FR";
+  utterance.rate = 1.05;
+  utterance.pitch = 1.0;
+
+  isSpeaking.value = true;
+  speakingMessageId.value = messageId ?? null;
+
+  utterance.onend = () => {
+    isSpeaking.value = false;
+    speakingMessageId.value = null;
+  };
+  utterance.onerror = () => {
+    isSpeaking.value = false;
+    speakingMessageId.value = null;
+  };
+
+  window.speechSynthesis.speak(utterance);
+}
+
+function stopSpeaking() {
+  if (typeof window !== "undefined" && "speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+  }
+  isSpeaking.value = false;
+  speakingMessageId.value = null;
+}
+
+function toggleSpeakMessage(msg: ChatMessage) {
+  if (speakingMessageId.value === msg.id) {
+    stopSpeaking();
+  } else {
+    speakMessage(msg.text, msg.id);
+  }
+}
+
+function switchToImplementation(backend: "codex" | "antigravity") {
+  selectedBackend.value = backend;
+  nextTick(() => {
+    chatTextareaRef.value?.focus();
+  });
+}
 
 function resizeComposer() {
   const textarea = chatTextareaRef.value;
   if (!textarea) return;
   textarea.style.height = "auto";
   textarea.style.height = `${Math.min(textarea.scrollHeight, 140)}px`;
-}
-
-function preparePrompt(prompt: string) {
-  inputPrompt.value = prompt;
-  showStartersModal.value = false;
-  nextTick(() => {
-    chatTextareaRef.value?.focus();
-    resizeComposer();
-  });
 }
 
 function handleComposerKeydown(event: KeyboardEvent) {
@@ -888,6 +944,11 @@ onMounted(async () => {
       autoSendVoice.value = savedAutoSend === "true";
     }
 
+    const savedVocal = localStorage.getItem("nexus_vocal_responses");
+    if (savedVocal !== null) {
+      vocalResponsesEnabled.value = savedVocal === "true";
+    }
+
     // Load persisted chat messages
     loadPersistedMessages();
 
@@ -939,12 +1000,22 @@ onMounted(async () => {
   }, 1000);
 });
 
+watch(vocalResponsesEnabled, (enabled) => {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("nexus_vocal_responses", enabled ? "true" : "false");
+  }
+  if (!enabled) {
+    stopSpeaking();
+  }
+});
+
 onUnmounted(() => {
   window.visualViewport?.removeEventListener("resize", syncViewport);
   document.documentElement.style.removeProperty("--app-height");
   if (pollTimer) clearInterval(pollTimer);
   if (clockTimer) clearInterval(clockTimer);
   cancelVoiceRecording();
+  stopSpeaking();
 });
 
 // Computed properties
@@ -1381,6 +1452,9 @@ async function sendPrompt(promptText: string) {
 
     messages.value.push(assistantMsg);
     saveMessages();
+    if (vocalResponsesEnabled.value && assistantMsg.text) {
+      speakMessage(assistantMsg.text, assistantMsg.id);
+    }
   } catch (err: any) {
     const errorMsg: ChatMessage = {
       id: `err-${Date.now()}`,
@@ -1589,6 +1663,7 @@ function appendTranscript(text: string) {
 }
 
 async function runNativeSpeechPopup() {
+  stopSpeaking();
   try {
     const avail = await SpeechRecognition.available();
     if (!avail.available) {
@@ -1718,6 +1793,7 @@ async function onMicPointerCancel(e: PointerEvent) {
 }
 
 async function startPushToTalk() {
+  stopSpeaking();
   if (!isNodeReady.value || isSending.value) return;
 
   speechRecordingStart = Date.now();
