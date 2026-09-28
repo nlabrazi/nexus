@@ -132,7 +132,7 @@
           <div class="message-meta">
             <span>{{
               msg.role === "user" ? "Vous" : selectedBackendLabel(msg.backend)
-              }}</span>
+            }}</span>
             <div class="message-meta-actions">
               <button v-if="msg.role === 'assistant'" type="button" class="icon-button tts-play-btn"
                 :class="{ speaking: currentSpeakingId === msg.id && isSpeaking }"
@@ -153,7 +153,7 @@
         <div v-if="isSending" class="task-progress" role="status">
           <span class="busy-indicator" /><span>{{
             currentProgressMessage || "En cours…"
-            }}</span>
+          }}</span>
           <button v-if="currentInFlightTaskId" type="button" class="text-button danger"
             @click="cancelTask(currentInFlightTaskId)">
             <NexusIcon name="stop" />Arrêter
@@ -237,7 +237,7 @@
       <button v-if="pendingApprovalsCount" type="button" class="approval-hud-pill" @click="showApprovalModal = true">
         <NexusIcon name="shield" /><span>{{ pendingApprovalsCount }} autorisation{{
           pendingApprovalsCount > 1 ? "s" : ""
-        }}
+          }}
           en attente</span>
         <NexusIcon name="chevron" />
       </button>
@@ -271,13 +271,13 @@
           <div class="task-line">
             <span class="task-status" :class="task.status"><span class="status-dot" />{{
               formatTaskStatus(task.status)
-            }}</span><time>{{ formatRelativeTime(task.createdAt) }}</time>
+              }}</span><time>{{ formatRelativeTime(task.createdAt) }}</time>
           </div>
           <h2>{{ task.prompt }}</h2>
           <div class="task-subline">
             <span>{{ selectedBackendLabel(task.backend) }}</span><span v-if="task.projectId">{{
               projectLabel(task.projectId)
-              }}</span><button v-if="task.status === 'running' || task.status === 'pending'" type="button"
+            }}</span><button v-if="task.status === 'running' || task.status === 'pending'" type="button"
               class="text-button danger" @click="cancelTask(task.taskId)">
               <NexusIcon name="stop" />Arrêter
             </button>
@@ -469,7 +469,7 @@
       <div v-if="activeApproval" class="approval-content">
         <div class="approval-heading">
           <NexusIcon name="shield" /><span>{{ activeApproval.agentName
-          }}<small>{{ formatApprovalKind(activeApproval.kind) }}</small></span>
+            }}<small>{{ formatApprovalKind(activeApproval.kind) }}</small></span>
         </div>
         <pre class="approval-code"><code>{{ activeApproval.details }}</code></pre>
         <p class="approval-expiry" :class="{

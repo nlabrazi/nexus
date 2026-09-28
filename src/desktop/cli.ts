@@ -102,7 +102,7 @@ function createTerminalApprovalHandler(): (
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<number> {
   try {
     process.loadEnvFile?.();
-  } catch {}
+  } catch { }
 
   const optionsConfig = {
     project: { type: 'string' as const, short: 'p' },
@@ -340,7 +340,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
       process.on('SIGTERM', shutdown);
 
       // Keep running until killed
-      await new Promise<void>(() => {});
+      await new Promise<void>(() => { });
       return 0;
     }
 
@@ -363,7 +363,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
             console.log(`• [${d.date}] ${d.title} (${d.status})`);
             console.log(`  ID : ${d.id}`);
             console.log(`  Décision : ${d.decision}`);
-            if (d.context) console.log(`  Contexte : ${d.context}`);
+            if (d.context) { console.log(`  Contexte : ${d.context}`); }
             console.log('');
           }
         }

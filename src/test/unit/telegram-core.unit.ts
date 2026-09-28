@@ -234,8 +234,8 @@ suite('Telegram Core Bridge and routing', () => {
     // Provide mock connection to approval relay so decide sends message without error
     const dummyConn = {
       isOpen: () => true,
-      send: () => {},
-      close: () => {},
+      send: () => { },
+      close: () => { },
     } as unknown as WebSocketServerConnection;
     (
       core as unknown as { nodeWsConnections: Map<string, WebSocketServerConnection> }
@@ -293,8 +293,8 @@ suite('Telegram Core Bridge and routing', () => {
 
     const dummyConn = {
       isOpen: () => true,
-      send: () => {},
-      close: () => {},
+      send: () => { },
+      close: () => { },
     } as unknown as WebSocketServerConnection;
     (
       core as unknown as { nodeWsConnections: Map<string, WebSocketServerConnection> }
@@ -348,7 +348,7 @@ suite('Telegram Core Bridge and routing', () => {
         signal.addEventListener('abort', () => {
           abortSignalled = true;
         });
-        return new Promise<never>(() => {});
+        return new Promise<never>(() => { });
       },
     } as unknown as TelegramService;
     bridge.attachTelegramService(service);
