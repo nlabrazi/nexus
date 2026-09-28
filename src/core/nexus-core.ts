@@ -584,7 +584,7 @@ export class NexusCore extends EventEmitter {
 
     if (method === 'GET' && pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', version: '0.4.1' }));
+      res.end(JSON.stringify({ status: 'ok', version: '1.0.0' }));
       return;
     }
 

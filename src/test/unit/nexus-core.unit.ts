@@ -18,7 +18,7 @@ suite('Nexus Core presence and central service', () => {
   const mockHelloPayload: ProtoHelloPayload = {
     nodeId: 'desktop-node-alpha',
     nodeName: 'station-linux',
-    version: '0.4.1',
+    version: '1.0.0',
     authToken: validToken,
     capabilities: {
       backends: ['codex', 'antigravity', 'brain'],
@@ -271,7 +271,7 @@ suite('Nexus Core presence and central service', () => {
     const healthRes = await fetch(`${baseUrl}/health`);
     assert.equal(healthRes.status, 200);
     const healthData = await healthRes.json();
-    assert.deepEqual(healthData, { status: 'ok', version: '0.4.1' });
+    assert.deepEqual(healthData, { status: 'ok', version: '1.0.0' });
 
     // 2. GET /status
     const statusRes = await fetch(`${baseUrl}/status`);

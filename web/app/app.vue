@@ -94,7 +94,7 @@
           </div>
 
           <div class="hud-status-block">
-            <p class="hud-code">// NEXUS PROTOCOL v0.4</p>
+            <p class="hud-code">// NEXUS PROTOCOL v1.0.0</p>
             <h1 class="hud-title">
               {{
                 isNodeReady
@@ -943,6 +943,25 @@ const isDecidingApproval = ref<boolean>(false);
 const approvalDecidingId = ref<string | null>(null);
 const activeApprovalIndex = ref<number>(0);
 
+const pendingApprovals = computed(() => {
+  return approvals.value.filter((a) => a.status === "pending");
+});
+
+const pendingApprovalsCount = computed(() => {
+  const localPending = pendingApprovals.value.length;
+  const statusPending = coreStatus.value?.pendingApprovals ?? 0;
+  return Math.max(localPending, statusPending);
+});
+
+const activeApproval = computed(() => {
+  if (pendingApprovals.value.length === 0) return null;
+  const idx = Math.min(
+    activeApprovalIndex.value,
+    pendingApprovals.value.length - 1,
+  );
+  return pendingApprovals.value[idx] || pendingApprovals.value[0] || null;
+});
+
 // Voice / Push-to-Talk State
 const isListening = ref<boolean>(false);
 const isProcessingAudio = ref<boolean>(false);
@@ -1258,25 +1277,7 @@ const taskFilterTabs = computed(() => [
   },
 ]);
 
-// Approvals Computeds
-const pendingApprovals = computed(() => {
-  return approvals.value.filter((a) => a.status === "pending");
-});
 
-const pendingApprovalsCount = computed(() => {
-  const localPending = pendingApprovals.value.length;
-  const statusPending = coreStatus.value?.pendingApprovals ?? 0;
-  return Math.max(localPending, statusPending);
-});
-
-const activeApproval = computed(() => {
-  if (pendingApprovals.value.length === 0) return null;
-  const idx = Math.min(
-    activeApprovalIndex.value,
-    pendingApprovals.value.length - 1,
-  );
-  return pendingApprovals.value[idx] || pendingApprovals.value[0] || null;
-});
 
 // Helper functions for Approvals
 function formatApprovalKind(kind?: string): string {

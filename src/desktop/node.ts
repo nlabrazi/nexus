@@ -358,7 +358,7 @@ export class DesktopNode {
     return {
       nodeId: this.getNodeId(),
       nodeName: this.getNodeName(),
-      version: '0.4.2',
+      version: '1.0.0',
       authToken: authToken ?? this.config.authToken ?? '',
       capabilities: this.getCapabilities(),
       projects: this.getProjects(),

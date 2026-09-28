@@ -165,7 +165,7 @@ suite('Desktop Node configuration and lifecycle', () => {
     const hello = node.createHelloPayload();
     assert.equal(hello.nodeId, 'node-payload-test');
     assert.equal(hello.nodeName, 'payload-host');
-    assert.equal(hello.version, '0.4.2');
+    assert.equal(hello.version, '1.0.0');
     assert.equal(hello.authToken, 'secret-token-123');
     assert.equal(hello.projects.length, 1);
     assert.equal(hello.projects[0].name, 'Nexus Protocol Payload');

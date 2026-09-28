@@ -13,7 +13,7 @@ export * from './ws-connection';
 export * from './task-router';
 export * from './nexus-core';
 
-const VERSION = '0.4.1';
+const VERSION = '1.0.0';
 
 const HELP_TEXT = `
 Nexus Core Server (v${VERSION})

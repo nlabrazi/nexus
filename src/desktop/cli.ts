@@ -15,7 +15,7 @@ export * from './node';
 export * from './ws-client';
 export * from './registry';
 
-const VERSION = '0.4.1';
+const VERSION = '1.0.0';
 
 const HELP_TEXT = `
 Nexus Desktop Node (v${VERSION})
