@@ -81,3 +81,27 @@ Les tests couvrent le passage du texte et du speaker au worker, l'annulation,
 les réglages invalides, l'envoi Telegram et le repli écrit. L'essai manuel avec
 le modèle téléchargé valide la synthèse réelle ; les tests unitaires restent
 indépendants de Piper et du modèle.
+
+## Réglages et lecture dans le client web
+
+Dans VS Code, `nexus.speech.tts.enabled` active ou coupe l’acquittement Piper.
+`nexus.speech.tts.speed` règle la vitesse entre 0,8 et 1,3 (défaut : 1).
+`modelPath` choisit le modèle de voix et `speakerId` son locuteur. Ces paramètres
+sont relus à chaque demande ; couper la voix conserve l’acquittement écrit.
+
+Dans le client web, **Connexion & préférences → Voix** permet d’activer la voix,
+de choisir une voix installée, sa vitesse et la lecture automatique. Le menu
+rapide fournit aussi l’interrupteur voix. Avec la lecture automatique coupée,
+le bouton d’un message permet toujours une écoute manuelle. Les choix sont
+mémorisés sur cet appareil. **Écouter un exemple** permet de valider le moteur.
+
+La lecture web utilise le moteur du navigateur, et non Piper : sa disponibilité
+et ses voix dépendent de l’appareil/WebView. Un échec de lecture affiche un court
+message et laisse la réponse texte intacte. Le navigateur peut exiger une action
+utilisateur avant la première lecture automatique ; utiliser le bouton d’écoute.
+Les blocs de code, tableaux et URL sont omis à l’oral ; les réponses longues sont
+lues par phrases, dans une limite de 6 000 caractères. Les événements tardifs d’une
+ancienne lecture ne peuvent plus interrompre la lecture actuelle.
+
+Les tests du contrôleur web s’exécutent avec `npm --prefix web run test:unit`.
+La qualité perçue et la lecture Android restent à vérifier sur l’appareil cible.

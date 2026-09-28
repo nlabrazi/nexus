@@ -93,6 +93,8 @@ suite('Piper acknowledgement transport', () => {
       configuration.modelPath,
       '--speaker',
       '0',
+      '--speed',
+      '1',
     ]);
     assert.equal(started[0].options.shell, false);
     assert.equal(
@@ -118,6 +120,9 @@ suite('Piper acknowledgement transport', () => {
       { scriptPath: '/bad\0path' },
       { speakerId: -1 },
       { speakerId: 0.5 },
+      { speed: 0 },
+      { speed: Number.NaN },
+      { speed: 2 },
     ]) {
       await assert.rejects(
         synthesizeAcknowledgement(new AbortController().signal, { ...configuration, ...override }),

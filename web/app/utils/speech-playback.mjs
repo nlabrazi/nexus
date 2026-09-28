@@ -43,12 +43,12 @@ export function createSpeechPlayback(engine, createUtterance, callbacks, timers 
         const utterance = createUtterance(chunks[index++]);
         activeUtterance = utterance; // Retain a strong reference until completion.
         utterance.lang = 'fr-FR';
-        utterance.rate = options.rate ?? 1;
+        utterance.rate = Number.isFinite(options.rate) && options.rate >= 0.8 && options.rate <= 1.3 ? options.rate : 1;
         const voices = engine.getVoices();
         const voice = voices.find((voice) => voice.voiceURI === options.voiceURI)
           ?? voices.find((voice) => voice.lang.toLowerCase().startsWith('fr') && voice.localService)
           ?? voices.find((voice) => voice.lang.toLowerCase().startsWith('fr'));
-        if (voice) utterance.voice = voice;
+        if (voice) { utterance.voice = voice; utterance.lang = voice.lang; }
         const isCurrent = () => current === generation && activeUtterance === utterance;
         utterance.onstart = () => {
           if (!isCurrent()) return;

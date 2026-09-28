@@ -58,7 +58,7 @@
 
       <button type="button" class="menu-item" @click="toggleTts(); showQuickMenu = false">
         <NexusIcon :name="ttsEnabled ? 'speaker' : 'speakerOff'" />
-        <span>{{ ttsEnabled ? 'Réponse vocale active' : 'Réponse vocale coupée' }}</span>
+        <span>{{ ttsEnabled ? 'Voix activée' : 'Voix désactivée' }}</span>
       </button>
 
       <button type="button" class="menu-item" @click="showQuickMenu = false; showProjectMenu = true">
@@ -134,7 +134,7 @@
               msg.role === "user" ? "Vous" : selectedBackendLabel(msg.backend)
             }}</span>
             <div class="message-meta-actions">
-              <button v-if="msg.role === 'assistant' && !msg.error && ttsAvailable" type="button" class="icon-button tts-play-btn"
+              <button v-if="msg.role === 'assistant' && !msg.error && ttsAvailable && ttsEnabled" type="button" class="icon-button tts-play-btn"
                 :class="{ speaking: currentSpeakingId === msg.id && isSpeaking }"
                 :aria-label="currentSpeakingId === msg.id && isSpeaking ? 'Arrêter la lecture' : 'Écouter le message vocalement'"
                 @click="toggleSpeakMessage(msg)">
@@ -451,6 +451,27 @@
         </div>
         <label class="switch-field"><span>Envoyer après la dictée<small>Désactivez pour relire avant
               l’envoi.</small></span><input v-model="autoSendVoice" type="checkbox" role="switch" /></label>
+        <details class="settings-details">
+          <summary>Voix</summary>
+          <p v-if="!ttsAvailable">La lecture vocale n’est pas disponible sur cet appareil.</p>
+          <template v-else>
+            <label class="switch-field"><span>Activer la voix</span><input v-model="ttsEnabled" type="checkbox" role="switch" /></label>
+            <label class="switch-field"><span>Lire automatiquement les réponses</span><input v-model="autoSpeak" :disabled="!ttsEnabled" type="checkbox" role="switch" /></label>
+            <div class="field">
+              <label for="speech-voice">Voix</label>
+              <select id="speech-voice" v-model="speechVoice" :disabled="!ttsEnabled">
+                <option value="">Automatique (français)</option>
+                <option v-if="speechVoice && !speechVoices.some(voice => voice.voiceURI === speechVoice)" :value="speechVoice">Voix enregistrée indisponible — choix automatique</option>
+                <option v-for="voice in speechVoices" :key="voice.voiceURI" :value="voice.voiceURI">{{ voice.name }} ({{ voice.lang }})</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="speech-rate">Vitesse : {{ speechRate.toFixed(1) }}×</label>
+              <input id="speech-rate" v-model.number="speechRate" :disabled="!ttsEnabled" type="range" min="0.8" max="1.3" step="0.1" />
+            </div>
+            <button type="button" class="text-button" :disabled="!ttsEnabled" @click="speakMessage('Bonjour. Nexus est prêt à vous écouter.')">Écouter un exemple</button>
+          </template>
+        </details>
         <p v-if="settingsError" class="inline-error" role="alert">
           {{ settingsError }}
         </p>
@@ -749,6 +770,23 @@ function resizeComposer() {
 
 // TTS State
 const ttsEnabled = ref<boolean>(true);
+const autoSpeak = ref(true);
+const speechRate = ref(1);
+const speechVoice = ref("");
+const speechVoices = ref<SpeechSynthesisVoice[]>([]);
+
+function refreshSpeechVoices() {
+  speechVoices.value = window.speechSynthesis.getVoices();
+}
+
+watch([ttsEnabled, autoSpeak, speechRate, speechVoice], () => {
+  if (!ttsEnabled.value) { stopSpeaking(); speechError.value = ""; }
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem("nexus_tts_enabled", String(ttsEnabled.value));
+    localStorage.setItem("nexus_tts_preferences", JSON.stringify({ autoSpeak: autoSpeak.value, rate: speechRate.value, voice: speechVoice.value }));
+  } catch { /* Preferences remain usable for this session when storage is unavailable. */ }
+});
 const isSpeaking = ref<boolean>(false);
 const currentSpeakingId = ref<string | null>(null);
 
@@ -762,12 +800,13 @@ function stopSpeaking() {
 
 function speakMessage(text: string, messageId?: string) {
   speechError.value = "";
+  if (!ttsEnabled.value) return;
   if (!ttsAvailable.value || !speechPlayback) {
     speechError.value = "La lecture vocale n’est pas disponible sur cet appareil.";
     return;
   }
   const clean = cleanTextForSpeech(text);
-  if (clean) speechPlayback.speak(clean, messageId);
+  if (clean) speechPlayback.speak(clean, messageId, { rate: speechRate.value, voiceURI: speechVoice.value });
 }
 
 function toggleSpeakMessage(msg: ChatMessage) {
@@ -783,7 +822,6 @@ function toggleTts() {
   if (!ttsEnabled.value) {
     stopSpeaking();
   }
-  localStorage.setItem("nexus_tts_enabled", ttsEnabled.value ? "true" : "false");
   triggerHaptic("light");
 }
 
@@ -962,6 +1000,8 @@ let nativeRecorderActive = false;
 onMounted(async () => {
   ttsAvailable.value = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
   if (ttsAvailable.value) {
+    refreshSpeechVoices();
+    window.speechSynthesis.addEventListener("voiceschanged", refreshSpeechVoices);
     speechPlayback = createSpeechPlayback(window.speechSynthesis,
       (text: string) => new SpeechSynthesisUtterance(text), {
         onState: (speaking: boolean, id: string | null) => { isSpeaking.value = speaking; currentSpeakingId.value = id; },
@@ -1015,6 +1055,15 @@ onMounted(async () => {
     if (savedTts !== null) {
       ttsEnabled.value = savedTts === "true";
     }
+
+    try {
+      const preferences = JSON.parse(localStorage.getItem("nexus_tts_preferences") || "null");
+      if (preferences && typeof preferences === "object") {
+        if (typeof preferences.autoSpeak === "boolean") autoSpeak.value = preferences.autoSpeak;
+        if (typeof preferences.rate === "number" && preferences.rate >= 0.8 && preferences.rate <= 1.3) speechRate.value = preferences.rate;
+        if (typeof preferences.voice === "string") speechVoice.value = preferences.voice;
+      }
+    } catch { /* Ignore malformed saved preferences. */ }
 
     // Load persisted chat messages
     loadPersistedMessages();
@@ -1076,6 +1125,7 @@ onUnmounted(() => {
   if (fastApprovalTimer) clearInterval(fastApprovalTimer);
   cancelVoiceRecording();
   stopSpeaking();
+  if (ttsAvailable.value) window.speechSynthesis.removeEventListener("voiceschanged", refreshSpeechVoices);
 });
 
 let fastApprovalTimer: ReturnType<typeof setInterval> | null = null;
@@ -1541,7 +1591,7 @@ async function sendPrompt(promptText: string) {
 
     messages.value.push(assistantMsg);
     saveMessages();
-    if (ttsEnabled.value && ttsAvailable.value && !assistantMsg.error) {
+    if (ttsEnabled.value && autoSpeak.value && ttsAvailable.value && !assistantMsg.error) {
       speakMessage(assistantMsg.text, assistantMsg.id);
     }
   } catch (err: any) {

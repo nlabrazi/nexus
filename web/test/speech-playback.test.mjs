@@ -66,3 +66,15 @@ test('voice discovery is refreshed for each new playback', () => {
   f.player.speak('Bonjour encore', 'second');
   assert.equal(f.utterances[1].voice, voice);
 });
+
+test('selected voice and bounded speed are applied, with safe defaults for stale settings', () => {
+  const f = setup();
+  const voices = [{ voiceURI: 'fr', lang: 'fr-FR', localService: true }, { voiceURI: 'be', lang: 'fr-BE' }];
+  f.engine.getVoices = () => voices;
+  f.player.speak('Bonjour', 'id', { voiceURI: 'be', rate: 1.2 });
+  assert.equal(f.utterances[0].voice, voices[1]);
+  assert.equal(f.utterances[0].rate, 1.2);
+  f.player.speak('Bonjour', 'id', { voiceURI: 'removed', rate: -1 });
+  assert.equal(f.utterances[1].voice, voices[0]);
+  assert.equal(f.utterances[1].rate, 1);
+});

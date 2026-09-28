@@ -63,6 +63,20 @@
           "scope": "machine",
           "description": "Langue des audios, par exemple fr ou en. Vide : détection automatique."
         },
+        "nexus.speech.tts.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "machine",
+          "description": "Active l’acquittement vocal Piper de Telegram. Le texte reste envoyé quand la voix est désactivée."
+        },
+        "nexus.speech.tts.speed": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0.8,
+          "maximum": 1.3,
+          "scope": "machine",
+          "description": "Vitesse de la voix Piper : 1 = normale, 0.8 = plus lente, 1.3 = plus rapide."
+        },
         "nexus.speech.tts.pythonPath": {
           "type": "string",
           "default": "",

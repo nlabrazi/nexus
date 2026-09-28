@@ -449,11 +449,13 @@ function startTelegramService(context: vscode.ExtensionContext, token: string): 
         throw new Error('Workspace is not trusted');
       }
       const config = vscode.workspace.getConfiguration('nexus.speech.tts');
+      if (!config.get<boolean>('enabled', true)) return undefined;
       return synthesizeAcknowledgement(signal, {
         pythonPath: config.get<string>('pythonPath', ''),
         modelPath: config.get<string>('modelPath', ''),
         scriptPath: context.asAbsolutePath('runtime/speech/synthesize.py'),
         speakerId: config.get<number>('speakerId', 0),
+        speed: config.get<number>('speed', 1),
       });
     },
     transcribeVoice: async (audio, signal) => {

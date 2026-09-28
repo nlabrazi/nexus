@@ -10,6 +10,7 @@ export interface AcknowledgementConfiguration {
   scriptPath: string;
   speakerId: number;
   timeoutMs?: number;
+  speed?: number;
 }
 
 /** Synthesizes a short, deliberately generic acknowledgement without interpreting the prompt. */
@@ -23,6 +24,10 @@ export async function synthesizeAcknowledgement(
     [pythonPath, modelPath, scriptPath].some((path) => !isAbsolute(path) || path.includes('\0')) ||
     !Number.isSafeInteger(speakerId) ||
     speakerId < 0 ||
+    (configuration.speed !== undefined &&
+      (!Number.isFinite(configuration.speed) ||
+        configuration.speed < 0.8 ||
+        configuration.speed > 1.3)) ||
     (configuration.timeoutMs !== undefined &&
       (!Number.isSafeInteger(configuration.timeoutMs) ||
         configuration.timeoutMs <= 0 ||
@@ -36,7 +41,16 @@ export async function synthesizeAcknowledgement(
   try {
     const wave = await runAudioProcess(
       pythonPath,
-      ['-I', scriptPath, '--model', modelPath, '--speaker', String(speakerId)],
+      [
+        '-I',
+        scriptPath,
+        '--model',
+        modelPath,
+        '--speaker',
+        String(speakerId),
+        '--speed',
+        String(configuration.speed ?? 1),
+      ],
       boundedSignal,
       Buffer.from('Bien compris. Je prends en charge votre demande.', 'utf8')
     );

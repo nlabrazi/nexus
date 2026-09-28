@@ -101,3 +101,24 @@ suite('Telegram acknowledgement', () => {
     assert.equal(codex.mock.callCount(), 0);
   });
 });
+
+test('disabled synthesis keeps text and agent execution without uploading audio', async (t) => {
+  const client = new FakeTelegram();
+  const send = t.mock.method(client, 'sendAcknowledgementAudio', async () => {});
+  const agent = t.mock.fn(async () => 'Done');
+  const service = new TelegramService(context(), client, {
+    transcribeVoice: async () => 'Check coverage',
+    synthesizeAcknowledgement: async () => undefined,
+    onRemotePrompt: agent,
+  });
+  const polling = service.start();
+  t.after(async () => {
+    await service.stop();
+    await polling;
+  });
+  client.push(voice);
+  await flush();
+  assert.equal(send.mock.callCount(), 0);
+  assert.equal(agent.mock.callCount(), 1);
+  assert.equal(client.messages.at(-1), 'Done');
+});

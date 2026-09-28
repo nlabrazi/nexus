@@ -33,7 +33,7 @@ export type RemoteMemoryAction =
 export interface TelegramServiceOptions {
   onBrainPrompt?: (prompt: string, signal: AbortSignal) => Promise<string>;
   transcribeVoice?: (audio: TelegramVoiceFile, signal: AbortSignal) => Promise<string>;
-  synthesizeAcknowledgement?: (signal: AbortSignal) => Promise<Buffer>;
+  synthesizeAcknowledgement?: (signal: AbortSignal) => Promise<Buffer | undefined>;
   onRemotePrompt?: RemotePromptHandler;
   getStatus?: () => NexusStatusSnapshot | Promise<NexusStatusSnapshot>;
   onSessionAction?: (action: RemoteSessionAction) => Promise<string>;
