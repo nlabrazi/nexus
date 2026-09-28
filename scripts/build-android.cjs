@@ -52,7 +52,7 @@ try {
     : `${original || ''}\n${sdkLine}\n`;
   try {
     fs.writeFileSync(properties, content);
-    run(windows ? 'gradlew.bat' : './gradlew', ['--no-daemon', '--console=plain', 'clean', 'assembleDebug'], android);
+    run(windows ? 'gradlew.bat' : './gradlew', ['--no-daemon', '--console=plain', 'assembleDebug'], android);
   } finally {
     if (original === null) fs.rmSync(properties, { force: true });
     else fs.writeFileSync(properties, original);

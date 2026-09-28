@@ -252,33 +252,6 @@ suite('NexusRuntime isolated agent runtime', () => {
     runtime.stop();
   });
 
-  test('listModels and selectModel support brain backend', async () => {
-    let configuredModel = 'llama3.2:3b';
-    const mockBrainModel: BrainModel & { getModel: () => string; setModel: (m: string) => void } = {
-      getModel: () => configuredModel,
-      setModel: (m: string) => {
-        configuredModel = m;
-      },
-      decide: async () => ({ action: 'reply', text: 'ok' }),
-    };
-
-    const workspaceGuard = createStandaloneWorkspaceGuard(testDir);
-    const runtime = new NexusRuntime({
-      workspaceGuard,
-      targetPath: () => testDir,
-      brainModel: mockBrainModel,
-    });
-
-    const menu = await runtime.listModels('brain');
-    assert.ok(menu.models.length > 0);
-    assert.equal(menu.selected?.model, 'llama3.2:3b');
-
-    await runtime.selectModel('brain', { model: 'qwen3.6:27b', effort: '' });
-    assert.equal(configuredModel, 'qwen3.6:27b');
-
-    runtime.stop();
-  });
-
   test('afterAll cleanup test dir', () => {
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true, force: true });

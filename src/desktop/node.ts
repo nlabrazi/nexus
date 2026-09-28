@@ -7,7 +7,7 @@ import {
   RuntimeApprovalRequest,
   TurnTimeoutHandler,
 } from '../runtime/types';
-import { createStandaloneWorkspaceGuard, getDefaultCodeDirectory } from '../runtime/workspace';
+import { createStandaloneWorkspaceGuard } from '../runtime/workspace';
 import { WorkspaceGuard } from '../workspace/guard';
 import { BrainModel } from '../conversational/model';
 import { DecisionRecordInput, ProjectDecision, ProjectMemorySnapshot } from '../memory/types';
@@ -19,8 +19,6 @@ import {
   ApprovalDecision,
   ApprovalDecisionPayload,
   ApprovalKind,
-  NodeModelsListPayload,
-  NodeModelsSelectPayload,
   NodeSwitchProjectPayload,
   TaskCancelPayload,
   TaskStartPayload,
@@ -159,47 +157,41 @@ export class DesktopNode {
             currentBranch: p.currentBranch,
             isCurrent: p.id === current.id || p.path === current.path,
           }));
-          const scanRoots = new Set<string>();
           try {
             const parentDir = dirname(current.path);
-            if (parentDir && parentDir !== '/' && parentDir !== '/tmp' && parentDir !== '/home') {
-              scanRoots.add(parentDir);
-            }
-            const codeDir = getDefaultCodeDirectory();
-            if (codeDir && codeDir !== '/' && codeDir !== '/tmp') {
-              scanRoots.add(codeDir);
-            }
-
-            for (const root of scanRoots) {
-              if (!existsSync(root) || !statSync(root).isDirectory()) continue;
-              const entries = readdirSync(root, { withFileTypes: true });
+            const isSystemDir =
+              parentDir === '/' ||
+              parentDir === '/tmp' ||
+              parentDir === '/home' ||
+              parentDir === '/var';
+            if (!isSystemDir && existsSync(parentDir) && statSync(parentDir).isDirectory()) {
+              const entries = readdirSync(parentDir, { withFileTypes: true });
               for (const entry of entries) {
                 if (
-                  !entry.isDirectory() ||
-                  entry.name.startsWith('.') ||
-                  entry.name === 'node_modules'
+                  entry.isDirectory() &&
+                  !entry.name.startsWith('.') &&
+                  entry.name !== 'node_modules'
                 ) {
-                  continue;
-                }
-                const candidatePath = resolve(root, entry.name);
-                const isProject =
-                  existsSync(resolve(candidatePath, '.git')) ||
-                  existsSync(resolve(candidatePath, 'package.json')) ||
-                  existsSync(resolve(candidatePath, '.nexus')) ||
-                  existsSync(resolve(candidatePath, 'Cargo.toml')) ||
-                  existsSync(resolve(candidatePath, 'pyproject.toml'));
-                if (isProject && !list.some((p) => p.path === candidatePath)) {
-                  list.push({
-                    id: entry.name.toLowerCase().replace(/[^a-z0-9_-]/g, '-'),
-                    name: entry.name,
-                    path: candidatePath,
-                    currentBranch: undefined,
-                    isCurrent: false,
-                  });
+                  const siblingPath = resolve(parentDir, entry.name);
+                  const isProject =
+                    existsSync(resolve(siblingPath, '.git')) ||
+                    existsSync(resolve(siblingPath, 'package.json')) ||
+                    existsSync(resolve(siblingPath, '.nexus')) ||
+                    existsSync(resolve(siblingPath, 'Cargo.toml')) ||
+                    existsSync(resolve(siblingPath, 'pyproject.toml'));
+                  if (isProject && !list.some((p) => p.path === siblingPath)) {
+                    list.push({
+                      id: entry.name.toLowerCase().replace(/[^a-z0-9_-]/g, '-'),
+                      name: entry.name,
+                      path: siblingPath,
+                      currentBranch: undefined,
+                      isCurrent: false,
+                    });
+                  }
                 }
               }
             }
-          } catch {}
+          } catch { }
           return list;
         },
         switchProject: (idOrPath) => {
@@ -512,10 +504,10 @@ export class DesktopNode {
       runtimeStatus,
       coreConnection: this.coreClient
         ? {
-            status: this.coreClient.getStatus(),
-            url: this.coreClient.getWsUrl(),
-            sessionId: this.coreClient.getSessionId(),
-          }
+          status: this.coreClient.getStatus(),
+          url: this.coreClient.getWsUrl(),
+          sessionId: this.coreClient.getSessionId(),
+        }
         : undefined,
     };
   }
@@ -555,100 +547,6 @@ export class DesktopNode {
       case 'node:switch_project':
         this.handleRemoteSwitchProject(message.payload as NodeSwitchProjectPayload, message.id);
         break;
-      case 'node:models:list':
-        void this.handleRemoteModelsList(message.payload as NodeModelsListPayload, message.id);
-        break;
-      case 'node:models:select':
-        void this.handleRemoteModelsSelect(message.payload as NodeModelsSelectPayload, message.id);
-        break;
-    }
-  }
-
-  private async handleRemoteModelsList(
-    payload: NodeModelsListPayload,
-    messageId?: string
-  ): Promise<void> {
-    if (!this.runtime) {
-      return;
-    }
-    const targetProject = payload.projectId
-      ? this.getProject(payload.projectId)
-      : this.getActiveProject();
-    try {
-      const menu = await this.runtime.listModels(payload.backend, targetProject?.path);
-      this.coreClient?.send(
-        createNexusMessage('node:models:result', {
-          backend: payload.backend,
-          models: menu.models.map((m) => ({
-            id: m.id,
-            model: m.model,
-            displayName: m.displayName,
-            description: m.description,
-            supportedReasoningEfforts: m.supportedReasoningEfforts,
-            defaultReasoningEffort: m.defaultReasoningEffort,
-          })),
-          selected: menu.selected
-            ? {
-                model: menu.selected.model,
-                effort: menu.selected.effort,
-              }
-            : undefined,
-          context: menu.context,
-          requestId: payload.requestId ?? messageId,
-        })
-      );
-    } catch (err) {
-      console.warn(`[Nexus Desktop] Échec du listage des modèles (${payload.backend}) :`, err);
-    }
-  }
-
-  private async handleRemoteModelsSelect(
-    payload: NodeModelsSelectPayload,
-    messageId?: string
-  ): Promise<void> {
-    if (!this.runtime) {
-      return;
-    }
-    const targetProject = payload.projectId
-      ? this.getProject(payload.projectId)
-      : this.getActiveProject();
-    try {
-      await this.runtime.selectModel(
-        payload.backend,
-        {
-          model: payload.selection.model,
-          effort: payload.selection.effort ?? '',
-        },
-        payload.context,
-        targetProject?.path
-      );
-      console.log(
-        `[Nexus Desktop] 🤖 Modèle pour ${payload.backend} défini sur "${payload.selection.model}"`
-      );
-      const menu = await this.runtime.listModels(payload.backend, targetProject?.path);
-      this.coreClient?.send(
-        createNexusMessage('node:models:result', {
-          backend: payload.backend,
-          models: menu.models.map((m) => ({
-            id: m.id,
-            model: m.model,
-            displayName: m.displayName,
-            description: m.description,
-            supportedReasoningEfforts: m.supportedReasoningEfforts,
-            defaultReasoningEffort: m.defaultReasoningEffort,
-          })),
-          selected: menu.selected
-            ? {
-                model: menu.selected.model,
-                effort: menu.selected.effort,
-              }
-            : undefined,
-          context: menu.context,
-          requestId: payload.requestId ?? messageId,
-        })
-      );
-    } catch (err) {
-      console.warn(`[Nexus Desktop] Échec de sélection du modèle (${payload.backend}) :`, err);
     }
   }
 

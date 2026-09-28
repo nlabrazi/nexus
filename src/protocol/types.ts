@@ -159,48 +159,6 @@ export interface NodeSwitchProjectPayload {
   readonly projectId: string;
 }
 
-export interface NodeModelSummary {
-  readonly id: string;
-  readonly model: string;
-  readonly displayName: string;
-  readonly description?: string;
-  readonly supportedReasoningEfforts?: readonly {
-    readonly reasoningEffort: string;
-    readonly description: string;
-  }[];
-  readonly defaultReasoningEffort?: string;
-}
-
-export interface NodeModelsListPayload {
-  readonly backend: TaskBackend;
-  readonly projectId?: string;
-  readonly projectPath?: string;
-  readonly requestId?: string;
-}
-
-export interface NodeModelsResultPayload {
-  readonly backend: TaskBackend;
-  readonly models: readonly NodeModelSummary[];
-  readonly selected?: {
-    readonly model: string;
-    readonly effort?: string;
-  };
-  readonly context?: string;
-  readonly requestId?: string;
-}
-
-export interface NodeModelsSelectPayload {
-  readonly backend: TaskBackend;
-  readonly selection: {
-    readonly model: string;
-    readonly effort?: string;
-  };
-  readonly context?: string;
-  readonly projectId?: string;
-  readonly projectPath?: string;
-  readonly requestId?: string;
-}
-
 export interface NexusPayloadMap {
   'node:hello': NodeHelloPayload;
   'node:welcome': NodeWelcomePayload;
@@ -208,9 +166,6 @@ export interface NexusPayloadMap {
   'node:heartbeat_ack': NodeHeartbeatAckPayload;
   'node:status': NodeStatusPayload;
   'node:switch_project': NodeSwitchProjectPayload;
-  'node:models:list': NodeModelsListPayload;
-  'node:models:result': NodeModelsResultPayload;
-  'node:models:select': NodeModelsSelectPayload;
   'task:start': TaskStartPayload;
   'task:cancel': TaskCancelPayload;
   'task:progress': TaskProgressPayload;

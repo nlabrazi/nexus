@@ -56,9 +56,9 @@
 
       <div class="menu-divider" />
 
-      <button type="button" class="menu-item" @click="toggleTts(); showQuickMenu = false">
-        <NexusIcon :name="ttsEnabled ? 'speaker' : 'speakerOff'" />
-        <span>{{ ttsEnabled ? 'Réponse vocale active' : 'Réponse vocale coupée' }}</span>
+      <button type="button" class="menu-item" @click="showQuickMenu = false; showStartersModal = true">
+        <NexusIcon name="sparkles" />
+        <span>Suggestions de prompts</span>
       </button>
 
       <button type="button" class="menu-item" @click="showQuickMenu = false; showProjectMenu = true">
@@ -125,6 +125,12 @@
             <span>Connecter mon poste</span>
           </button>
 
+          <div v-else class="hud-actions-minimal">
+            <button type="button" class="hud-chip-button" @click="showStartersModal = true">
+              <NexusIcon name="sparkles" />
+              <span>✦ Suggestions de prompt</span>
+            </button>
+          </div>
         </div>
 
         <!-- Chat Messages -->
@@ -132,20 +138,7 @@
           <div class="message-meta">
             <span>{{
               msg.role === "user" ? "Vous" : selectedBackendLabel(msg.backend)
-            }}</span>
-            <div class="message-meta-actions">
-              <button
-                v-if="msg.role === 'assistant'"
-                type="button"
-                class="icon-button tts-play-btn"
-                :class="{ speaking: currentSpeakingId === msg.id && isSpeaking }"
-                :aria-label="currentSpeakingId === msg.id && isSpeaking ? 'Arrêter la lecture' : 'Écouter le message vocalement'"
-                @click="toggleSpeakMessage(msg)"
-              >
-                <NexusIcon :name="currentSpeakingId === msg.id && isSpeaking ? 'stop' : 'speaker'" />
-              </button>
-              <time>{{ formatTime(msg.timestamp) }}</time>
-            </div>
+            }}</span><time>{{ formatTime(msg.timestamp) }}</time>
           </div>
           <div class="message-content" v-html="renderMarkdown(msg.text)" />
           <p v-if="msg.fileSummary" class="file-summary">
@@ -203,10 +196,10 @@
             : 'Poste hors ligne (brouillon actif)...'
             " :disabled="isSending" @keydown="handleComposerKeydown" @input="resizeComposer" />
           <div class="composer-tools">
-            <button type="button" class="agent-badge-btn" aria-label="Changer d'agent et de modèle"
-              @click="openAgentPicker">
-              <NexusIcon :name="selectedBackend === 'brain' ? 'sparkles' : 'zap'" class="agent-zap-icon" />
-              <span>{{ selectedBackendShortLabel(selectedBackend) }}<span v-if="currentSelectedModelShort" class="agent-model-pill">{{ currentSelectedModelShort }}</span></span>
+            <button type="button" class="agent-badge-btn" aria-label="Changer d'agent"
+              @click="showAgentPickerSheet = true">
+              <NexusIcon name="zap" class="agent-zap-icon" />
+              <span>{{ selectedBackendShortLabel(selectedBackend) }}</span>
               <NexusIcon name="down" />
             </button>
 
@@ -535,48 +528,40 @@
       </div>
     </NexusSheet>
 
-    <!-- AGENT & MODEL SELECTOR SHEET -->
-    <NexusSheet v-model="showAgentPickerSheet" title="Agent IA & Modèle">
-      <div class="agent-model-sheet">
-        <div class="sheet-section-title">AGENT IA</div>
-        <div class="agent-sheet-list">
-          <button v-for="agent in agentOptions" :key="agent.id" type="button" class="agent-card-row"
-            :class="{ selected: selectedBackend === agent.id }"
-            @click="handleSelectBackend(agent.id)">
-            <div class="agent-card-icon">
-              <NexusIcon :name="agent.id === 'brain' ? 'sparkles' : agent.id === 'codex' ? 'zap' : 'branch'" />
-            </div>
-            <div class="agent-card-info">
-              <div class="agent-card-name">{{ agent.name }}</div>
-              <div class="agent-card-desc">{{ agent.description }}</div>
-            </div>
-            <span v-if="selectedBackend === agent.id" class="agent-selected-badge">
-              <NexusIcon name="check" />
-            </span>
-          </button>
-        </div>
+    <!-- PROMPT SUGGESTIONS (STARTERS) SHEET -->
+    <NexusSheet v-model="showStartersModal" title="Suggestions de prompts">
+      <div class="starters-sheet-list">
+        <button v-for="starter in starters" :key="starter.label" type="button" class="starter-card"
+          @click="preparePrompt(starter.prompt)">
+          <div class="starter-card-icon">
+            <NexusIcon :name="starter.icon" />
+          </div>
+          <div class="starter-card-content">
+            <strong>{{ starter.label }}</strong>
+            <p>{{ starter.prompt }}</p>
+          </div>
+          <NexusIcon name="arrow" class="starter-card-arrow" />
+        </button>
+      </div>
+    </NexusSheet>
 
-        <div class="sheet-section-title model-section-title">
-          <span>MODÈLE ({{ selectedBackendShortLabel(selectedBackend) }})</span>
-          <span v-if="isLoadingModels" class="model-loading-spinner">Chargement…</span>
-        </div>
-
-        <div v-if="currentBackendModels.length" class="models-sheet-list">
-          <button v-for="m in currentBackendModels" :key="m.id || m.model" type="button" class="model-card-row"
-            :class="{ selected: currentSelectedModel === m.model }"
-            @click="handleSelectModel(m.model)">
-            <div class="model-card-info">
-              <div class="model-card-name">{{ m.displayName || m.model }}</div>
-              <div v-if="m.description" class="model-card-desc">{{ m.description }}</div>
-            </div>
-            <span v-if="currentSelectedModel === m.model" class="agent-selected-badge">
-              <NexusIcon name="check" />
-            </span>
-          </button>
-        </div>
-        <div v-else-if="!isLoadingModels" class="models-empty-note">
-          <span>Modèle par défaut actif ({{ currentSelectedModel || 'automatique' }}).</span>
-        </div>
+    <!-- AGENT SELECTOR SHEET -->
+    <NexusSheet v-model="showAgentPickerSheet" title="Choisir l'agent IA">
+      <div class="agent-sheet-list">
+        <button v-for="agent in agentOptions" :key="agent.id" type="button" class="agent-card-row"
+          :class="{ selected: selectedBackend === agent.id }"
+          @click="selectedBackend = agent.id; showAgentPickerSheet = false">
+          <div class="agent-card-icon">
+            <NexusIcon name="zap" />
+          </div>
+          <div class="agent-card-info">
+            <div class="agent-card-name">{{ agent.name }}</div>
+            <div class="agent-card-desc">{{ agent.description }}</div>
+          </div>
+          <span v-if="selectedBackend === agent.id" class="agent-selected-badge">
+            <NexusIcon name="check" />
+          </span>
+        </button>
       </div>
     </NexusSheet>
   </div>
@@ -681,167 +666,102 @@ const selectedBackend = ref<"brain" | "codex" | "antigravity">("brain");
 // Quick Dropdowns & HUD Modals state
 const showQuickMenu = ref<boolean>(false);
 const showProjectMenu = ref<boolean>(false);
+const showStartersModal = ref<boolean>(false);
 const showAgentPickerSheet = ref<boolean>(false);
 
-// TTS State
-const ttsEnabled = ref<boolean>(true);
-const isSpeaking = ref<boolean>(false);
-const currentSpeakingId = ref<string | null>(null);
+const agentOptions = [
+  {
+    id: "brain" as const,
+    name: "Nexus Brain",
+    description: "Orchestration & conversation globale",
+  },
+  {
+    id: "codex" as const,
+    name: "Codex",
+    description: "Modèle de code rapide & précis",
+  },
+  {
+    id: "antigravity" as const,
+    name: "Antigravity",
+    description: "Agent autonome multi-outils",
+  },
+];
 
-function cleanTextForSpeech(text: string): string {
-  return text
-    .replace(/```[\s\S]*?```/g, "Bloc de code omis.")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/[#*_~>]/g, "")
-    .trim();
+function selectedBackendShortLabel(b?: string): string {
+  if (b === "brain") return "Brain";
+  if (b === "codex") return "Codex";
+  if (b === "antigravity") return "AGY";
+  return "Agent";
 }
 
-function stopSpeaking() {
-  if (typeof window !== "undefined" && "speechSynthesis" in window) {
-    window.speechSynthesis.cancel();
-  }
-  isSpeaking.value = false;
-  currentSpeakingId.value = null;
+// Core Connection state
+const coreUrl = ref<string>("");
+const coreUrlInput = ref<string>("");
+const authToken = ref<string>("");
+const authTokenInput = ref<string>("");
+const showSettings = ref<boolean>(false);
+const isRefreshing = ref<boolean>(false);
+const connectionStatus = ref<"connecting" | "connected" | "error">(
+  "connecting",
+);
+const errorMessage = ref<string>("");
+const lastUpdated = ref<number | null>(null);
+const now = ref<number>(Date.now());
+const copied = ref<boolean>(false);
+const deferredPrompt = ref<any>(null);
+
+const coreStatus = ref<CoreStatusData | null>(null);
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+let clockTimer: ReturnType<typeof setInterval> | null = null;
+
+// Chat State
+const inputPrompt = ref<string>("");
+const isSending = ref<boolean>(false);
+const currentProgressMessage = ref<string>("");
+const currentInFlightTaskId = ref<string | null>(null);
+const messages = ref<ChatMessage[]>([]);
+const messagesScrollRef = ref<HTMLElement | null>(null);
+const chatTextareaRef = ref<HTMLTextAreaElement | null>(null);
+
+const starters = [
+  {
+    label: "Faire le point",
+    prompt: "Fais le point sur le projet et les modifications en cours.",
+    icon: "activity" as const,
+  },
+  {
+    label: "Relire les changements",
+    prompt:
+      "Relis les modifications récentes et signale les problèmes éventuels.",
+    icon: "branch" as const,
+  },
+  {
+    label: "Générer un test",
+    prompt: "Propose un plan de test ou vérifie la couverture de nos fonctions clés.",
+    icon: "shield" as const,
+  },
+  {
+    label: "Structure du projet",
+    prompt: "Explique l'architecture et les composants essentiels du projet.",
+    icon: "folder" as const,
+  },
+];
+const settingsError = ref("");
+
+function resizeComposer() {
+  const textarea = chatTextareaRef.value;
+  if (!textarea) return;
+  textarea.style.height = "auto";
+  textarea.style.height = `${Math.min(textarea.scrollHeight, 140)}px`;
 }
 
-function speakMessage(text: string, messageId?: string) {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-  const clean = cleanTextForSpeech(text);
-  if (!clean) return;
-
-  stopSpeaking();
-
-  const utterance = new SpeechSynthesisUtterance(clean);
-  utterance.lang = "fr-FR";
-  utterance.rate = 1.05;
-  utterance.pitch = 1.0;
-
-  const voices = window.speechSynthesis.getVoices();
-  const frVoice = voices.find((v) => v.lang.startsWith("fr") || v.lang.includes("FR"));
-  if (frVoice) {
-    utterance.voice = frVoice;
-  }
-
-  utterance.onstart = () => {
-    isSpeaking.value = true;
-    currentSpeakingId.value = messageId || null;
-  };
-  utterance.onend = () => {
-    isSpeaking.value = false;
-    currentSpeakingId.value = null;
-  };
-  utterance.onerror = () => {
-    isSpeaking.value = false;
-    currentSpeakingId.value = null;
-  };
-
-  window.speechSynthesis.speak(utterance);
-}
-
-function toggleSpeakMessage(msg: ChatMessage) {
-  if (currentSpeakingId.value === msg.id && isSpeaking.value) {
-    stopSpeaking();
-  } else {
-    speakMessage(msg.text, msg.id);
-  }
-}
-
-function toggleTts() {
-  ttsEnabled.value = !ttsEnabled.value;
-  if (!ttsEnabled.value) {
-    stopSpeaking();
-  }
-  localStorage.setItem("nexus_tts_enabled", ttsEnabled.value ? "true" : "false");
-  triggerHaptic("light");
-}
-
-// Agent & Models state
-interface ModelItem {
-  id: string;
-  model: string;
-  displayName: string;
-  description?: string;
-}
-
-const agentModels = ref<Record<string, { models: ModelItem[]; selected?: string }>>({
-  brain: { models: [], selected: "llama3.2:3b" },
-  codex: { models: [], selected: "" },
-  antigravity: { models: [], selected: "" },
-});
-const isLoadingModels = ref<boolean>(false);
-
-const currentBackendModels = computed(() => {
-  return agentModels.value[selectedBackend.value]?.models || [];
-});
-
-const currentSelectedModel = computed(() => {
-  return agentModels.value[selectedBackend.value]?.selected || "";
-});
-
-const currentSelectedModelShort = computed(() => {
-  const model = currentSelectedModel.value;
-  if (!model) return "";
-  return model.split(":")[0].replace("gemini-2.5-", "").replace("gemini-", "");
-});
-
-async function fetchModelsForBackend(backend: "brain" | "codex" | "antigravity") {
-  if (!coreUrl.value) return;
-  isLoadingModels.value = true;
-  try {
-    const res = await fetch(
-      `${coreUrl.value.replace(/\/+$/, "")}/api/models?backend=${backend}`,
-      { headers: getRequestHeaders() }
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data.models)) {
-        agentModels.value[backend] = {
-          models: data.models,
-          selected:
-            data.selected?.model || agentModels.value[backend].selected || data.models[0]?.model,
-        };
-      }
-    }
-  } catch (err) {
-    console.warn(`[Models] Échec du chargement des modèles (${backend}):`, err);
-  } finally {
-    isLoadingModels.value = false;
-  }
-}
-
-async function handleSelectBackend(backend: "brain" | "codex" | "antigravity") {
-  selectedBackend.value = backend;
-  triggerHaptic("light");
-  await fetchModelsForBackend(backend);
-}
-
-async function handleSelectModel(modelName: string) {
-  if (!coreUrl.value) return;
-  const backend = selectedBackend.value;
-  try {
-    const headers = getRequestHeaders();
-    headers["Content-Type"] = "application/json";
-    const res = await fetch(`${coreUrl.value.replace(/\/+$/, "")}/api/models/select`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        backend,
-        selection: { model: modelName },
-      }),
-    });
-    if (res.ok) {
-      agentModels.value[backend].selected = modelName;
-      triggerHaptic("medium");
-    }
-  } catch (err) {
-    console.warn(`[Models] Échec de la sélection du modèle :`, err);
-  }
-}
-
-function openAgentPicker() {
-  showAgentPickerSheet.value = true;
-  fetchModelsForBackend(selectedBackend.value);
+function preparePrompt(prompt: string) {
+  inputPrompt.value = prompt;
+  showStartersModal.value = false;
+  nextTick(() => {
+    chatTextareaRef.value?.focus();
+    resizeComposer();
+  });
 }
 
 function handleComposerKeydown(event: KeyboardEvent) {
@@ -968,11 +888,6 @@ onMounted(async () => {
       autoSendVoice.value = savedAutoSend === "true";
     }
 
-    const savedTts = localStorage.getItem("nexus_tts_enabled");
-    if (savedTts !== null) {
-      ttsEnabled.value = savedTts === "true";
-    }
-
     // Load persisted chat messages
     loadPersistedMessages();
 
@@ -1012,7 +927,6 @@ onMounted(async () => {
   fetchTasks(true);
   fetchApprovals(true);
   fetchVoiceStatus();
-  fetchModelsForBackend(selectedBackend.value);
 
   pollTimer = setInterval(() => {
     fetchStatus(true);
@@ -1030,39 +944,7 @@ onUnmounted(() => {
   document.documentElement.style.removeProperty("--app-height");
   if (pollTimer) clearInterval(pollTimer);
   if (clockTimer) clearInterval(clockTimer);
-  if (fastApprovalTimer) clearInterval(fastApprovalTimer);
   cancelVoiceRecording();
-  stopSpeaking();
-});
-
-let fastApprovalTimer: ReturnType<typeof setInterval> | null = null;
-
-watch(
-  pendingApprovalsCount,
-  (newCount, oldCount) => {
-    if (newCount > (oldCount || 0)) {
-      showApprovalModal.value = true;
-      activeApprovalIndex.value = 0;
-      triggerHaptic("heavy");
-      if (typeof navigator !== "undefined" && "vibrate" in navigator) {
-        navigator.vibrate([120, 60, 120]);
-      }
-    }
-  },
-  { immediate: true }
-);
-
-watch(isSending, (sending) => {
-  if (sending) {
-    if (!fastApprovalTimer) {
-      fastApprovalTimer = setInterval(() => {
-        fetchApprovals(true);
-      }, 1000);
-    }
-  } else if (fastApprovalTimer) {
-    clearInterval(fastApprovalTimer);
-    fastApprovalTimer = null;
-  }
 });
 
 // Computed properties
@@ -1423,7 +1305,6 @@ async function decideApproval(
 }
 
 async function submitMessage() {
-  stopSpeaking();
   const promptText = inputPrompt.value.trim();
   if (!promptText || isSending.value || isSwitchingProject.value) return;
   if (!isNodeReady.value) {
@@ -1500,9 +1381,6 @@ async function sendPrompt(promptText: string) {
 
     messages.value.push(assistantMsg);
     saveMessages();
-    if (ttsEnabled.value && !assistantMsg.error) {
-      speakMessage(assistantMsg.text, assistantMsg.id);
-    }
   } catch (err: any) {
     const errorMsg: ChatMessage = {
       id: `err-${Date.now()}`,

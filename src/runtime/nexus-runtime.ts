@@ -1,4 +1,4 @@
-import { basename, resolve } from 'node:path';
+import { basename } from 'node:path';
 import { AntigravityService } from '../antigravity/service';
 import { WorkspaceAntigravitySessionPersistence } from '../antigravity/persistence';
 import { WorkspaceAntigravityModelPreferences } from '../antigravity/model-preferences';
@@ -9,8 +9,6 @@ import { ModelMenu, ModelSelection } from '../codex/types';
 import { CodexBrainModel } from '../conversational/codex-model';
 import { CodexProjectInspector } from '../conversational/codex-inspector';
 import { ConversationalService } from '../conversational/service';
-import { BrainModel } from '../conversational/model';
-import { OllamaBrainModel, listOllamaModels } from '../conversational/ollama-model';
 import { CodingAgentTools } from '../conversational/tools';
 import { ConversationProjectContext } from '../conversational/types';
 import { formatFileSummary } from '../telegram/file-summary';
@@ -19,7 +17,6 @@ import { WorkspaceBranch, WorkspaceGuard } from '../workspace/guard';
 import { DecisionRecordInput, ProjectDecision, ProjectMemorySnapshot } from '../memory/types';
 import { ProjectMemory } from '../memory/project-memory';
 import { MemoryStorage } from './storage';
-import { getDefaultCodeDirectory } from './workspace';
 import {
   NexusRuntimeOptions,
   RemoteBranchAction,
@@ -34,7 +31,6 @@ export class NexusRuntime {
   private readonly codexService: CodexService;
   private readonly antigravityService: AntigravityService;
   private readonly conversationalService: ConversationalService;
-  private readonly brainModel: BrainModel;
   private readonly projectMemory: ProjectMemory;
   private activeBackend: AgentBackendType;
 
@@ -94,8 +90,9 @@ export class NexusRuntime {
     );
 
     const codingTools = new CodingAgentTools({
-      resolveWorkspace: (targetPath?: string) => this.resolveWorkspaceForInspection(targetPath),
-      inspector: new CodexProjectInspector((path) => this.resolveWorkspaceForInspection(path)),
+      resolveWorkspace: (targetPath?: string) =>
+        this.workspaceGuard.validate(this.resolveTargetPath(targetPath)),
+      inspector: new CodexProjectInspector((path) => this.workspaceGuard.validate(path)),
       requestConsent: async (request, signal) => {
         if (!options.requestApproval) {
           return false;
@@ -116,38 +113,18 @@ export class NexusRuntime {
       switchProject: options.switchProject,
     });
 
-    const brainModel =
-      options.brainModel ??
-      (process.env.NEXUS_BRAIN_BACKEND === 'codex'
-        ? new CodexBrainModel()
-        : new OllamaBrainModel());
-    this.brainModel = brainModel;
+    const brainModel = options.brainModel ?? new CodexBrainModel();
     this.conversationalService = new ConversationalService(brainModel, codingTools);
-  }
-
-  private async resolveWorkspaceForInspection(targetPath?: string) {
-    const resolvedPath = this.resolveTargetPath(targetPath);
-    const guard = new WorkspaceGuard(() => ({
-      trusted: true,
-      folders: [{ scheme: 'file', path: resolvedPath }],
-      dirtyDocuments: [],
-      protectedBranches: [],
-    }));
-    return guard.validate(resolvedPath);
   }
 
   resolveTargetPath(explicitPath?: string): string {
     if (explicitPath?.trim()) {
-      return resolve(explicitPath.trim());
+      return explicitPath.trim();
     }
     if (this.targetPathSupplier) {
       return this.targetPathSupplier();
     }
-    const guardPath = this.workspaceGuard.targetPath();
-    if (guardPath) {
-      return guardPath;
-    }
-    return getDefaultCodeDirectory();
+    return this.workspaceGuard.targetPath();
   }
 
   getActiveBackend(): AgentBackendType {
@@ -310,73 +287,24 @@ export class NexusRuntime {
     ].join('\n');
   }
 
-  async listModels(
-    backend: 'codex' | 'antigravity' | 'brain',
-    targetPath?: string
-  ): Promise<ModelMenu> {
+  async listModels(backend: 'codex' | 'antigravity', targetPath?: string): Promise<ModelMenu> {
     const path = this.resolveTargetPath(targetPath);
-    if (backend === 'codex') {
-      return this.codexService.listModels(path);
-    }
-    if (backend === 'antigravity') {
-      return this.antigravityService.listModels(path);
-    }
-
-    let availableModels: string[] = [];
-    try {
-      if (this.brainModel instanceof OllamaBrainModel) {
-        availableModels = await listOllamaModels(this.brainModel.getHost());
-      }
-    } catch {
-      // Ollama unreachable, fallback
-    }
-
-    const currentModel =
-      typeof (this.brainModel as unknown as { getModel?: () => string }).getModel === 'function'
-        ? (this.brainModel as unknown as { getModel: () => string }).getModel()
-        : 'llama3.2:3b';
-
-    if (availableModels.length === 0) {
-      availableModels = [currentModel, 'llama3.2:3b', 'qwen3.6:27b', 'gemini-2.5-flash'];
-    } else if (!availableModels.includes(currentModel)) {
-      availableModels.unshift(currentModel);
-    }
-
-    const models = availableModels.map((m) => ({
-      id: m,
-      model: m,
-      displayName: m,
-      description: m.includes('gemini') ? 'Modèle cloud Gemini' : 'Modèle local Ollama',
-      isDefault: m === currentModel,
-      defaultReasoningEffort: '',
-      supportedReasoningEfforts: [{ reasoningEffort: '', description: 'Par défaut' }],
-    }));
-
-    return {
-      models,
-      selected: { model: currentModel, effort: '' },
-      context: `brain:${Date.now()}`,
-    };
+    return backend === 'codex'
+      ? this.codexService.listModels(path)
+      : this.antigravityService.listModels(path);
   }
 
   async selectModel(
-    backend: 'codex' | 'antigravity' | 'brain',
+    backend: 'codex' | 'antigravity',
     selection: ModelSelection,
-    context?: string,
+    context: string,
     targetPath?: string
   ): Promise<void> {
     const path = this.resolveTargetPath(targetPath);
     if (backend === 'codex') {
-      await this.codexService.selectModel(path, selection, context ?? '');
-    } else if (backend === 'antigravity') {
-      await this.antigravityService.selectModel(path, selection, context ?? '');
-    } else if (backend === 'brain') {
-      if (
-        typeof (this.brainModel as unknown as { setModel?: (m: string) => void }).setModel ===
-        'function'
-      ) {
-        (this.brainModel as unknown as { setModel: (m: string) => void }).setModel(selection.model);
-      }
+      await this.codexService.selectModel(path, selection, context);
+    } else {
+      await this.antigravityService.selectModel(path, selection, context);
     }
   }
 

@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer, IncomingMessage, Server, ServerResponse } from 'node:http';
@@ -10,7 +9,6 @@ import {
   AnyNexusMessage,
   NodeHeartbeatPayload,
   NodeHelloPayload,
-  NodeModelsResultPayload,
   NodeStatusPayload,
   TaskBackend,
   TaskCompletedPayload,
@@ -67,14 +65,6 @@ export class NexusCore extends EventEmitter {
   private readonly wsConnections = new Set<WebSocketServerConnection>();
   private readonly nodeWsConnections = new Map<string, WebSocketServerConnection>();
   private readonly projectMemory = new ProjectMemory();
-  private readonly pendingModelRequests = new Map<
-    string,
-    {
-      resolve: (payload: NodeModelsResultPayload) => void;
-      reject: (err: unknown) => void;
-      timer: NodeJS.Timeout;
-    }
-  >();
   private readonly startTime: number;
 
   constructor(private readonly config: CoreConfig) {
@@ -427,18 +417,6 @@ export class NexusCore extends EventEmitter {
           return undefined;
         }
 
-        case 'node:models:result': {
-          const payload = message.payload as NodeModelsResultPayload;
-          const reqId = payload.requestId || message.id;
-          const pending = this.pendingModelRequests.get(reqId);
-          if (pending) {
-            clearTimeout(pending.timer);
-            this.pendingModelRequests.delete(reqId);
-            pending.resolve(payload);
-          }
-          return undefined;
-        }
-
         default:
           throw invalidMessageError(
             `Type de message non pris en charge par Nexus Core : « ${message.type} »`
@@ -661,80 +639,6 @@ export class NexusCore extends EventEmitter {
             : err instanceof NexusProtocolError && err.code === 'PROJECT_NOT_FOUND'
               ? 404
               : 400;
-        res.writeHead(statusCode, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            error: err instanceof Error ? err.message : String(err),
-            code: err instanceof NexusProtocolError ? err.code : 'INTERNAL_ERROR',
-          })
-        );
-      }
-      return;
-    }
-
-    if (method === 'GET' && pathname === '/api/models') {
-      const backend = (url.searchParams.get('backend') || 'brain') as TaskBackend;
-      const nodeId = url.searchParams.get('nodeId') || undefined;
-      const projectId = url.searchParams.get('projectId') || undefined;
-      try {
-        const result = await this.listNodeModels(backend, nodeId, projectId);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(result));
-      } catch (err) {
-        const statusCode =
-          err instanceof NexusProtocolError && err.code === 'NODE_OFFLINE' ? 503 : 500;
-        res.writeHead(statusCode, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            error: err instanceof Error ? err.message : String(err),
-            code: err instanceof NexusProtocolError ? err.code : 'INTERNAL_ERROR',
-          })
-        );
-      }
-      return;
-    }
-
-    if (method === 'POST' && pathname === '/api/models/select') {
-      const raw = await this.readRequestBody(req);
-      try {
-        let body: {
-          backend?: TaskBackend;
-          selection?: { model: string; effort?: string };
-          context?: string;
-          nodeId?: string;
-          projectId?: string;
-        } = {};
-        try {
-          body = JSON.parse(raw);
-        } catch {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Payload JSON invalide.', code: 'INVALID_JSON' }));
-          return;
-        }
-
-        if (!body.backend || !body.selection?.model) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(
-            JSON.stringify({
-              error: 'Champs obligatoires manquants : backend, selection.model',
-              code: 'INVALID_REQUEST',
-            })
-          );
-          return;
-        }
-
-        const result = await this.selectNodeModel(
-          body.backend,
-          body.selection,
-          body.context,
-          body.nodeId,
-          body.projectId
-        );
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(result));
-      } catch (err) {
-        const statusCode =
-          err instanceof NexusProtocolError && err.code === 'NODE_OFFLINE' ? 503 : 500;
         res.writeHead(statusCode, { 'Content-Type': 'application/json' });
         res.end(
           JSON.stringify({
@@ -1170,111 +1074,6 @@ export class NexusCore extends EventEmitter {
 
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Endpoint non trouvé' }));
-  }
-
-  async listNodeModels(
-    backend: TaskBackend,
-    nodeId?: string,
-    projectId?: string,
-    timeoutMs = 5000
-  ): Promise<NodeModelsResultPayload> {
-    const node = nodeId ? this.presence.getNode(nodeId) : this.presence.getPrimaryOnlineNode();
-    if (!node?.online) {
-      throw new NexusProtocolError(
-        'NODE_OFFLINE',
-        'Aucun nœud connecté pour fournir la liste des modèles.'
-      );
-    }
-    const conn = this.nodeWsConnections.get(node.nodeId);
-    if (!conn) {
-      throw new NexusProtocolError('NODE_OFFLINE', `Nœud non joignable : ${node.nodeId}`);
-    }
-
-    const requestId = randomUUID();
-    return new Promise<NodeModelsResultPayload>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pendingModelRequests.delete(requestId);
-        reject(new Error('Délai dépassé lors de la récupération des modèles.'));
-      }, timeoutMs);
-      timer.unref?.();
-
-      this.pendingModelRequests.set(requestId, {
-        resolve: (payload) => {
-          clearTimeout(timer);
-          this.pendingModelRequests.delete(requestId);
-          resolve(payload);
-        },
-        reject: (err) => {
-          clearTimeout(timer);
-          this.pendingModelRequests.delete(requestId);
-          reject(err);
-        },
-        timer,
-      });
-
-      conn.send(
-        serializeNexusMessage(
-          createNexusMessage('node:models:list', {
-            backend,
-            projectId,
-            requestId,
-          })
-        )
-      );
-    });
-  }
-
-  async selectNodeModel(
-    backend: TaskBackend,
-    selection: { model: string; effort?: string },
-    context?: string,
-    nodeId?: string,
-    projectId?: string,
-    timeoutMs = 5000
-  ): Promise<NodeModelsResultPayload> {
-    const node = nodeId ? this.presence.getNode(nodeId) : this.presence.getPrimaryOnlineNode();
-    if (!node?.online) {
-      throw new NexusProtocolError('NODE_OFFLINE', 'Aucun nœud connecté pour modifier le modèle.');
-    }
-    const conn = this.nodeWsConnections.get(node.nodeId);
-    if (!conn) {
-      throw new NexusProtocolError('NODE_OFFLINE', `Nœud non joignable : ${node.nodeId}`);
-    }
-
-    const requestId = randomUUID();
-    return new Promise<NodeModelsResultPayload>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pendingModelRequests.delete(requestId);
-        reject(new Error('Délai dépassé lors de la sélection du modèle.'));
-      }, timeoutMs);
-      timer.unref?.();
-
-      this.pendingModelRequests.set(requestId, {
-        resolve: (payload) => {
-          clearTimeout(timer);
-          this.pendingModelRequests.delete(requestId);
-          resolve(payload);
-        },
-        reject: (err) => {
-          clearTimeout(timer);
-          this.pendingModelRequests.delete(requestId);
-          reject(err);
-        },
-        timer,
-      });
-
-      conn.send(
-        serializeNexusMessage(
-          createNexusMessage('node:models:select', {
-            backend,
-            selection,
-            context,
-            projectId,
-            requestId,
-          })
-        )
-      );
-    });
   }
 
   private readRequestBody(req: IncomingMessage): Promise<string> {

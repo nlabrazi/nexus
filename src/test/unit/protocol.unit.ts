@@ -424,35 +424,4 @@ suite('Nexus protocol error handling and edge cases', () => {
     assert.equal(customInvalid.code, 'INVALID_MESSAGE');
     assert.deepEqual(customInvalid.details, { field: 'name' });
   });
-
-  test('validates node:models:list, node:models:result, and node:models:select envelopes', () => {
-    const listMsg = createNexusMessage('node:models:list', {
-      backend: 'brain',
-      requestId: 'req-1',
-    });
-    assert.equal(listMsg.type, 'node:models:list');
-    assert.equal(listMsg.payload.backend, 'brain');
-
-    const resultMsg = createNexusMessage('node:models:result', {
-      backend: 'brain',
-      models: [{ id: 'llama3.2:3b', model: 'llama3.2:3b', displayName: 'Llama 3.2' }],
-      selected: { model: 'llama3.2:3b' },
-      requestId: 'req-1',
-    });
-    assert.equal(resultMsg.type, 'node:models:result');
-    assert.equal(resultMsg.payload.models.length, 1);
-
-    const selectMsg = createNexusMessage('node:models:select', {
-      backend: 'brain',
-      selection: { model: 'llama3.2:3b' },
-    });
-    assert.equal(selectMsg.type, 'node:models:select');
-    assert.equal(selectMsg.payload.selection.model, 'llama3.2:3b');
-
-    assert.throws(
-      () =>
-        createNexusMessage('node:models:list', { backend: 'invalid' as unknown as TaskBackend }),
-      (err) => err instanceof NexusProtocolError && err.code === 'INVALID_MESSAGE'
-    );
-  });
 });
