@@ -20,10 +20,12 @@ import { CodexApprovals } from './approvals';
 import { CodexError, processError, rpcError, turnTimeoutError } from './errors';
 import { workspaceEnvironment } from '../workspace/environment';
 import { isModel, isRateLimit, isTokenUsage } from './telemetry';
+import { restrictedCodexArgs, RestrictedCodexProfile } from './restricted';
 
 export interface CodexClientOptions {
   turnTimeoutHandler?: TurnTimeoutHandler;
   turnTimeoutMs?: number;
+  restrictedProfile?: RestrictedCodexProfile;
 }
 
 export class CodexClient {
@@ -46,7 +48,10 @@ export class CodexClient {
     approvalHandler?: CodexApprovalHandler,
     private readonly options?: CodexClientOptions
   ) {
-    this.approvals = new CodexApprovals((message) => this.write(message), approvalHandler);
+    this.approvals = new CodexApprovals(
+      (message) => this.write(message),
+      options?.restrictedProfile ? undefined : approvalHandler
+    );
   }
 
   getStatus(): CodexClientStatus {
@@ -223,10 +228,15 @@ export class CodexClient {
 
   private async startProcess(): Promise<void> {
     try {
-      this.process = spawn('codex', ['app-server', '--stdio'], {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: workspaceEnvironment(),
-      });
+      const restricted = this.options?.restrictedProfile;
+      this.process = spawn(
+        'codex',
+        ['app-server', '--stdio', ...(restricted ? restrictedCodexArgs(restricted) : [])],
+        {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: workspaceEnvironment(),
+        }
+      );
     } catch (error) {
       throw processError(error);
     }
@@ -293,6 +303,17 @@ export class CodexClient {
         throw new Error('Codex initialization cancelled');
       }
       this.notify('initialized', {});
+      if (this.options?.restrictedProfile) {
+        const account = (await this.request('account/read', { refreshToken: false })) as {
+          account?: { type?: string } | null;
+        };
+        if (this.process !== child || account.account?.type !== 'chatgpt') {
+          throw new CodexError(
+            'protocol_error',
+            'Le spike Nexus Brain nécessite une connexion Codex via ChatGPT. Aucun appel avec une clé API n’a été lancé.'
+          );
+        }
+      }
     } catch (error) {
       if (this.process === child) {
         this.stop();
@@ -301,13 +322,19 @@ export class CodexClient {
     }
   }
 
-  async startSession(cwd: string, selection?: ModelSelection): Promise<ThreadStartResponse> {
+  async startSession(
+    cwd: string,
+    selection?: ModelSelection,
+    developerInstructions?: string
+  ): Promise<ThreadStartResponse> {
     return await this.sessionRequest('thread/start', {
       cwd,
-      approvalPolicy: 'on-request',
+      approvalPolicy: this.options?.restrictedProfile ? 'never' : 'on-request',
       approvalsReviewer: 'user',
-      sandbox: 'workspace-write',
+      sandbox: this.options?.restrictedProfile ? 'read-only' : 'workspace-write',
+      ...(this.options?.restrictedProfile ? { ephemeral: true } : {}),
       serviceName: 'nexus',
+      ...(developerInstructions ? { developerInstructions } : {}),
       ...(selection
         ? { model: selection.model, config: { model_reasoning_effort: selection.effort } }
         : {}),
@@ -329,9 +356,9 @@ export class CodexClient {
     return await this.sessionRequest('thread/resume', {
       threadId,
       cwd,
-      approvalPolicy: 'on-request',
+      approvalPolicy: this.options?.restrictedProfile ? 'never' : 'on-request',
       approvalsReviewer: 'user',
-      sandbox: 'workspace-write',
+      sandbox: this.options?.restrictedProfile ? 'read-only' : 'workspace-write',
       ...(selection
         ? { model: selection.model, config: { model_reasoning_effort: selection.effort } }
         : {}),
@@ -344,6 +371,18 @@ export class CodexClient {
       const result = (await this.request(method, params)) as ThreadStartResponse;
       if (!result?.thread || typeof result.thread.id !== 'string' || !result.thread.id.trim()) {
         throw new CodexError('protocol_error', 'Codex a renvoyé une session invalide.');
+      }
+      if (
+        this.options?.restrictedProfile &&
+        method !== 'thread/read' &&
+        (result.approvalPolicy !== 'never' ||
+          result.sandbox?.type !== 'readOnly' ||
+          result.sandbox.networkAccess !== false)
+      ) {
+        throw new CodexError(
+          'protocol_error',
+          'Codex n’a pas confirmé le mode lecture seule sans réseau ni élévation.'
+        );
       }
       const state = this.telemetry.get(result.thread.id) ?? {};
       const model = result.model ?? result.thread.model;
@@ -411,7 +450,8 @@ export class CodexClient {
     threadId: string,
     prompt: string,
     onFilesChanged?: (paths: readonly string[]) => void,
-    selection?: ModelSelection
+    selection?: ModelSelection,
+    outputSchema?: Record<string, unknown>
   ): Promise<string> {
     if (!this.process) {
       throw processError(new Error('Codex is not running'));
@@ -645,8 +685,12 @@ export class CodexClient {
       this.notificationListeners.add(onNotification);
       void this.request('turn/start', {
         threadId,
+        ...(this.options?.restrictedProfile
+          ? { approvalPolicy: 'never', sandboxPolicy: { type: 'readOnly', networkAccess: false } }
+          : {}),
         ...(selection ? { model: selection.model, effort: selection.effort } : {}),
         input: [{ type: 'text', text: trimmedPrompt, textElements: [] }],
+        ...(outputSchema ? { outputSchema } : {}),
       })
         .then((result) => {
           if (settled) {

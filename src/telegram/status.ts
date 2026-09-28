@@ -9,6 +9,18 @@ export interface NexusStatusSnapshot {
   activeBackend?: AgentBackendType;
   codex?: CodexServiceStatus;
   antigravity?: AntigravityServiceStatus;
+  core?: {
+    uptimeSeconds: number;
+    onlineNodes: number;
+    totalNodes: number;
+    activeTasks: number;
+    nodes: readonly {
+      nodeId: string;
+      nodeName: string;
+      online: boolean;
+      state: string;
+    }[];
+  };
 }
 
 export function formatTelegramStatus(
@@ -16,8 +28,14 @@ export function formatTelegramStatus(
   remotePromptRunning: boolean,
   now = Date.now()
 ): string {
-  const { workspace, workspaceCount, activeBackend, codex, antigravity } = snapshot;
+  const { workspace, workspaceCount, activeBackend, codex, antigravity, core } = snapshot;
   const lines = ['📍 **Nexus — statut**', '🟢 Telegram : connecté et appairé'];
+
+  if (core) {
+    lines.push(
+      `🌐 Nexus Core : en ligne (${core.onlineNodes}/${core.totalNodes} nœud(s) connecté(s), ${core.activeTasks} tâche(s))`
+    );
+  }
 
   if (activeBackend) {
     lines.push(

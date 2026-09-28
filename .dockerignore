@@ -1,0 +1,12 @@
+node_modules
+out
+dist
+.git
+.github
+assets
+docs
+.vscode
+*.log
+.env
+.env.*
+!compose.yaml

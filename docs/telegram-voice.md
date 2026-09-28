@@ -18,15 +18,16 @@ Les messages suivants accompagnent le traitement :
 
 > ✅ Bien compris. Je prends en charge votre demande.
 
-Nexus envoie également ce court acquittement en audio avant de lancer l'agent si
-`espeak-ng` et `ffmpeg` sont installés sur la machine qui exécute l'extension (par exemple
-`sudo apt install espeak-ng ffmpeg` sous Debian/Ubuntu, dans WSL si Nexus y tourne).
+Nexus envoie également ce court acquittement en audio avant de lancer l'agent avec
+**Piper**, le modèle français **`fr_FR-upmc-medium`** et la voix **Jessica (0)**.
+Voir [l'installation et les réglages de la voix](speech-voice.md).
 FFmpeg convertit la voix en OGG/Opus pour l'envoi via `sendVoice`.
-La voix locale est en français ;
+La synthèse est locale ;
 si la synthèse ou l'envoi audio échoue, l'acquittement écrit reste visible et
 la demande poursuit son cours. Il s'agit d'une confirmation de réception :
 Nexus ne prétend pas avoir analysé l'intention avant la réponse de l'agent.
-La synthèse et la conversion sont limitées ensemble à dix secondes. `/stop`
+La synthèse et la conversion sont limitées ensemble à trente secondes, chargement
+du modèle compris. `/stop`
 annule aussi cette étape avant le lancement de l'agent.
 
 > ⏳ Codex is working… *(ou ⏳ Gemini Antigravity is working…)*

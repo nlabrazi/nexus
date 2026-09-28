@@ -1,0 +1,134 @@
+import {
+  ApprovalCancelReason,
+  ApprovalDecision,
+  ApprovalKind,
+  ApprovalRequestPayload,
+  NodeCapabilities,
+  NodeHeartbeatAckPayload,
+  NodeHeartbeatPayload,
+  NodeHelloPayload,
+  NodeProjectSummary,
+  NodeState,
+  NodeStatusPayload,
+  NodeWelcomePayload,
+  TaskBackend,
+  TaskCompletedPayload,
+  TaskFailedPayload,
+  TaskStage,
+} from '../protocol/types';
+import { SpeechToTextService } from '../speech/service';
+
+export interface CoreConfig {
+  readonly port?: number;
+  readonly host?: string;
+  readonly authTokens: readonly string[];
+  readonly heartbeatIntervalMs?: number;
+  readonly heartbeatTimeoutMs?: number;
+  readonly defaultTaskTimeoutMs?: number;
+  readonly publicDir?: string;
+  readonly speechService?: SpeechToTextService;
+  readonly speechLanguage?: string;
+}
+
+export type RemoteTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export interface RemoteTask {
+  readonly taskId: string;
+  readonly backend: TaskBackend;
+  readonly prompt: string;
+  readonly projectId?: string;
+  readonly nodeId: string;
+  status: RemoteTaskStatus;
+  stage?: TaskStage;
+  progressMessage?: string;
+  activeTool?: string;
+  createdAt: number;
+  startedAt?: number;
+  completedAt?: number;
+  result?: TaskCompletedPayload;
+  error?: TaskFailedPayload['error'];
+}
+
+export interface SubmitTaskOptions {
+  readonly backend: TaskBackend;
+  readonly prompt: string;
+  readonly taskId?: string;
+  readonly projectId?: string;
+  readonly nodeId?: string;
+  readonly sessionId?: string;
+  readonly traceId?: string;
+}
+
+export interface ConnectedNode {
+  readonly nodeId: string;
+  readonly nodeName: string;
+  readonly version: string;
+  readonly sessionId: string;
+  readonly connectedAt: number;
+  lastHeartbeatAt: number;
+  state: NodeState;
+  online: boolean;
+  capabilities: NodeCapabilities;
+  projects: readonly NodeProjectSummary[];
+  activeTaskId?: string;
+  activeProject?: NodeProjectSummary;
+}
+
+export type PendingApprovalStatus = 'pending' | 'approved' | 'declined' | 'timed_out' | 'cancelled';
+
+export interface PendingApproval {
+  readonly approvalId: string;
+  readonly taskId: string;
+  readonly nodeId: string;
+  readonly agentName: string;
+  readonly kind: ApprovalKind;
+  readonly details: string;
+  readonly expiresAt: number;
+  readonly createdAt: number;
+  status: PendingApprovalStatus;
+  decision?: ApprovalDecision;
+  decidedBy?: string;
+  decidedAt?: number;
+}
+
+export interface CoreStatusSnapshot {
+  readonly uptimeSeconds: number;
+  readonly totalNodes: number;
+  readonly onlineNodes: number;
+  readonly nodes: readonly ConnectedNode[];
+  readonly projects: readonly NodeProjectSummary[];
+  readonly activeTasks?: number;
+  readonly pendingApprovals?: number;
+}
+
+export interface CoreEventMap {
+  'node:connected': (node: ConnectedNode) => void;
+  'node:heartbeat': (node: ConnectedNode) => void;
+  'node:status': (node: ConnectedNode) => void;
+  'node:offline': (node: ConnectedNode) => void;
+  'node:disconnected': (node: ConnectedNode) => void;
+  'task:started': (task: RemoteTask) => void;
+  'task:progress': (task: RemoteTask) => void;
+  'task:completed': (task: RemoteTask) => void;
+  'task:failed': (task: RemoteTask) => void;
+  'task:cancelled': (task: RemoteTask) => void;
+  'approval:request': (approval: PendingApproval) => void;
+  'approval:decided': (approval: PendingApproval) => void;
+  'approval:cancelled': (approval: PendingApproval) => void;
+  'approval:timeout': (approval: PendingApproval) => void;
+}
+
+export {
+  ApprovalCancelReason,
+  ApprovalDecision,
+  ApprovalKind,
+  ApprovalRequestPayload,
+  NodeCapabilities,
+  NodeHeartbeatAckPayload,
+  NodeHeartbeatPayload,
+  NodeHelloPayload,
+  NodeProjectSummary,
+  NodeState,
+  NodeStatusPayload,
+  NodeWelcomePayload,
+};

@@ -1,13 +1,33 @@
 import { execFile } from 'node:child_process';
+import { isAbsolute } from 'node:path';
+
+export interface AcknowledgementConfiguration {
+  pythonPath: string;
+  modelPath: string;
+  scriptPath: string;
+  speakerId: number;
+}
 
 /** Synthesizes a short, deliberately generic acknowledgement without interpreting the prompt. */
-export async function synthesizeAcknowledgement(signal: AbortSignal): Promise<Buffer> {
+export async function synthesizeAcknowledgement(
+  signal: AbortSignal,
+  configuration: AcknowledgementConfiguration
+): Promise<Buffer> {
   signal.throwIfAborted();
-  const boundedSignal = AbortSignal.any([signal, AbortSignal.timeout(10_000)]);
+  const { pythonPath, modelPath, scriptPath, speakerId } = configuration;
+  if (
+    [pythonPath, modelPath, scriptPath].some((path) => !isAbsolute(path) || path.includes('\0')) ||
+    !Number.isSafeInteger(speakerId) ||
+    speakerId < 0
+  ) {
+    throw new Error('Configure nexus.speech.tts with local Piper paths and a valid speaker ID');
+  }
+  const boundedSignal = AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
   const wave = await runAudioProcess(
-    'espeak-ng',
-    ['-v', 'fr', '-s', '155', '--stdout', 'Bien compris. Je prends en charge votre demande.'],
-    boundedSignal
+    pythonPath,
+    ['-I', scriptPath, '--model', modelPath, '--speaker', String(speakerId)],
+    boundedSignal,
+    Buffer.from('Bien compris. Je prends en charge votre demande.', 'utf8')
   );
   try {
     const ogg = await runAudioProcess(

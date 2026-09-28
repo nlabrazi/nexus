@@ -1,5 +1,7 @@
 import type * as vscode from 'vscode';
 import { randomInt } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { TelegramClient, TelegramVoiceDownloadError } from './client';
 import { TelegramUpdate, TelegramVoice, TelegramVoiceFile } from './types';
 import { SpeechError } from '../speech/errors';
@@ -19,8 +21,14 @@ type RemotePromptHandler = (prompt: string) => Promise<string | RemotePromptRepl
 
 export type RemoteSessionAction = { type: 'new' } | { type: 'resume'; sessionId: string };
 export type RemoteBranchAction = { type: 'list' } | { type: 'switch'; name: string };
+export type RemoteProjectAction = { type: 'list' } | { type: 'switch'; projectId: string };
+export type RemoteMemoryAction =
+  | { type: 'show' }
+  | { type: 'add'; title: string; decision: string }
+  | { type: 'clear' };
 
 export interface TelegramServiceOptions {
+  onBrainPrompt?: (prompt: string, signal: AbortSignal) => Promise<string>;
   transcribeVoice?: (audio: TelegramVoiceFile, signal: AbortSignal) => Promise<string>;
   synthesizeAcknowledgement?: (signal: AbortSignal) => Promise<Buffer>;
   onRemotePrompt?: RemotePromptHandler;
@@ -28,6 +36,8 @@ export interface TelegramServiceOptions {
   onSessionAction?: (action: RemoteSessionAction) => Promise<string>;
   onStop?: () => boolean;
   onBranchAction?: (action: RemoteBranchAction) => Promise<string>;
+  onProjectAction?: (action: RemoteProjectAction) => Promise<string>;
+  onMemoryAction?: (action: RemoteMemoryAction) => Promise<string>;
   modelControls?: ModelControls;
   onRemoteAntigravityPrompt?: RemotePromptHandler;
   onAntigravitySessionAction?: (action: RemoteSessionAction) => Promise<string>;
@@ -37,12 +47,100 @@ export interface TelegramServiceOptions {
   setActiveBackend?: (backend: AgentBackendType) => Promise<void> | void;
 }
 
+export interface TelegramStateStorage {
+  get<T>(key: string): T | undefined;
+  get<T>(key: string, defaultValue: T): T;
+  get<T>(key: string, defaultValue?: T): T | undefined;
+  update(key: string, value: unknown): PromiseLike<void>;
+}
+
+export interface TelegramContextLike {
+  readonly globalState: TelegramStateStorage;
+}
+
+export class MemoryTelegramStorage implements TelegramStateStorage {
+  private readonly store = new Map<string, unknown>();
+
+  constructor(initialValues?: Record<string, unknown>) {
+    if (initialValues) {
+      for (const [k, v] of Object.entries(initialValues)) {
+        this.store.set(k, v);
+      }
+    }
+  }
+
+  get<T>(key: string, defaultValue?: T): T | undefined {
+    return (this.store.get(key) as T) ?? defaultValue;
+  }
+
+  async update(key: string, value: unknown): Promise<void> {
+    if (value === undefined) {
+      this.store.delete(key);
+    } else {
+      this.store.set(key, value);
+    }
+  }
+}
+
+export class FileTelegramStorage implements TelegramStateStorage {
+  private readonly store = new Map<string, unknown>();
+
+  constructor(
+    private readonly filePath: string,
+    initialValues?: Record<string, unknown>
+  ) {
+    if (existsSync(filePath)) {
+      try {
+        const raw = readFileSync(filePath, 'utf-8');
+        const data = JSON.parse(raw);
+        if (data && typeof data === 'object') {
+          for (const [k, v] of Object.entries(data)) {
+            this.store.set(k, v);
+          }
+        }
+      } catch {}
+    }
+    if (initialValues) {
+      for (const [k, v] of Object.entries(initialValues)) {
+        if (!this.store.has(k)) {
+          this.store.set(k, v);
+        }
+      }
+    }
+  }
+
+  get<T>(key: string, defaultValue?: T): T | undefined {
+    return (this.store.get(key) as T) ?? defaultValue;
+  }
+
+  async update(key: string, value: unknown): Promise<void> {
+    if (value === undefined) {
+      this.store.delete(key);
+    } else {
+      this.store.set(key, value);
+    }
+    try {
+      const dir = dirname(this.filePath);
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+      const obj: Record<string, unknown> = {};
+      for (const [k, v] of this.store.entries()) {
+        obj[k] = v;
+      }
+      writeFileSync(this.filePath, JSON.stringify(obj, null, 2), 'utf-8');
+    } catch {}
+  }
+}
+
 export class TelegramService {
   private pairingCode?: string;
   private pairingExpiresAt = 0;
   private running = false;
   private abortController?: AbortController;
   private voiceOperation?: AbortController;
+  private brainOperation?: AbortController;
+  private readonly onBrainPrompt?: TelegramServiceOptions['onBrainPrompt'];
   private remotePromptRunning = false;
   private remoteSessionRunning = false;
   private remoteBranchRunning = false;
@@ -60,6 +158,8 @@ export class TelegramService {
   private readonly onSessionAction?: (action: RemoteSessionAction) => Promise<string>;
   private readonly onStop?: () => boolean;
   private readonly onBranchAction?: (action: RemoteBranchAction) => Promise<string>;
+  private readonly onProjectAction?: (action: RemoteProjectAction) => Promise<string>;
+  private readonly onMemoryAction?: (action: RemoteMemoryAction) => Promise<string>;
   private readonly onRemoteAntigravityPrompt?: RemotePromptHandler;
   private readonly onAntigravitySessionAction?: (action: RemoteSessionAction) => Promise<string>;
   private readonly onAntigravityStop?: () => boolean;
@@ -68,7 +168,7 @@ export class TelegramService {
   private activeBackend: AgentBackendType = 'codex';
 
   constructor(
-    private readonly context: vscode.ExtensionContext,
+    private readonly context: vscode.ExtensionContext | TelegramContextLike,
     private readonly client: TelegramClient,
     onRemotePromptOrOptions?: RemotePromptHandler | TelegramServiceOptions,
     getStatus?: () => NexusStatusSnapshot | Promise<NexusStatusSnapshot>,
@@ -88,6 +188,7 @@ export class TelegramService {
 
     if (typeof onRemotePromptOrOptions === 'object' && onRemotePromptOrOptions !== null) {
       const opts = onRemotePromptOrOptions;
+      this.onBrainPrompt = opts.onBrainPrompt;
       this.synthesizeAck = opts.synthesizeAcknowledgement;
       this.transcribeVoice = opts.transcribeVoice;
       this.onRemotePrompt = opts.onRemotePrompt;
@@ -95,6 +196,8 @@ export class TelegramService {
       this.onSessionAction = opts.onSessionAction;
       this.onStop = opts.onStop;
       this.onBranchAction = opts.onBranchAction;
+      this.onProjectAction = opts.onProjectAction;
+      this.onMemoryAction = opts.onMemoryAction;
       codexModelControls = opts.modelControls;
       this.onRemoteAntigravityPrompt = opts.onRemoteAntigravityPrompt;
       this.onAntigravitySessionAction = opts.onAntigravitySessionAction;
@@ -247,6 +350,7 @@ export class TelegramService {
   }
 
   stop(): void {
+    this.brainOperation?.abort();
     this.cancelVoiceOperation();
     this.models.cancel();
     this.antigravityModels.cancel();
@@ -310,6 +414,7 @@ export class TelegramService {
         return;
       }
 
+      this.brainOperation?.abort();
       this.cancelVoiceOperation();
       this.approvals.cancelAll();
       this.continuations.cancelAll();
@@ -449,15 +554,88 @@ export class TelegramService {
       );
       return;
     }
+    if (/^\/(projects|project)(?:\s|$)/.test(command)) {
+      const [name, targetProject, ...extra] = command.split(/\s+/);
+      if (
+        (name === '/projects' && targetProject !== undefined) ||
+        (name === '/project' && (!targetProject || extra.length > 0))
+      ) {
+        await this.client.sendMessage(
+          chatId,
+          name === '/projects' ? 'Usage : /projects' : 'Usage : /project <nom|id>'
+        );
+        return;
+      }
+      if (!this.onProjectAction) {
+        await this.client.sendMessage(chatId, 'La gestion des projets est indisponible.');
+        return;
+      }
+      if (
+        this.remoteBranchRunning ||
+        (name === '/project' && (this.remotePromptRunning || this.remoteSessionRunning))
+      ) {
+        const backendName = this.getActiveBackend() === 'antigravity' ? 'Antigravity' : 'Codex';
+        await this.client.sendMessage(
+          chatId,
+          `Une opération ou requête ${backendName} est en cours. Attendez sa fin.`
+        );
+        return;
+      }
+      this.remoteBranchRunning = true;
+      if (name === '/project') {
+        this.models.cancel();
+        this.antigravityModels.cancel();
+      }
+      void this.runProjectCommand(
+        chatId,
+        name === '/projects' ? { type: 'list' } : { type: 'switch', projectId: targetProject },
+        this.abortController!.signal
+      );
+      return;
+    }
+    if (/^\/memory(?:\s|$)/.test(command)) {
+      const parts = command.split(/\s+/);
+      const sub = parts[1];
+      if (!this.onMemoryAction) {
+        await this.client.sendMessage(chatId, 'La mémoire de décisions est indisponible.');
+        return;
+      }
+      if (!sub || sub === 'show' || sub === 'list') {
+        void this.runMemoryCommand(chatId, { type: 'show' }, this.abortController!.signal);
+        return;
+      }
+      if (sub === 'clear') {
+        void this.runMemoryCommand(chatId, { type: 'clear' }, this.abortController!.signal);
+        return;
+      }
+      if (sub === 'add') {
+        const title = parts[2];
+        const decisionText = parts.slice(3).join(' ').trim();
+        if (!title || !decisionText) {
+          await this.client.sendMessage(chatId, 'Usage : /memory add <titre> <décision>');
+          return;
+        }
+        void this.runMemoryCommand(
+          chatId,
+          { type: 'add', title, decision: decisionText },
+          this.abortController!.signal
+        );
+        return;
+      }
+      await this.client.sendMessage(chatId, 'Usage : /memory [show|add <titre> <décision>|clear]');
+      return;
+    }
     if (/^\/stop(?:\s|$)/.test(command)) {
       if (command !== '/stop') {
         await this.client.sendMessage(chatId, 'Usage : /stop');
         return;
       }
-      if (!this.onStop && !this.onAntigravityStop && !this.voiceOperation) {
+      if (!this.onStop && !this.onAntigravityStop && !this.voiceOperation && !this.brainOperation) {
         await this.client.sendMessage(chatId, 'L’arrêt de Codex est indisponible.');
         return;
       }
+      const brainCancelled = this.brainOperation !== undefined;
+      this.brainOperation?.abort();
       const voiceCancelled = this.cancelVoiceOperation();
       let cancelled: boolean;
       let agentCancelled: boolean;
@@ -466,7 +644,11 @@ export class TelegramService {
         const agyCancelled = this.onAntigravityStop ? this.onAntigravityStop() : false;
         agentCancelled = codexCancelled || agyCancelled;
         cancelled =
-          voiceCancelled || agentCancelled || this.remotePromptRunning || this.remoteSessionRunning;
+          brainCancelled ||
+          voiceCancelled ||
+          agentCancelled ||
+          this.remotePromptRunning ||
+          this.remoteSessionRunning;
       } catch {
         const name = this.getActiveBackend() === 'antigravity' ? 'Antigravity' : 'Codex';
         await this.client.sendMessage(
@@ -482,6 +664,10 @@ export class TelegramService {
       this.remoteSessionRunning = false;
       this.approvals.cancelAll();
       this.continuations.cancelAll();
+      if (brainCancelled) {
+        await this.client.sendMessage(chatId, '⏹ Conversation Nexus et inspection annulées.');
+        return;
+      }
       if (voiceCancelled && !agentCancelled) {
         await this.client.sendMessage(chatId, '⏹ Traitement du message vocal annulé.');
         return;
@@ -549,6 +735,32 @@ export class TelegramService {
 
     if (text === '/ping') {
       await this.client.sendMessage(chatId, 'pong');
+    }
+
+    if (/^\/brain(?:\s|$)/.test(command)) {
+      const prompt = command.slice('/brain'.length).trim();
+      if (!prompt) {
+        await this.client.sendMessage(chatId, 'Usage : /brain <message>');
+        return;
+      }
+      if (!this.onBrainPrompt) {
+        await this.client.sendMessage(chatId, 'Nexus Brain est indisponible.');
+        return;
+      }
+      if (this.remotePromptRunning || this.remoteSessionRunning || this.remoteBranchRunning) {
+        await this.client.sendMessage(
+          chatId,
+          'Une requête est déjà en cours. Attendez sa fin ou utilisez /stop.'
+        );
+        return;
+      }
+      const controller = new AbortController();
+      this.brainOperation = controller;
+      this.remotePromptRunning = true;
+      this.models.cancel();
+      this.antigravityModels.cancel();
+      void this.runBrainPrompt(chatId, prompt, controller);
+      return;
     }
 
     if (text === '/codex') {
@@ -779,6 +991,46 @@ export class TelegramService {
     }
   }
 
+  private async runProjectCommand(
+    chatId: number,
+    action: RemoteProjectAction,
+    signal: AbortSignal
+  ): Promise<void> {
+    try {
+      const response = await this.onProjectAction!(action);
+      if (!signal.aborted) {
+        await this.client.sendMessage(chatId, response, 'markdown');
+      }
+    } catch (error) {
+      if (!signal.aborted) {
+        await this.client
+          .sendMessage(chatId, `❌ ${error instanceof Error ? error.message : String(error)}`)
+          .catch(() => console.error('[Telegram] Project response delivery failed.'));
+      }
+    } finally {
+      this.remoteBranchRunning = false;
+    }
+  }
+
+  private async runMemoryCommand(
+    chatId: number,
+    action: RemoteMemoryAction,
+    signal: AbortSignal
+  ): Promise<void> {
+    try {
+      const response = await this.onMemoryAction!(action);
+      if (!signal.aborted) {
+        await this.client.sendMessage(chatId, response, 'markdown');
+      }
+    } catch (error) {
+      if (!signal.aborted) {
+        await this.client
+          .sendMessage(chatId, `❌ ${error instanceof Error ? error.message : String(error)}`)
+          .catch(() => console.error('[Telegram] Memory response delivery failed.'));
+      }
+    }
+  }
+
   private async runSessionCommand(
     chatId: number,
     action: RemoteSessionAction,
@@ -804,6 +1056,41 @@ export class TelegramService {
     } finally {
       if (generation === this.operationGeneration) {
         this.remoteSessionRunning = false;
+      }
+    }
+  }
+
+  private async runBrainPrompt(
+    chatId: number,
+    prompt: string,
+    controller: AbortController
+  ): Promise<void> {
+    const signal = AbortSignal.any([controller.signal, this.abortController!.signal]);
+    const generation = this.operationGeneration;
+    try {
+      await this.client.sendMessage(chatId, '💬 Nexus réfléchit…', 'plain', signal);
+      signal.throwIfAborted();
+      const response = await this.onBrainPrompt!(prompt, signal);
+      if (!signal.aborted && generation === this.operationGeneration) {
+        await this.client.sendMessage(chatId, response, 'markdown', signal);
+      }
+    } catch (error) {
+      if (!signal.aborted && generation === this.operationGeneration) {
+        await this.client
+          .sendMessage(
+            chatId,
+            `❌ ${error instanceof Error ? error.message : 'Nexus Brain est indisponible.'}`,
+            'plain',
+            signal
+          )
+          .catch(() => {});
+      }
+    } finally {
+      if (this.brainOperation === controller) {
+        this.brainOperation = undefined;
+      }
+      if (generation === this.operationGeneration) {
+        this.remotePromptRunning = false;
       }
     }
   }

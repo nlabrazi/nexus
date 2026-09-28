@@ -137,6 +137,24 @@ Nexus is not intended to replace VS Code, Git, Codex, or Antigravity. It acts as
   - Nexus restores persisted session information (Codex and Antigravity) after reload or restart.
   - Session lifecycle is isolated per workspace to prevent cross-project contamination.
 
+- 🧠 **Nexus Brain (Ollama & Free Fallback)**
+  - Dedicated conversational intelligence for brainstorming, architectural discussions, and technical exchanges.
+  - Runs on local Ollama models (`llama3.2:3b`, etc.) by default, with free online Gemini API fallback.
+  - Zero token consumption from paid Codex / Antigravity subscriptions during brainstorm and planning phases.
+  - Unrestricted directory exploration starting by default in `/code` or `~/code`.
+
+- ⚡ **Instant Remote Approvals**
+  - Tool execution and command approvals automatically pop up modally on screen with haptic feedback.
+  - No buried pills or missed timeouts: one-tap "Autoriser" or "Refuser".
+
+- 🗣️ **Vocal Responses (TTS)**
+  - Assistant responses are optionally spoken aloud automatically via Web SpeechSynthesis.
+  - Per-message replay controls and global quick toggle.
+
+- 🎛️ **Dynamic Agent & Model Switcher**
+  - Seamlessly switch between Brain (Ollama/Gemini), Codex, and Antigravity.
+  - Query installed models dynamically via `/api/models` and pick target model per agent.
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
@@ -146,6 +164,35 @@ Nexus is not intended to replace VS Code, Git, Codex, or Antigravity. It acts as
 ```text
 src/
 ├── extension.ts
+├── core/
+│   ├── cli.ts
+│   ├── nexus-core.ts
+│   ├── presence.ts
+│   ├── ws-connection.ts
+│   ├── types.ts
+│   └── index.ts
+├── desktop/
+│   ├── cli.ts
+│   ├── node.ts
+│   ├── ws-client.ts
+│   ├── config.ts
+│   ├── types.ts
+│   └── index.ts
+├── runtime/
+│   ├── nexus-runtime.ts
+│   ├── workspace.ts
+│   ├── storage.ts
+│   └── types.ts
+├── protocol/
+│   ├── types.ts
+│   ├── messages.ts
+│   └── errors.ts
+├── conversational/
+│   ├── service.ts
+│   ├── tools.ts
+│   ├── codex-model.ts
+│   ├── codex-inspector.ts
+│   └── types.ts
 ├── telegram/
 │   ├── client.ts
 │   ├── service.ts
@@ -172,16 +219,25 @@ Responsibilities:
 
 ```text
 extension.ts
-└── VS Code lifecycle, commands, status bar, backend service wiring
+└── VS Code lifecycle, commands, status bar, NexusRuntime instantiation
+
+core/ (nexus-core)
+└── Central coordination server, desktop presence tracking (heartbeat/liveness), HTTP & WebSocket RFC 6455 protocol gateway
+
+desktop/ (nexus-desktop)
+└── Standalone terminal Desktop Node daemon, CLI commands (start, status, exec), outbound authenticated WebSocket connection to Core
+
+NexusRuntime
+└── Unified headless agent orchestration (tasks, Brain, sessions, branches, models, cancellation)
+
+WorkspaceGuard
+└── Standalone / VS Code workspace and Git security checks, protected branches, preflight guards
 
 TelegramService
-└── polling, pairing, authorization, multi-backend routing (/backend, /codex, /antigravity)
+└── Polling, pairing, authorization, multi-backend routing (/backend, /codex, /antigravity)
 
-TelegramClient
-└── Telegram Bot API transport
-
-CodexService / AntigravityService
-└── Agent session, turn lifecycle, workspace isolation, model preferences
+CodexService / AntigravityService / ConversationalService (Nexus Brain)
+└── Agent sessions, turn lifecycle, workspace isolation, model preferences, conversational guidance
 
 CodexClient
 └── Codex App Server process + JSON-RPC transport
@@ -197,9 +253,11 @@ Telegram message (/codex, /antigravity, /new, /resume, /model, /backend)
       ↓
 TelegramService
       ↓
-authorization checks & active backend routing
+NexusRuntime (Isolated agent runtime)
       ↓
-CodexService  OR  AntigravityService
+WorkspaceGuard (Git & workspace preflight)
+      ↓
+CodexService  OR  AntigravityService  OR  ConversationalService
       ↓
 CodexClient (JSON-RPC)  OR  AntigravityClient (NDJSON stream)
       ↓
@@ -471,6 +529,7 @@ Examples:
 Detailed documentation:
 
 - [Local speech-to-text setup and test](docs/speech-local.md)
+- [Local acknowledgement voice: Piper / Jessica](docs/speech-voice.md)
 - [Telegram voice transcription](docs/telegram-voice.md)
 - [Git branch selection](docs/workspace-safety.md#changer-de-branche)
 - [Telegram status](docs/telegram-status.md)
@@ -484,6 +543,11 @@ Detailed documentation:
 - [Gemini Antigravity sessions](docs/antigravity-sessions.md)
 - [Gemini Antigravity models](docs/antigravity-models.md)
 - [Gemini Antigravity errors](docs/antigravity-errors.md)
+- [Nexus Brain spike](docs/nexus-brain.md)
+- [Nexus Protocol](docs/nexus-protocol.md)
+- [Agent Runtime Isolation](docs/runtime-isolation.md)
+- [Desktop Node](docs/desktop-node.md)
+- [Nexus Core](docs/nexus-core.md)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -639,6 +703,11 @@ Detailed test documentation:
 - [Gemini Antigravity errors](docs/antigravity-errors.md)
 - [Workspace safety](docs/workspace-safety.md)
 - [Telegram approvals](docs/telegram-approvals.md)
+- [Nexus Brain spike](docs/nexus-brain.md)
+- [Nexus Protocol](docs/nexus-protocol.md)
+- [Agent Runtime Isolation](docs/runtime-isolation.md)
+- [Desktop Node](docs/desktop-node.md)
+- [Nexus Core](docs/nexus-core.md)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -661,6 +730,22 @@ npm run test:unit
 
 # Development watch mode
 npm run watch
+
+# Run Nexus Desktop Node locally
+npm run desktop -- start --project /chemin/vers/projet
+
+# Run Nexus Core Server locally
+npm run core -- --port 4040 --token secret123
+
+# Web Mobile PWA Client
+npm run web:dev     # Démarre le serveur Nuxt en développement (http://localhost:3000)
+npm run web:build   # Génère les fichiers statiques PWA (.output/public)
+
+# Docker (Nexus Core + Web PWA intégrée)
+npm run docker:build  # Construit l'image Docker nexus-core
+npm run docker:up     # Démarre Nexus Core via Docker Compose (PWA sur http://localhost:4040)
+npm run docker:logs   # Affiche les logs en direct
+npm run docker:down   # Arrête et supprime les conteneurs
 
 # Extension tests
 npm test

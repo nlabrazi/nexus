@@ -125,7 +125,7 @@ export interface ThreadStartResponse {
   reasoningEffort?: string | null;
   serviceTier?: string | null;
   approvalPolicy?: string | object;
-  sandbox?: { type: string };
+  sandbox?: { type: string; networkAccess?: boolean };
 }
 
 export interface TurnStartResponse {
