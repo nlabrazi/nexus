@@ -7,6 +7,7 @@ import { suite, test } from 'node:test';
 import {
   NexusRuntime,
   createStandaloneWorkspaceGuard,
+  getDefaultCodeDirectory,
   MemoryStorage,
   RuntimeApprovalRequest,
 } from '../../runtime';
@@ -250,6 +251,36 @@ suite('NexusRuntime isolated agent runtime', () => {
     assert.equal(status.workspaceCount, 0);
 
     runtime.stop();
+  });
+
+  test('getDefaultCodeDirectory resolves an existing directory', () => {
+    const dir = getDefaultCodeDirectory();
+    assert.ok(typeof dir === 'string' && dir.length > 0);
+    assert.ok(existsSync(dir));
+  });
+
+  test('resolveWorkspaceForInspection allows arbitrary folders outside initial workspace', async () => {
+    const externalDir = join(tmpdir(), 'nexus-external-folder-test');
+    if (existsSync(externalDir)) {
+      rmSync(externalDir, { recursive: true, force: true });
+    }
+    mkdirSync(externalDir, { recursive: true });
+    execSync(
+      'git init -b main && git config user.name "Test" && git config user.email "test@example.com" && git commit --allow-empty -m "initial"',
+      { cwd: externalDir }
+    );
+    const workspaceGuard = createStandaloneWorkspaceGuard(testDir);
+    const runtime = new NexusRuntime({
+      workspaceGuard,
+      targetPath: () => testDir,
+    });
+
+    const identity = await runtime.resolveWorkspaceForInspection(externalDir);
+    assert.equal(identity.root, externalDir);
+    assert.equal(identity.git?.branch, 'main');
+
+    runtime.stop();
+    rmSync(externalDir, { recursive: true, force: true });
   });
 
   test('afterAll cleanup test dir', () => {

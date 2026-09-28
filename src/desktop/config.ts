@@ -2,10 +2,21 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { basename, dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { getDefaultCodeDirectory } from '../runtime/workspace';
 import { loadProjectRegistry } from './registry';
 import { DesktopNodeConfig, DesktopProjectConfig, TaskBackend } from './types';
 
 const VALID_BACKENDS = new Set<TaskBackend>(['codex', 'antigravity', 'brain']);
+
+export function isProjectDir(p: string): boolean {
+  return (
+    existsSync(resolve(p, '.git')) ||
+    existsSync(resolve(p, 'package.json')) ||
+    existsSync(resolve(p, '.nexus')) ||
+    existsSync(resolve(p, 'Cargo.toml')) ||
+    existsSync(resolve(p, 'pyproject.toml'))
+  );
+}
 
 export interface CliConfigOptions {
   readonly project?: string;
@@ -110,44 +121,95 @@ export function resolveDesktopConfig(
     });
   }
 
-  if (rawProjects.length === 0) {
-    throw new Error(
-      'Aucun projet configuré. Spécifiez au moins un projet via --project <chemin>, enregistrez-en un via `nexus-desktop projects add <chemin>`, ou définissez la variable NEXUS_PROJECT_PATH.'
-    );
-  }
-
-  // 5. Auto-discover sibling workspace directories in parent folder if requested
   const shouldAutoDiscover =
     cliOptions?.autoDiscover ??
     (env.NEXUS_AUTO_DISCOVER === '1' || env.NEXUS_AUTO_DISCOVER === 'true');
-  const primaryCandidate = rawProjects[0]?.path ? resolve(baseDir, rawProjects[0].path) : undefined;
-  if (shouldAutoDiscover && primaryCandidate && existsSync(primaryCandidate)) {
-    try {
-      const parentDir = dirname(primaryCandidate);
-      const isSystemDir =
-        parentDir === '/' || parentDir === '/tmp' || parentDir === '/home' || parentDir === '/var';
-      if (!isSystemDir && existsSync(parentDir) && statSync(parentDir).isDirectory()) {
-        const entries = readdirSync(parentDir, { withFileTypes: true });
-        for (const entry of entries) {
-          if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
-            const siblingPath = resolve(parentDir, entry.name);
-            const isProject =
-              existsSync(resolve(siblingPath, '.git')) ||
-              existsSync(resolve(siblingPath, 'package.json')) ||
-              existsSync(resolve(siblingPath, '.nexus')) ||
-              existsSync(resolve(siblingPath, 'Cargo.toml')) ||
-              existsSync(resolve(siblingPath, 'pyproject.toml'));
-            if (isProject && !rawProjects.some((p) => resolve(baseDir, p.path) === siblingPath)) {
-              rawProjects.push({
-                name: entry.name,
-                path: siblingPath,
-              });
+
+  const defaultCode = getDefaultCodeDirectory();
+  const hasDefaultCode = existsSync(defaultCode) && statSync(defaultCode).isDirectory();
+
+  if (rawProjects.length === 0) {
+    if ((shouldAutoDiscover || env.NEXUS_CODE_ROOT) && hasDefaultCode) {
+      rawProjects.push({
+        id: 'code',
+        name: 'code',
+        path: defaultCode,
+      });
+    } else {
+      throw new Error(
+        'Aucun projet configuré. Spécifiez au moins un projet via --project <chemin>, enregistrez-en un via `nexus-desktop projects add <chemin>`, ou définissez la variable NEXUS_PROJECT_PATH.'
+      );
+    }
+  }
+
+  // 5. Discover projects under default code directory and parent directory if auto-discovery requested
+  if (shouldAutoDiscover) {
+    if (hasDefaultCode) {
+      try {
+        const topEntries = readdirSync(defaultCode, { withFileTypes: true });
+        for (const entry of topEntries) {
+          if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules')
+            continue;
+          const entryPath = resolve(defaultCode, entry.name);
+          if (isProjectDir(entryPath)) {
+            if (!rawProjects.some((p) => resolve(baseDir, p.path) === entryPath)) {
+              rawProjects.push({ name: entry.name, path: entryPath });
+            }
+          } else {
+            try {
+              const subEntries = readdirSync(entryPath, { withFileTypes: true });
+              for (const sub of subEntries) {
+                if (!sub.isDirectory() || sub.name.startsWith('.') || sub.name === 'node_modules')
+                  continue;
+                const subPath = resolve(entryPath, sub.name);
+                if (
+                  isProjectDir(subPath) &&
+                  !rawProjects.some((p) => resolve(baseDir, p.path) === subPath)
+                ) {
+                  rawProjects.push({ name: `${entry.name}/${sub.name}`, path: subPath });
+                }
+              }
+            } catch {}
+          }
+        }
+      } catch {}
+    }
+
+    const primaryCandidate = rawProjects[0]?.path
+      ? resolve(baseDir, rawProjects[0].path)
+      : undefined;
+    if (primaryCandidate && existsSync(primaryCandidate)) {
+      try {
+        const parentDir = dirname(primaryCandidate);
+        const isSystemDir =
+          parentDir === '/' ||
+          parentDir === '/tmp' ||
+          parentDir === '/home' ||
+          parentDir === '/var';
+        if (!isSystemDir && existsSync(parentDir) && statSync(parentDir).isDirectory()) {
+          const entries = readdirSync(parentDir, { withFileTypes: true });
+          for (const entry of entries) {
+            if (
+              entry.isDirectory() &&
+              !entry.name.startsWith('.') &&
+              entry.name !== 'node_modules'
+            ) {
+              const siblingPath = resolve(parentDir, entry.name);
+              if (
+                isProjectDir(siblingPath) &&
+                !rawProjects.some((p) => resolve(baseDir, p.path) === siblingPath)
+              ) {
+                rawProjects.push({
+                  name: entry.name,
+                  path: siblingPath,
+                });
+              }
             }
           }
         }
+      } catch {
+        // Non-blocking sibling exploration
       }
-    } catch {
-      // Non-blocking sibling exploration
     }
   }
 

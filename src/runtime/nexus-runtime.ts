@@ -1,4 +1,5 @@
-import { basename } from 'node:path';
+import { basename, isAbsolute, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
 import { AntigravityService } from '../antigravity/service';
 import { WorkspaceAntigravitySessionPersistence } from '../antigravity/persistence';
 import { WorkspaceAntigravityModelPreferences } from '../antigravity/model-preferences';
@@ -13,9 +14,10 @@ import { CodingAgentTools } from '../conversational/tools';
 import { ConversationProjectContext } from '../conversational/types';
 import { formatFileSummary } from '../telegram/file-summary';
 import { AgentBackendType, NexusStatusSnapshot } from '../telegram/status';
-import { WorkspaceBranch, WorkspaceGuard } from '../workspace/guard';
+import { WorkspaceBranch, WorkspaceGuard, WorkspaceIdentity } from '../workspace/guard';
 import { DecisionRecordInput, ProjectDecision, ProjectMemorySnapshot } from '../memory/types';
 import { ProjectMemory } from '../memory/project-memory';
+import { createStandaloneWorkspaceGuard, getDefaultCodeDirectory } from './workspace';
 import { MemoryStorage } from './storage';
 import {
   NexusRuntimeOptions,
@@ -90,9 +92,8 @@ export class NexusRuntime {
     );
 
     const codingTools = new CodingAgentTools({
-      resolveWorkspace: (targetPath?: string) =>
-        this.workspaceGuard.validate(this.resolveTargetPath(targetPath)),
-      inspector: new CodexProjectInspector((path) => this.workspaceGuard.validate(path)),
+      resolveWorkspace: (targetPath?: string) => this.resolveWorkspaceForInspection(targetPath),
+      inspector: new CodexProjectInspector((path) => this.resolveWorkspaceForInspection(path)),
       requestConsent: async (request, signal) => {
         if (!options.requestApproval) {
           return false;
@@ -117,9 +118,34 @@ export class NexusRuntime {
     this.conversationalService = new ConversationalService(brainModel, codingTools);
   }
 
+  async resolveWorkspaceForInspection(targetPath?: string): Promise<WorkspaceIdentity> {
+    const rawPath = this.resolveTargetPath(targetPath);
+    try {
+      return await this.workspaceGuard.validate(rawPath);
+    } catch {
+      const resolved = resolve(rawPath);
+      const standaloneGuard = createStandaloneWorkspaceGuard(resolved, {
+        protectedBranches: [],
+      });
+      return standaloneGuard.validate(resolved);
+    }
+  }
+
   resolveTargetPath(explicitPath?: string): string {
     if (explicitPath?.trim()) {
-      return explicitPath.trim();
+      const trimmed = explicitPath.trim();
+      if (isAbsolute(trimmed)) {
+        return trimmed;
+      }
+      const codeDir = getDefaultCodeDirectory();
+      const underCode = resolve(codeDir, trimmed);
+      if (existsSync(underCode)) {
+        return underCode;
+      }
+      const base = this.targetPathSupplier
+        ? this.targetPathSupplier()
+        : this.workspaceGuard.targetPath();
+      return resolve(base, trimmed);
     }
     if (this.targetPathSupplier) {
       return this.targetPathSupplier();
@@ -210,7 +236,7 @@ export class NexusRuntime {
     }
   ): Promise<string> {
     const path = this.resolveTargetPath(options?.targetPath);
-    const workspace = await this.workspaceGuard.validate(path).catch(() => undefined);
+    const workspace = await this.resolveWorkspaceForInspection(path).catch(() => undefined);
     const folderName = basename(path);
 
     const project =

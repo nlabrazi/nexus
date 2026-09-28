@@ -22,7 +22,7 @@ import { AgentBackendType } from './telegram/status';
 import { registerSpeechTestCommand } from './speech/commands';
 import { createConfiguredSpeechService } from './speech/configuration';
 import { synthesizeAcknowledgement } from './speech/acknowledgement';
-import { NexusRuntime } from './runtime';
+import { NexusRuntime, getDefaultCodeDirectory } from './runtime';
 
 let nexusRuntime: NexusRuntime | undefined;
 let telegramService: TelegramService | undefined;
@@ -404,14 +404,17 @@ function startTelegramService(context: vscode.ExtensionContext, token: string): 
 
   const service: TelegramService = new TelegramService(context, client, {
     onBrainPrompt: async (message, signal) => {
-      const folders = vscode.workspace.workspaceFolders ?? [];
-      const folder = folders.length === 1 ? folders[0] : undefined;
+      const codeDir = getDefaultCodeDirectory();
+      const targetPath = codeDir;
       const conversationId = JSON.stringify([
         context.globalState.get<number>('nexus.telegram.allowedUserId'),
         context.globalState.get<number>('nexus.telegram.allowedChatId'),
-        folder?.uri.toString(),
+        targetPath,
       ]);
-      return nexusRuntime!.executeBrain(message, signal, { conversationId });
+      return nexusRuntime!.executeBrain(message, signal, {
+        conversationId,
+        targetPath,
+      });
     },
     onRemotePrompt: handleRemoteCodexPrompt,
     synthesizeAcknowledgement: async (signal) => {

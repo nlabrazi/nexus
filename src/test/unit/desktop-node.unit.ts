@@ -325,6 +325,25 @@ suite('Desktop Node configuration and lifecycle', () => {
     assert.equal(clearCode, 0);
   });
 
+  test('DesktopNode switches to an external folder dynamically and creates its guard', async () => {
+    const config = resolveDesktopConfig({
+      project: testDir,
+      name: 'Base Project',
+    });
+    const node = new DesktopNode(config);
+    await node.start();
+
+    const externalDir = join(tmpdir(), 'nexus-desktop-external-switch-test');
+    mkdirSync(externalDir, { recursive: true });
+
+    const switched = node.setActiveProject(externalDir);
+    assert.equal(switched.path, externalDir);
+    assert.equal(node.getActiveProject().path, externalDir);
+
+    await node.stop();
+    rmSync(externalDir, { recursive: true, force: true });
+  });
+
   test('CLI entrypoint reports error with invalid arguments', async () => {
     const badCode = await runCli(['--invalid-flag-1234']);
     assert.equal(badCode, 1);
