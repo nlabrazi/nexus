@@ -66,7 +66,7 @@ suite('Nexus Core remote task routing, results, and cancellation', () => {
 
       const fakeConn = {
         isOpen: () => true,
-        send: () => { },
+        send: () => {},
       } as unknown as WebSocketServerConnection;
       const router = new TaskRouter(presence, () => fakeConn);
 
@@ -89,7 +89,7 @@ suite('Nexus Core remote task routing, results, and cancellation', () => {
 
       const fakeConn = {
         isOpen: () => true,
-        send: () => { },
+        send: () => {},
       } as unknown as WebSocketServerConnection;
       const router = new TaskRouter(presence, () => fakeConn);
 
@@ -145,7 +145,7 @@ suite('Nexus Core remote task routing, results, and cancellation', () => {
 
       const fakeConn = {
         isOpen: () => true,
-        send: () => { },
+        send: () => {},
       } as unknown as WebSocketServerConnection;
       const router = new TaskRouter(presence, () => fakeConn);
 
@@ -230,7 +230,7 @@ suite('Nexus Core remote task routing, results, and cancellation', () => {
 
       const fakeConn = {
         isOpen: () => true,
-        send: () => { },
+        send: () => {},
       } as unknown as WebSocketServerConnection;
       const router = new TaskRouter(presence, () => fakeConn);
 
@@ -257,7 +257,7 @@ suite('Nexus Core remote task routing, results, and cancellation', () => {
 
       const fakeConn = {
         isOpen: () => true,
-        send: () => { },
+        send: () => {},
       } as unknown as WebSocketServerConnection;
       const router = new TaskRouter(presence, () => fakeConn);
 
@@ -459,7 +459,7 @@ suite('Nexus Core remote task routing, results, and cancellation', () => {
 
       const mockBrainModel: BrainModel = {
         decide: async () => {
-          return new Promise(() => { }); // never resolves
+          return new Promise(() => {}); // never resolves
         },
       };
 

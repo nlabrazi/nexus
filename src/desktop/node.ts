@@ -171,7 +171,9 @@ export class DesktopNode {
             }
 
             for (const root of scanRoots) {
-              if (!existsSync(root) || !statSync(root).isDirectory()) { continue; }
+              if (!existsSync(root) || !statSync(root).isDirectory()) {
+                continue;
+              }
               const entries = readdirSync(root, { withFileTypes: true });
               for (const entry of entries) {
                 if (
@@ -199,7 +201,7 @@ export class DesktopNode {
                 }
               }
             }
-          } catch { }
+          } catch {}
           return list;
         },
         switchProject: (idOrPath) => {
@@ -512,10 +514,10 @@ export class DesktopNode {
       runtimeStatus,
       coreConnection: this.coreClient
         ? {
-          status: this.coreClient.getStatus(),
-          url: this.coreClient.getWsUrl(),
-          sessionId: this.coreClient.getSessionId(),
-        }
+            status: this.coreClient.getStatus(),
+            url: this.coreClient.getWsUrl(),
+            sessionId: this.coreClient.getSessionId(),
+          }
         : undefined,
     };
   }
@@ -589,9 +591,9 @@ export class DesktopNode {
           })),
           selected: menu.selected
             ? {
-              model: menu.selected.model,
-              effort: menu.selected.effort,
-            }
+                model: menu.selected.model,
+                effort: menu.selected.effort,
+              }
             : undefined,
           context: menu.context,
           requestId: payload.requestId ?? messageId,
@@ -639,9 +641,9 @@ export class DesktopNode {
           })),
           selected: menu.selected
             ? {
-              model: menu.selected.model,
-              effort: menu.selected.effort,
-            }
+                model: menu.selected.model,
+                effort: menu.selected.effort,
+              }
             : undefined,
           context: menu.context,
           requestId: payload.requestId ?? messageId,

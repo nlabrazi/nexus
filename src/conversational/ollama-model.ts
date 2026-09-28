@@ -9,7 +9,7 @@ export interface OllamaBrainModelOptions {
 }
 
 const DEFAULT_OLLAMA_HOST = 'http://127.0.0.1:11434';
-const DEFAULT_MODEL = 'llama3.2:3b';
+const DEFAULT_MODEL = 'qwen3.6:27b-mtp-q4_K_M';
 const DEFAULT_TIMEOUT_MS = 60_000;
 
 export const BRAIN_INSTRUCTIONS = [

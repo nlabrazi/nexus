@@ -334,10 +334,10 @@ export class NexusRuntime {
     const currentModel =
       typeof (this.brainModel as unknown as { getModel?: () => string }).getModel === 'function'
         ? (this.brainModel as unknown as { getModel: () => string }).getModel()
-        : 'llama3.2:3b';
+        : 'qwen3.6:27b-mtp-q4_K_M';
 
     if (availableModels.length === 0) {
-      availableModels = [currentModel, 'llama3.2:3b', 'qwen3.6:27b', 'gemini-2.5-flash'];
+      availableModels = [currentModel, 'qwen3.6:27b-mtp-q4_K_M', 'gemini-2.5-flash'];
     } else if (!availableModels.includes(currentModel)) {
       availableModels.unshift(currentModel);
     }

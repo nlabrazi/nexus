@@ -139,7 +139,7 @@ Nexus is not intended to replace VS Code, Git, Codex, or Antigravity. It acts as
 
 - 🧠 **Nexus Brain (Ollama & Free Fallback)**
   - Dedicated conversational intelligence for brainstorming, architectural discussions, and technical exchanges.
-  - Runs on local Ollama models (`llama3.2:3b`, etc.) by default, with free online Gemini API fallback.
+  - Runs on local Ollama models (`qwen3.6:27b-mtp-q4_K_M`, etc.) by default, with free online Gemini API fallback.
   - Zero token consumption from paid Codex / Antigravity subscriptions during brainstorm and planning phases.
   - Unrestricted directory exploration starting by default in `/code` or `~/code`.
 

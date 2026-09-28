@@ -274,7 +274,9 @@ export class NexusCore extends EventEmitter {
             p.name.toLowerCase() === projectId.toLowerCase() ||
             p.path === projectId
         );
-        if (found) { return found; }
+        if (found) {
+          return found;
+        }
       }
       return undefined;
     }
