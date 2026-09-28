@@ -70,12 +70,24 @@ const levels: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 
 
 export class Logger {
   private lastError?: LogRecord;
+  private readonly extraSinks = new Set<LogSink>();
   constructor(
     private readonly sink: LogSink = (record) => {
       process.stderr.write(`${JSON.stringify(record)}\n`);
     },
-    private readonly level: LogLevel = 'info'
+    private level: LogLevel = 'info'
   ) {}
+
+  setLevel(level: LogLevel): void {
+    this.level = level;
+  }
+
+  addSink(sink: LogSink): () => void {
+    this.extraSinks.add(sink);
+    return () => {
+      this.extraSinks.delete(sink);
+    };
+  }
 
   debug(component: string, operation: string, fields: LogFields = {}): void {
     this.write('debug', component, operation, fields);
@@ -126,10 +138,12 @@ export class Logger {
       error: error === undefined ? undefined : describeError(error),
     };
     if (level === 'error' || record.error) this.lastError = structuredClone(record);
-    try {
-      this.sink(record);
-    } catch {
-      // Diagnostics must never prevent a task or its text fallback from completing.
+    for (const sink of [this.sink, ...this.extraSinks]) {
+      try {
+        sink(record);
+      } catch {
+        // A broken destination must not prevent other destinations or tasks from completing.
+      }
     }
   }
 }

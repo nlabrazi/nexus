@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { createInterface } from 'node:readline';
+import { initializeLogging } from '../logging/persistence';
+import { registerLogSecret } from '../logging/logger';
 import { parseArgs } from 'node:util';
 import { ApprovalDecision } from '../codex/types';
 import { RuntimeApprovalRequest } from '../runtime/types';
@@ -143,6 +145,7 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
   }
 
   const { values, positionals } = parsed;
+  if (values.token) registerLogSecret(values.token);
 
   if (values.help) {
     console.log(HELP_TEXT.trim());
@@ -153,6 +156,8 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
     console.log(`nexus-desktop v${VERSION}`);
     return 0;
   }
+
+  initializeLogging('desktop');
 
   const command = positionals[0] && !positionals[0].startsWith('-') ? positionals[0] : 'start';
 

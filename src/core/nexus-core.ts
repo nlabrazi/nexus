@@ -1,3 +1,4 @@
+import { logger, registerLogSecret } from '../logging/logger';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { createReadStream, existsSync, statSync } from 'node:fs';
@@ -79,6 +80,8 @@ export class NexusCore extends EventEmitter {
 
   constructor(private readonly config: CoreConfig) {
     super();
+    for (const token of config.authTokens ?? []) registerLogSecret(token);
+    logger.info('Core', 'initialize', { status: 'started' });
     this.startTime = Date.now();
     this.presence = new NodePresenceManager({
       authTokens: config.authTokens,

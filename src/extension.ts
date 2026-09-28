@@ -1,3 +1,5 @@
+import { initializeLogging } from './logging/persistence';
+import { logger } from './logging/logger';
 import * as vscode from 'vscode';
 
 import { TelegramClient } from './telegram/client';
@@ -44,6 +46,16 @@ const workspaceGuard = new WorkspaceGuard(() => ({
 }));
 
 export async function activate(context: vscode.ExtensionContext) {
+  const stopLogging = initializeLogging('extension', context.logUri.fsPath);
+  const output = vscode.window.createOutputChannel('Nexus Logs');
+  const removeLogOutput = logger.addSink((record) => output.appendLine(JSON.stringify(record)));
+  context.subscriptions.push(output, {
+    dispose: () => {
+      removeLogOutput();
+      stopLogging();
+    },
+  });
+  logger.info('Extension', 'activate', { status: 'success' });
   const agyConfig = vscode.workspace.getConfiguration('nexus.antigravity');
 
   nexusRuntime = new NexusRuntime({
