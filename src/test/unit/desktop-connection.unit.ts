@@ -297,6 +297,77 @@ suite('Desktop Node connection to Nexus Core over authenticated WebSocket', () =
     await desktop.stop();
   });
 
+  test('Core can query and select models on connected DesktopNode', async () => {
+    const core = new NexusCore({
+      port: 0,
+      host: '127.0.0.1',
+      authTokens: [validToken],
+    });
+    await core.start();
+    const server = core.getServer();
+    const address = server?.address();
+    assert.ok(address && typeof address === 'object');
+    const port = address.port;
+    const coreUrl = `http://127.0.0.1:${port}`;
+
+    let currentModel = 'llama3.2:3b';
+    const mockBrain = {
+      getModel: () => currentModel,
+      setModel: (m: string) => {
+        currentModel = m;
+      },
+      decide: async () => ({ action: 'reply' as const, text: 'ok' }),
+    };
+
+    const desktop = new DesktopNode(
+      {
+        nodeId: 'desktop-model-node',
+        nodeName: 'desktop-model-station',
+        authToken: validToken,
+        projects: [{ id: 'p1', name: 'P1', path: testDir }],
+        defaultBackend: 'brain',
+      },
+      { brainModel: mockBrain }
+    );
+
+    await desktop.start();
+    const client = await desktop.connectToCore(coreUrl, validToken);
+    await client.waitForConnection(3000);
+
+    // List models via Core HTTP endpoint
+    const res = await fetch(`${coreUrl}/api/models?backend=brain`, {
+      headers: { Authorization: `Bearer ${validToken}` },
+    });
+    assert.equal(res.status, 200);
+    const modelsData = (await res.json()) as {
+      backend: string;
+      models: unknown[];
+      selected?: { model: string };
+    };
+    assert.equal(modelsData.backend, 'brain');
+    assert.ok(modelsData.models.length > 0);
+    assert.equal(modelsData.selected?.model, 'llama3.2:3b');
+
+    // Select model via Core HTTP endpoint
+    const selectRes = await fetch(`${coreUrl}/api/models/select`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${validToken}`,
+      },
+      body: JSON.stringify({
+        backend: 'brain',
+        selection: { model: 'qwen3.6:27b' },
+      }),
+    });
+    assert.equal(selectRes.status, 200);
+    assert.equal(currentModel, 'qwen3.6:27b');
+
+    desktop.disconnectFromCore();
+    await desktop.stop();
+    await core.stop();
+  });
+
   test('afterAll cleanup test dir', () => {
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true, force: true });
