@@ -45,3 +45,14 @@ export function splitSpeechText(text, limit = 240) {
   }
   return chunks;
 }
+
+/** Native engines support longer passages; preserve their intonation across sentences. */
+export function splitNativeSpeechText(text, limit = 1200) {
+  const chunks = [];
+  for (const sentence of splitSpeechText(text, limit)) {
+    const last = chunks.length - 1;
+    if (last >= 0 && chunks[last].length + 1 + sentence.length <= limit) chunks[last] += ` ${sentence}`;
+    else chunks.push(sentence);
+  }
+  return chunks;
+}

@@ -1,3 +1,4 @@
+import { chooseSpeechVoice } from './speech-voice.mjs';
 import { splitSpeechText } from './speech-text.mjs';
 
 /** Browser speech lifecycle, independent of Vue and easy to exercise without an audio device. */
@@ -45,9 +46,7 @@ export function createSpeechPlayback(engine, createUtterance, callbacks, timers 
         utterance.lang = 'fr-FR';
         utterance.rate = Number.isFinite(options.rate) && options.rate >= 0.8 && options.rate <= 1.3 ? options.rate : 1;
         const voices = engine.getVoices();
-        const voice = voices.find((voice) => voice.voiceURI === options.voiceURI)
-          ?? voices.find((voice) => voice.lang.toLowerCase().startsWith('fr') && voice.localService)
-          ?? voices.find((voice) => voice.lang.toLowerCase().startsWith('fr'));
+        const voice = voices[chooseSpeechVoice(voices, options.voiceURI)];
         if (voice) { utterance.voice = voice; utterance.lang = voice.lang; }
         const isCurrent = () => current === generation && activeUtterance === utterance;
         utterance.onstart = () => {

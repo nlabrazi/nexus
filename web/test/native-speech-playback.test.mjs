@@ -20,14 +20,14 @@ function setup() {
 
 test('Android plays the final answer in sequential chunks using the native voice index and speed', async () => {
   const f = setup();
-  const done = f.player.speak('Une réponse assez longue. '.repeat(25), 'answer', { rate: 1.2 });
+  const done = f.player.speak('Une réponse assez longue. '.repeat(125), 'answer', { rate: 1.2 });
   await tick();
   let i = 0;
   while (i < f.pending.length) {
     assert.equal(f.spoken[i].voice, 1);
     assert.equal(f.spoken[i].lang, 'fr-FR');
     assert.equal(f.spoken[i].rate, 1.2);
-    assert.ok(f.spoken[i].text.length <= 240);
+    assert.ok(f.spoken[i].text.length <= 1200);
     f.pending[i++].resolve(); await tick();
   }
   await done;
@@ -95,4 +95,16 @@ test('dictated requests receive audio with auto-read disabled, respecting mute a
   assert.equal(shouldSpeakReply({ enabled: true, autoSpeak: true, fromVoice: false }), true);
   assert.equal(shouldSpeakReply({ enabled: false, autoSpeak: true, fromVoice: true }), false);
   assert.equal(shouldSpeakReply({ enabled: true, autoSpeak: true, fromVoice: true, error: true }), false);
+});
+
+test('automatic online France voice falls back to local France when the network voice fails', async () => {
+  const f = setup();
+  f.voices.unshift({ voiceURI: 'fr-online', lang: 'fr-FR', localService: false });
+  const done = f.player.speak('Bonjour. Comment allez-vous ?', 'answer'); await tick();
+  assert.equal(f.spoken[0].voice, 0);
+  f.pending[0].reject(new Error('offline')); await tick();
+  assert.equal(f.spoken[1].voice, 2);
+  assert.equal(f.spoken[1].lang, 'fr-FR');
+  f.pending[1].resolve(); await done;
+  assert.equal(f.errors.length, 0);
 });
