@@ -1,736 +1,585 @@
 <template>
   <div class="nexus-app">
-    <!-- Top Header -->
-    <header class="nexus-header">
-      <div class="brand">
-        <div class="brand-logo">
-          <span class="logo-nx">NX</span>
-          <span class="logo-dot" :class="connectionStatus"></span>
-        </div>
-        <div class="brand-text">
-          <div class="title-row">
-            <h1 class="brand-title">NEXUS</h1>
-            <span class="version-tag">v0.4.2</span>
-          </div>
-          <div v-if="projectsList.length > 0" class="header-project-pill">
-            <select :value="activeProjectId" class="select-project-pill" :disabled="isSwitchingProject" @change="handleSelectProject($event)">
-              <option v-for="p in projectsList" :key="p.id || p.path" :value="p.id">📁 {{ p.name }}</option>
-            </select>
-          </div>
-          <span v-else class="brand-sub">
-            {{ activeTab === 'chat' ? 'Brain Console' : (activeTab === 'activity' ? 'Live Activity' : 'Node Bridge') }}
+    <!-- Streamlined HUD Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <a class="wordmark" href="#" aria-label="Nexus, discussion" @click.prevent="activeTab = 'chat'">
+          <span class="brand-mark">
+            <NexusIcon name="nexus" />
           </span>
-        </div>
+          <span>nexus<span class="brand-period">.</span></span>
+        </a>
       </div>
 
-      <!-- Header actions -->
-      <div class="header-actions">
-        <!-- Segmented Agent selector -->
-        <div class="header-agent-segmented" title="Agent actif">
-          <button type="button" class="btn-seg" :class="{ active: selectedBackend === 'brain' }" @click="selectedBackend = 'brain'">Brain</button>
-          <button type="button" class="btn-seg" :class="{ active: selectedBackend === 'codex' }" @click="selectedBackend = 'codex'">Codex</button>
-          <button type="button" class="btn-seg" :class="{ active: selectedBackend === 'antigravity' }" @click="selectedBackend = 'antigravity'">AntiG</button>
-        </div>
+      <div class="header-center">
+        <button type="button" class="project-pill" aria-label="Changer de projet" @click="showProjectMenu = true">
+          <NexusIcon name="folder" />
+          <span class="project-pill-name">{{ activeProjectName || "Projet..." }}</span>
+          <NexusIcon name="down" />
+        </button>
+      </div>
 
-        <!-- Approvals alert badge in header -->
-        <button v-if="pendingApprovalsCount > 0" type="button" class="btn-approval-alert"
-          title="Demande(s) d'approbation en attente" aria-label="Approbations en attente"
-          @click="showApprovalModal = true">
-          <span class="alert-icon">🛡️</span>
-          <span class="alert-count">{{ pendingApprovalsCount }}</span>
+      <div class="header-right">
+        <button class="status-beacon" type="button" :class="connectionStatus === 'connected' && isNodeReady
+            ? 'online'
+            : connectionStatus
+          " :aria-label="connectionStatusText" @click="showSettings = true">
+          <span class="beacon-dot" />
+          <span class="beacon-label">{{
+            connectionStatus === "connecting"
+              ? "SYNC"
+              : isNodeReady
+                ? "ON"
+                : "OFF"
+          }}</span>
         </button>
-
-        <button v-if="activeTab === 'chat' && messages.length > 0" type="button" class="btn-icon"
-          title="Effacer la conversation" aria-label="Effacer la conversation" @click="clearChat">
-          🗑️
-        </button>
-        <button type="button" class="btn-icon" :class="{ spinning: isRefreshing }" title="Rafraîchir"
-          aria-label="Rafraîchir les informations" @click="handleManualRefresh">
-          🔄
-        </button>
-        <button type="button" class="btn-icon" :class="{ active: showSettings }" title="Paramètres de connexion"
-          aria-label="Paramètres de connexion" @click="showSettings = !showSettings">
-          ⚙️
+        <button type="button" class="header-menu-btn" aria-label="Menu des options"
+          @click="showQuickMenu = !showQuickMenu">
+          <NexusIcon name="dots" />
         </button>
       </div>
     </header>
 
-    <!-- Navigation Tabs -->
-    <nav class="tab-nav">
-      <button type="button" class="tab-btn" :class="{ active: activeTab === 'chat' }" @click="activeTab = 'chat'">
-        <span class="tab-icon">💬</span>
-        <span class="tab-label">Brain Chat</span>
-        <span v-if="isSending" class="tab-badge-pulse"></span>
-      </button>
-      <button type="button" class="tab-btn" :class="{ active: activeTab === 'activity' }"
-        @click="activeTab = 'activity'">
-        <span class="tab-icon">⚡</span>
-        <span class="tab-label">Activité</span>
-        <span v-if="pendingApprovalsCount > 0" class="tab-badge-approval">{{ pendingApprovalsCount }}</span>
-        <span v-else-if="runningTasksCount > 0" class="tab-badge-count">{{ runningTasksCount }}</span>
-      </button>
-      <button type="button" class="tab-btn" :class="{ active: activeTab === 'dashboard' }"
-        @click="activeTab = 'dashboard'">
-        <span class="tab-icon">📊</span>
-        <span class="tab-label">Nœud & Projets</span>
-        <span class="tab-status-dot" :class="onlineNodes.length > 0 ? 'online' : 'offline'"></span>
-      </button>
-    </nav>
+    <!-- Quick Overflow Menu Dropdown -->
+    <div v-if="showQuickMenu" class="menu-backdrop" @click="showQuickMenu = false" />
+    <div v-if="showQuickMenu" class="quick-menu" role="menu">
+      <div class="menu-section">
+        <span class="menu-section-title">AGENT IA</span>
+        <div class="agent-segment">
+          <button v-for="b in (['brain', 'codex', 'antigravity'] as const)" :key="b" type="button"
+            class="agent-pill-btn" :class="{ active: selectedBackend === b }"
+            @click="selectedBackend = b; showQuickMenu = false">
+            {{ selectedBackendShortLabel(b) }}
+          </button>
+        </div>
+      </div>
 
-    <!-- Settings Modal / Drawer -->
-    <section v-if="showSettings" class="settings-card">
-      <div class="settings-header">
-        <h2>Configuration de connexion</h2>
-        <button type="button" class="btn-close" @click="showSettings = false">✕</button>
-      </div>
-      <div class="form-group">
-        <label for="core-url">URL Nexus Core :</label>
-        <input id="core-url" v-model="coreUrlInput" type="text" placeholder="http://127.0.0.1:4040"
-          class="input-field" />
-        <small class="helper-text">
-          L'URL HTTP de votre serveur Nexus Core (ex: IP locale sur Wi-Fi).
-        </small>
-      </div>
-      <div class="form-group">
-        <label for="core-token">Jeton d'authentification (optionnel) :</label>
-        <input id="core-token" v-model="authTokenInput" type="password" placeholder="NEXUS_CORE_AUTH_TOKENS"
-          class="input-field" />
-      </div>
-      <div class="form-group checkbox-group">
-        <label class="checkbox-label">
-          <input type="checkbox" v-model="autoSendVoice" class="checkbox-input" />
-          <span>Envoyer automatiquement après la dictée vocale</span>
-        </label>
-      </div>
-      <div v-if="isNativeApp" class="form-group native-platform-badge">
-        <span class="platform-chip">📱 Application Android Native (Capacitor)</span>
-        <small class="helper-text helper-warn">
-          Sur mobile, renseignez l'adresse IP Wi-Fi de votre PC (ex: <code>http://192.168.1.50:4040</code>) au lieu de
-          <code>127.0.0.1</code>.
-        </small>
-      </div>
-      <div class="settings-actions">
-        <button type="button" class="btn-primary" @click="saveSettings">
-          Enregistrer & Reconnecter
-        </button>
-        <button type="button" class="btn-secondary" @click="resetSettings">
-          Réinitialiser par défaut
-        </button>
-      </div>
-    </section>
+      <div class="menu-divider" />
 
-    <!-- Error Banner (if disconnected) -->
-    <div v-if="errorMessage && !showSettings" class="error-banner">
-      <span>⚠️ {{ errorMessage }}</span>
-      <button type="button" class="btn-retry" @click="handleManualRefresh">Réessayer</button>
+      <button type="button" class="menu-item" @click="showQuickMenu = false; showStartersModal = true">
+        <NexusIcon name="sparkles" />
+        <span>Suggestions de prompts</span>
+      </button>
+
+      <button type="button" class="menu-item" @click="showQuickMenu = false; showProjectMenu = true">
+        <NexusIcon name="folder" />
+        <span>Changer de projet</span>
+      </button>
+
+      <button v-if="messages.length" type="button" class="menu-item danger" @click="showQuickMenu = false; clearChat()">
+        <NexusIcon name="trash" />
+        <span>Effacer la discussion</span>
+      </button>
+
+      <div class="menu-divider" />
+
+      <button type="button" class="menu-item" @click="showQuickMenu = false; showSettings = true">
+        <NexusIcon name="settings" />
+        <span>Connexion & paramètres</span>
+      </button>
     </div>
 
-    <!-- TAB 1: BRAIN CHAT -->
-    <main v-if="activeTab === 'chat'" class="chat-container">
-
-      <!-- Floating Approval Alert Banner in Chat -->
-      <div v-if="pendingApprovalsCount > 0 && activeApproval" class="approval-chat-banner"
-        @click="showApprovalModal = true">
-        <div class="approval-banner-icon">🛡️</div>
-        <div class="approval-banner-content">
-          <div class="banner-title-line">
-            <strong>Action sensible requise</strong>
-            <span class="badge-urgent-pill">{{ getApprovalRemainingSeconds(activeApproval.expiresAt) }}s</span>
+    <!-- MAIN CHAT VIEW (Purified, only strict necessary) -->
+    <main v-if="activeTab === 'chat'" class="chat-view" aria-label="Discussion">
+      <div ref="messagesScrollRef" class="messages-stream" role="log" aria-label="Messages" aria-live="polite"
+        aria-relevant="additions text">
+        <!-- Minimalist Jarvis Holographic Standby Screen -->
+        <div v-if="!messages.length" class="welcome-hud">
+          <div class="arc-reactor" aria-hidden="true">
+            <div class="core-ring outer" />
+            <div class="core-ring middle" />
+            <div class="core-glyph">
+              <NexusIcon name="nexus" />
+            </div>
           </div>
-          <p>{{ activeApproval.agentName }} attend votre autorisation pour : {{ formatApprovalKind(activeApproval.kind) }}</p>
-        </div>
-        <button type="button" class="btn-approval-banner-action">
-          Examiner ›
-        </button>
-      </div>
 
-      <!-- Messages Stream -->
-      <div ref="messagesScrollRef" class="messages-stream">
-        <!-- Empty State with suggestions -->
-        <div v-if="messages.length === 0" class="chat-welcome">
-          <div class="welcome-icon">🧠</div>
-          <h3>Nexus Brain</h3>
-          <p>
-            Posez vos questions ou décrivez une tâche. Le Brain analyse l'état de votre projet
-            directement sur votre poste <strong>{{ primaryNode?.nodeName || 'Desktop' }}</strong>.
-          </p>
+          <div class="hud-status-block">
+            <p class="hud-code">// NEXUS PROTOCOL v0.4</p>
+            <h1 class="hud-title">
+              {{
+                isNodeReady
+                  ? "SYSTÈME EN LIGNE"
+                  : connectionStatus === "connecting"
+                    ? "CONNEXION EN COURS…"
+                    : "POSTE HORS LIGNE"
+              }}
+            </h1>
+            <div class="hud-telemetry">
+              <span class="hud-pill" :class="{ ready: isNodeReady }">
+                <span class="beacon-dot" />
+                {{ isNodeReady ? "CORE ACTIF" : "EN ATTENTE" }}
+              </span>
+              <span v-if="activeProjectName" class="hud-pill project">
+                <NexusIcon name="folder" /> {{ activeProjectName }}
+              </span>
+            </div>
+          </div>
 
-          <div class="suggestions-grid">
-            <button v-for="chip in quickChips" :key="chip" type="button" class="chip-btn"
-              :disabled="isSending" @click="sendPrompt(chip)">
-              {{ chip }}
+          <button v-if="!isNodeReady && connectionStatus !== 'connecting'" type="button"
+            class="button primary hud-connect-btn" @click="
+              connectionStatus === 'error' || !coreUrl
+                ? (showSettings = true)
+                : (activeTab = 'dashboard')
+              ">
+            <NexusIcon name="settings" />
+            <span>Connecter mon poste</span>
+          </button>
+
+          <div v-else class="hud-actions-minimal">
+            <button type="button" class="hud-chip-button" @click="showStartersModal = true">
+              <NexusIcon name="sparkles" />
+              <span>✦ Suggestions de prompt</span>
             </button>
           </div>
         </div>
 
-        <!-- Message Bubbles -->
-        <div v-for="msg in messages" :key="msg.id" class="message-wrapper" :class="msg.role">
-          <div class="message-bubble" :class="{ 'is-error': msg.error }">
-            <div class="message-meta">
-              <span class="sender-name">
-                {{ msg.role === 'user' ? 'Vous' : selectedBackendLabel(msg.backend) }}
-              </span>
-              <span class="message-time">{{ formatTime(msg.timestamp) }}</span>
-            </div>
-
-            <!-- Message Body formatted -->
-            <div class="message-content" v-html="renderMarkdown(msg.text)"></div>
-
-            <!-- Optional file summary -->
-            <div v-if="msg.fileSummary" class="file-summary-box">
-              <span class="summary-icon">📝</span>
-              <span>{{ msg.fileSummary }}</span>
-            </div>
+        <!-- Chat Messages -->
+        <article v-for="msg in messages" :key="msg.id" class="message" :class="[msg.role, { 'is-error': msg.error }]">
+          <div class="message-meta">
+            <span>{{
+              msg.role === "user" ? "Vous" : selectedBackendLabel(msg.backend)
+              }}</span><time>{{ formatTime(msg.timestamp) }}</time>
           </div>
-        </div>
+          <div class="message-content" v-html="renderMarkdown(msg.text)" />
+          <p v-if="msg.fileSummary" class="file-summary">
+            <NexusIcon name="folder" />{{ msg.fileSummary }}
+          </p>
+        </article>
 
-        <!-- Typing / Progress Indicator -->
-        <div v-if="isSending" class="message-wrapper assistant">
-          <div class="message-bubble typing-bubble">
-            <div class="typing-top-row">
-              <div class="typing-indicator">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-              <button v-if="currentInFlightTaskId" type="button" class="btn-cancel-in-flight"
-                title="Arrêter la tâche en cours" @click="cancelTask(currentInFlightTaskId)">
-                ⏹ Arrêter
-              </button>
-            </div>
-            <span class="typing-text">
-              {{ currentProgressMessage || 'Brain réfléchit et analyse le code...' }}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Subtle Offline Status Banner -->
-      <div v-if="!isNodeReady" class="node-offline-pill">
-        <div class="offline-label">
-          <span class="offline-dot"></span>
-          <span>Desktop Node déconnecté</span>
-        </div>
-        <button type="button" class="btn-retry-pill" @click="handleManualRefresh">Reconnecter</button>
-      </div>
-
-      <!-- Voice Recording Wave Banner -->
-      <div v-if="isListening || isProcessingAudio" class="voice-recording-banner">
-        <div class="voice-wave">
-          <span class="wave-bar"></span>
-          <span class="wave-bar"></span>
-          <span class="wave-bar"></span>
-          <span class="wave-bar"></span>
-          <span class="wave-bar"></span>
-        </div>
-        <div class="voice-status-text">
-          <span class="voice-caption">
-            {{ interimTranscript ? interimTranscript : (isProcessingAudio ? 'Traitement audio en cours...' : 'Écoute en cours... Parlez maintenant') }}
-          </span>
-          <small class="voice-hint">
-            Toucher le micro pour terminer
-          </small>
-        </div>
-        <button type="button" class="btn-cancel-voice" title="Annuler la dictée" @click="cancelVoiceRecording">
-          Annuler ✕
-        </button>
-      </div>
-
-      <!-- Horizontal Quick Action Chips (Thumb Friendly) -->
-      <div class="chat-quick-chips">
-        <button v-for="chip in quickChips" :key="chip" type="button" class="chip-item"
-          :disabled="isSending" @click="sendPrompt(chip)">
-          {{ chip }}
-        </button>
-      </div>
-
-      <!-- Chat Input Area -->
-      <div class="chat-input-bar">
-        <textarea ref="chatTextareaRef" v-model="inputPrompt" rows="1"
-          placeholder="Message au Brain (ex: 'Quel est l’état du projet ?')..." class="chat-textarea"
-          :disabled="isSending" @keydown.enter.exact.prevent="submitMessage"></textarea>
-        <!-- Voice Input Mic Button -->
-        <button type="button" class="btn-mic" :class="{
-          'is-listening': isListening,
-          'is-processing': isProcessingAudio
-        }" :disabled="isSending"
-          :title="isListening ? 'Arrêter la dictée vocale' : 'Dictée vocale (toucher pour parler)'"
-          aria-label="Dictée vocale" @click="handleMicClick">
-          <span v-if="isProcessingAudio" class="spinning">⏳</span>
-          <span v-else-if="isListening" class="mic-active-pulse">🔴</span>
-          <span v-else class="mic-icon">🎙️</span>
-        </button>
-        <button type="button" class="btn-send" :disabled="!canSend" aria-label="Envoyer" @click="submitMessage">
-          <span v-if="!isSending">🚀</span>
-          <span v-else class="spinning">⏳</span>
-        </button>
-      </div>
-    </main>
-
-    <!-- TAB 2: ACTIVITY (Tasks tracking, cancellations & Approvals) -->
-    <main v-if="activeTab === 'activity'" class="nexus-main activity-view">
-      <!-- Top Title & Refresh -->
-      <div class="activity-top-bar">
-        <div class="activity-title-group">
-          <h2 class="section-title">Activité & Tâches</h2>
-          <span class="activity-badge" :class="runningTasksCount > 0 ? 'badge-running' : 'badge-idle'">
-            {{ runningTasksCount > 0 ? `${runningTasksCount} active(s)` : 'Aucune tâche active' }}
-          </span>
-        </div>
-        <button type="button" class="btn-icon btn-refresh-activity"
-          :class="{ spinning: isRefreshingTasks || isRefreshingApprovals }" title="Rafraîchir les activités"
-          aria-label="Rafraîchir les activités" @click="refreshActivity">
-          🔄
-        </button>
-      </div>
-
-      <!-- Approvals Section in Activity Tab (High Priority) -->
-      <section v-if="pendingApprovals.length > 0" class="activity-approvals-box">
-        <div class="activity-section-header">
-          <div class="section-header-left">
-            <span class="section-icon">🛡️</span>
-            <h3 class="section-title-sm">Demandes d'Approbation ({{ pendingApprovals.length }})</h3>
-          </div>
-          <span class="pulse-warning-dot"></span>
-        </div>
-
-        <div class="approvals-cards-list">
-          <div v-for="approval in pendingApprovals" :key="approval.approvalId" class="card approval-item-card"
-            :class="{ 'expiring-soon': getApprovalRemainingSeconds(approval.expiresAt) <= 15 }">
-            <div class="approval-item-header">
-              <div class="approval-agent-info">
-                <span class="approval-agent-tag">🤖 {{ approval.agentName }}</span>
-                <span class="approval-kind-pill" :class="approval.kind">
-                  {{ approvalKindIcon(approval.kind) }} {{ formatApprovalKind(approval.kind) }}
-                </span>
-              </div>
-              <div class="approval-timer-pill"
-                :class="{ urgent: getApprovalRemainingSeconds(approval.expiresAt) <= 15 }">
-                <span v-if="!isApprovalExpired(approval.expiresAt)">
-                  ⏱️ {{ getApprovalRemainingSeconds(approval.expiresAt) }}s
-                </span>
-                <span v-else class="text-expired">
-                  ⏱️ Expiré
-                </span>
-              </div>
-            </div>
-
-            <div class="approval-command-preview">
-              <pre><code>{{ approval.details }}</code></pre>
-            </div>
-
-            <div class="approval-item-actions">
-              <button type="button" class="btn-action-approve"
-                :disabled="isApprovalExpired(approval.expiresAt) || isDecidingApproval"
-                @click="decideApproval(approval.approvalId, 'accept')">
-                <span v-if="isDecidingApproval && approvalDecidingId === approval.approvalId" class="spinning">⏳</span>
-                <span v-else>✅ Autoriser</span>
-              </button>
-              <button type="button" class="btn-action-decline"
-                :disabled="isApprovalExpired(approval.expiresAt) || isDecidingApproval"
-                @click="decideApproval(approval.approvalId, 'decline')">
-                <span v-if="isDecidingApproval && approvalDecidingId === approval.approvalId" class="spinning">⏳</span>
-                <span v-else>❌ Refuser</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Task Status Filter Tabs -->
-      <div class="task-filter-bar">
-        <button v-for="filter in taskFilterTabs" :key="filter.key" type="button" class="filter-pill"
-          :class="{ active: activeTaskFilter === filter.key }" @click="activeTaskFilter = filter.key">
-          {{ filter.label }}
-          <span class="filter-count">({{ filter.count }})</span>
-        </button>
-      </div>
-
-      <!-- Live Running Task Highlight (if any) -->
-      <section v-if="activeRunningTask" class="active-task-hero">
-        <div class="hero-header">
-          <div class="hero-status">
-            <span class="pulse-dot"></span>
-            <span class="hero-badge">TÂCHE EN COURS</span>
-            <span class="backend-tag" :class="activeRunningTask.backend">{{ activeRunningTask.backend }}</span>
-          </div>
-          <button type="button" class="btn-stop-hero" @click="cancelTask(activeRunningTask.taskId)">
-            ⏹ Arrêter la tâche
+        <!-- In-flight Task Progress -->
+        <div v-if="isSending" class="task-progress" role="status">
+          <span class="busy-indicator" /><span>{{
+            currentProgressMessage || "En cours…"
+            }}</span>
+          <button v-if="currentInFlightTaskId" type="button" class="text-button danger"
+            @click="cancelTask(currentInFlightTaskId)">
+            <NexusIcon name="stop" />Arrêter
           </button>
         </div>
-        <p class="hero-prompt">"{{ activeRunningTask.prompt }}"</p>
-        <div class="hero-progress">
-          <span class="progress-spinner spinning">⏳</span>
-          <span class="progress-label">
-            {{ activeRunningTask.progressMessage || (activeRunningTask.stage ? `Étape : ${activeRunningTask.stage}` :
-            'Exécution en cours sur le Desktop Node...') }}
-          </span>
-        </div>
-        <div class="hero-footer">
-          <span class="hero-time">⏱️ Début : {{ formatTime(activeRunningTask.createdAt) }}</span>
-          <span class="hero-node">Nœud : {{ activeRunningTask.nodeId.slice(0, 8) }}...</span>
-        </div>
-      </section>
+      </div>
 
-      <!-- Task List Cards -->
-      <div class="tasks-scroll-list">
-        <div v-if="filteredTasks.length === 0" class="card-empty">
-          <span class="empty-icon">📋</span>
-          <p>Aucune tâche pour ce filtre.</p>
+      <!-- Floating HUD Composer Area -->
+      <div class="composer-area">
+        <!-- Floating Pending Approvals Notice -->
+        <button v-if="pendingApprovalsCount > 0" type="button" class="approval-hud-pill"
+          @click="showApprovalModal = true">
+          <NexusIcon name="shield" />
+          <span>{{
+            pendingApprovalsCount === 1
+              ? "Une action attend votre accord"
+              : `${pendingApprovalsCount} actions attendent votre accord`
+          }}</span>
+          <NexusIcon name="chevron" />
+        </button>
+
+        <div v-if="errorMessage && isNodeReady" class="inline-error" role="alert">
+          {{ errorMessage }}
         </div>
-        <div v-for="task in filteredTasks" :key="task.taskId" class="card task-item-card" :class="task.status">
-          <div class="task-item-header">
-            <div class="task-item-badges">
-              <span class="task-status-pill" :class="task.status">
-                <span v-if="task.status === 'running'" class="pulse-dot-small"></span>
-                {{ formatTaskStatus(task.status) }}
-              </span>
-              <span class="backend-tag" :class="task.backend">{{ task.backend }}</span>
-              <span v-if="task.projectId" class="project-tag">{{ task.projectId }}</span>
-            </div>
-            <div class="task-header-right">
-              <span class="task-date">{{ formatRelativeTime(task.createdAt) }}</span>
-              <button v-if="task.status === 'running' || task.status === 'pending'" type="button" class="btn-stop-item"
-                title="Arrêter cette tâche" @click="cancelTask(task.taskId)">
-                ⏹ Stop
+
+        <!-- Voice Recognition Interim Notice -->
+        <div v-if="isListening || isProcessingAudio" class="voice-hud-notice" role="status">
+          <span class="status-dot recording" /><span>{{
+            interimTranscript ||
+            (isProcessingAudio
+              ? "Transcription neuronale…"
+              : "Écoute en cours… Touchez pour terminer.")
+          }}</span>
+          <button type="button" class="icon-button" aria-label="Annuler la dictée" @click="cancelVoiceRecording">
+            <NexusIcon name="close" />
+          </button>
+        </div>
+
+        <form class="composer" @submit.prevent="submitMessage">
+          <label for="message" class="sr-only">Votre message</label>
+          <textarea id="message" ref="chatTextareaRef" v-model="inputPrompt" rows="1" :placeholder="isNodeReady
+              ? 'Donnez une instruction à Jarvis...'
+              : 'Poste hors ligne (brouillon actif)...'
+            " :disabled="isSending" @keydown="handleComposerKeydown" @input="resizeComposer" />
+          <div class="composer-tools">
+            <button type="button" class="agent-badge-btn" aria-label="Changer d'agent"
+              @click="showAgentPickerSheet = true">
+              <NexusIcon name="zap" class="agent-zap-icon" />
+              <span>{{ selectedBackendShortLabel(selectedBackend) }}</span>
+              <NexusIcon name="down" />
+            </button>
+
+            <div class="composer-actions">
+              <button type="button" class="icon-button mic-button" :class="{ recording: isListening }"
+                :disabled="isSending || isProcessingAudio" :aria-label="isListening ? 'Terminer la dictée' : 'Dicter un message'
+                  " :aria-pressed="isListening" @click="handleMicClick">
+                <NexusIcon :name="isListening ? 'stop' : 'mic'" />
+              </button>
+              <button type="submit" class="send-button" :disabled="!canSend" aria-label="Envoyer le message">
+                <NexusIcon name="arrow" />
               </button>
             </div>
           </div>
-
-          <p class="task-prompt-text">{{ task.prompt }}</p>
-
-          <!-- Result or Error preview -->
-          <div v-if="task.result?.text" class="task-result-box">
-            <span class="result-header">Résultat :</span>
-            <p class="result-preview">{{ task.result.text }}</p>
-            <div v-if="task.result.fileSummary" class="file-summary-badge">
-              📝 {{ task.result.fileSummary }}
-            </div>
-          </div>
-
-          <div v-if="task.error" class="task-error-box">
-            <span class="error-badge">Erreur ({{ task.error.code }})</span>
-            <p class="error-desc">{{ task.error.message }}</p>
-          </div>
-
-          <div class="task-item-footer">
-            <span class="task-id-tag">#{{ task.taskId.slice(0, 8) }}</span>
-            <span v-if="task.completedAt" class="task-duration">
-              Durée : {{ (((task.completedAt - (task.startedAt || task.createdAt)) / 1000)).toFixed(1) }}s
-            </span>
-          </div>
-        </div>
+        </form>
       </div>
     </main>
 
-    <!-- TAB 3: DASHBOARD (Nœud, Projets & Core Telemetry) -->
-    <main v-if="activeTab === 'dashboard'" class="nexus-main">
-      <!-- Status Banner -->
-      <section class="status-banner" :class="connectionStatus">
-        <div class="status-indicator">
-          <span class="status-pulse" :class="connectionStatus"></span>
-          <span class="status-text">
-            {{ connectionStatusText }}
-          </span>
+    <!-- ACTIVITY VIEW -->
+    <main v-if="activeTab === 'activity'" class="page-view" aria-labelledby="activity-title">
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">LE SUIVI</p>
+          <h1 id="activity-title">Activité<span class="accent">.</span></h1>
         </div>
-        <div class="status-meta">
-          <span v-if="lastUpdated">Mis à jour {{ lastUpdatedText }}</span>
-          <span v-if="coreStatus?.uptimeSeconds !== undefined" class="uptime-badge">
-            Uptime {{ formatUptime(coreStatus.uptimeSeconds) }}
-          </span>
-        </div>
-      </section>
-
-      <!-- Desktop Node Section -->
-      <section class="section-container">
-        <div class="section-title-row">
-          <h2 class="section-title">Nœud Desktop</h2>
-          <span class="badge" :class="onlineNodes.length > 0 ? 'badge-success' : 'badge-warning'">
-            {{ onlineNodes.length > 0 ? `${onlineNodes.length} en ligne` : 'Déconnecté' }}
-          </span>
-        </div>
-
-        <!-- Node Online Cards -->
-        <div v-if="onlineNodes.length > 0" class="nodes-list">
-          <div v-for="node in onlineNodes" :key="node.nodeId" class="card node-card">
-            <div class="node-header">
-              <div class="node-identity">
-                <span class="node-avatar">💻</span>
-                <div>
-                  <h3 class="node-name">{{ node.nodeName }}</h3>
-                  <span class="node-id">{{ node.nodeId.slice(0, 8) }}...</span>
-                </div>
-              </div>
-              <span class="node-state-pill" :class="node.state">
-                <span class="dot"></span>
-                {{ formatState(node.state) }}
-                <button v-if="node.state === 'busy' && node.activeTaskId" type="button" class="btn-stop-node"
-                  title="Arrêter la tâche en cours sur ce nœud" @click.stop="cancelTask(node.activeTaskId)">
-                  ⏹ Stop
-                </button>
-              </span>
-            </div>
-
-            <!-- Active Project for Node -->
-            <div v-if="node.activeProject" class="node-project-box">
-              <div class="project-headline">
-                <span class="project-tag">Projet Actif</span>
-                <span class="branch-pill">
-                  <span class="branch-icon">🌿</span>
-                  {{ node.activeProject.currentBranch || 'staging' }}
-                </span>
-              </div>
-              <h4 class="project-name">{{ node.activeProject.name }}</h4>
-              <p class="project-path">{{ node.activeProject.path }}</p>
-            </div>
-            <div v-else class="node-project-box no-project">
-              <p>Aucun projet actif sur ce nœud</p>
-            </div>
-
-            <!-- Node Details -->
-            <div class="node-meta-grid">
-              <div class="meta-item">
-                <span class="meta-label">Système</span>
-                <span class="meta-val">Linux / Desktop</span>
-              </div>
-              <div class="meta-item">
-                <span class="meta-label">Agents supportés</span>
-                <span class="meta-val">Codex, Antigravity, Brain</span>
-              </div>
-              <div class="meta-item">
-                <span class="meta-label">Dernière activité</span>
-                <span class="meta-val">{{ formatRelativeTime(node.lastHeartbeat) }}</span>
-              </div>
-            </div>
+        <button type="button" class="icon-button" :disabled="isRefreshingTasks || isRefreshingApprovals"
+          aria-label="Actualiser l’activité" @click="refreshActivity">
+          <NexusIcon name="refresh" />
+        </button>
+      </div>
+      <button v-if="pendingApprovalsCount" type="button" class="approval-hud-pill" @click="showApprovalModal = true">
+        <NexusIcon name="shield" /><span>{{ pendingApprovalsCount }} autorisation{{
+          pendingApprovalsCount > 1 ? "s" : ""
+        }}
+          en attente</span>
+        <NexusIcon name="chevron" />
+      </button>
+      <div v-if="tasks.length" class="filter-bar" role="group" aria-label="Filtrer les tâches">
+        <button v-for="filter in taskFilterTabs" :key="filter.key" type="button"
+          :aria-pressed="activeTaskFilter === filter.key" @click="activeTaskFilter = filter.key">
+          {{ filter.label }}<span v-if="filter.count">{{ filter.count }}</span>
+        </button>
+      </div>
+      <div v-if="!filteredTasks.length" class="empty-state">
+        <NexusIcon name="activity" />
+        <h2>
+          {{
+            tasks.length ? "Rien dans cette vue" : "Aucune tâche récente."
+          }}
+        </h2>
+        <p>
+          {{
+            tasks.length
+              ? "Essayez un autre filtre."
+              : "Vos tâches et leurs résultats s'afficheront ici."
+          }}
+        </p>
+        <button v-if="!tasks.length" type="button" class="button secondary" @click="activeTab = 'chat'">
+          Ouvrir la discussion
+          <NexusIcon name="chevron" />
+        </button>
+      </div>
+      <div class="task-list">
+        <article v-for="task in filteredTasks" :key="task.taskId" class="task-row">
+          <div class="task-line">
+            <span class="task-status" :class="task.status"><span class="status-dot" />{{
+              formatTaskStatus(task.status)
+            }}</span><time>{{ formatRelativeTime(task.createdAt) }}</time>
           </div>
-        </div>
-
-        <!-- Node Offline Card -->
-        <div v-else class="card node-card node-offline">
-          <div class="offline-hero">
-            <span class="offline-icon">🔌</span>
-            <h3>Aucun Desktop Node connecté</h3>
-            <p>
-              Pour lancer des tâches autonomes ou converser avec le Brain, démarrez votre nœud local
-              sur votre machine de travail :
+          <h2>{{ task.prompt }}</h2>
+          <div class="task-subline">
+            <span>{{ selectedBackendLabel(task.backend) }}</span><span v-if="task.projectId">{{
+              projectLabel(task.projectId)
+              }}</span><button v-if="task.status === 'running' || task.status === 'pending'" type="button"
+              class="text-button danger" @click="cancelTask(task.taskId)">
+              <NexusIcon name="stop" />Arrêter
+            </button>
+          </div>
+          <p v-if="task.status === 'running' && task.progressMessage" class="task-progress-label">
+            {{ task.progressMessage }}
+          </p>
+          <p v-if="task.error" class="inline-error" role="alert">
+            {{ task.error.message || "La tâche a échoué." }}
+          </p>
+          <details v-if="task.result?.text || task.result?.fileSummary" class="task-result">
+            <summary>Voir le résultat
+              <NexusIcon name="down" />
+            </summary>
+            <div v-if="task.result.text" class="message-content" v-html="renderMarkdown(task.result.text)" />
+            <p v-if="task.result.fileSummary" class="file-summary">
+              {{ task.result.fileSummary }}
             </p>
-            <div class="code-box">
-              <code>npm run desktop -- start</code>
-              <button type="button" class="btn-copy" @click="copyCommand('npm run desktop -- start')">
-                {{ copied ? 'Copié !' : 'Copier' }}
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Projects Section -->
-      <section class="section-container">
-        <div class="section-title-row">
-          <h2 class="section-title">Projets Détectés</h2>
-          <span class="badge badge-neutral">{{ projectsList.length }} projet(s)</span>
-        </div>
-
-        <div v-if="projectsList.length > 0" class="projects-list">
-          <div v-for="project in projectsList" :key="project.id || project.path" class="card project-card"
-            :class="{ active: isProjectActive(project) }">
-            <div class="project-header">
-              <div class="project-title-area">
-                <span class="folder-icon">📁</span>
-                <div>
-                  <h3 class="project-title">{{ project.name }}</h3>
-                  <p class="project-path-text">{{ project.path }}</p>
-                </div>
-              </div>
-              <span v-if="isProjectActive(project)" class="badge badge-active">Actif</span>
-              <button v-else type="button" class="btn-switch-project" :disabled="isSwitchingProject"
-                @click="switchProject(project.id || project.path)">
-                {{ switchingProjectId === (project.id || project.path) ? 'Basculement...' : 'Basculer' }}
-              </button>
-            </div>
-
-            <div class="project-footer">
-              <div class="branch-pill">
-                <span class="branch-icon">🌿</span>
-                {{ project.currentBranch || 'staging' }}
-              </div>
-              <span class="timestamp">{{ formatRelativeTime(project.lastActive) }}</span>
-            </div>
-          </div>
-        </div>
-        <div v-else class="card card-empty">
-          <p>Aucun projet détecté via les nœuds connectés.</p>
-        </div>
-      </section>
-
-      <!-- Telemetry Counters -->
-      <section class="section-container">
-        <h2 class="section-title">Activité Core</h2>
-        <div class="stats-grid">
-          <div class="stat-card">
-            <span class="stat-number">{{ coreStatus?.onlineNodes ?? 0 }}</span>
-            <span class="stat-label">Nœuds en ligne</span>
-          </div>
-          <div class="stat-card stat-interactive" title="Voir l'activité des tâches" @click="activeTab = 'activity'">
-            <span class="stat-number">{{ runningTasksCount }}</span>
-            <span class="stat-label">Tâches en cours ›</span>
-          </div>
-          <div class="stat-card stat-interactive" :class="{ 'stat-approval-pulse': pendingApprovalsCount > 0 }"
-            title="Gérer les demandes d'approbation" @click="showApprovalModal = true">
-            <span class="stat-number">{{ pendingApprovalsCount }}</span>
-            <span class="stat-label">Approbations ›</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- PWA Install Prompt Banner -->
-      <section v-if="deferredPrompt" class="card install-banner">
-        <div class="install-info">
-          <span class="install-icon">📱</span>
-          <div>
-            <h4>Installer Nexus sur l'écran d'accueil</h4>
-            <p>Accès plein écran instantané comme une application native.</p>
-          </div>
-        </div>
-        <button type="button" class="btn-primary btn-install" @click="installPwa">
-          Installer
-        </button>
-      </section>
+          </details>
+        </article>
+      </div>
     </main>
 
-    <!-- Full Approval Modal / Dialog Overlay -->
-    <section v-if="showApprovalModal" class="modal-overlay" @click.self="showApprovalModal = false">
-      <div class="modal-card approval-modal">
-        <div class="modal-header">
-          <div class="modal-title-group">
-            <span class="modal-icon">🛡️</span>
-            <h2>Demande d'approbation</h2>
-          </div>
-          <button type="button" class="btn-close" aria-label="Fermer" @click="showApprovalModal = false">✕</button>
+    <!-- PROJECTS VIEW -->
+    <main v-if="activeTab === 'dashboard'" class="page-view" aria-labelledby="projects-title">
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">VOTRE ESPACE</p>
+          <h1 id="projects-title">Projets<span class="accent">.</span></h1>
         </div>
+        <button type="button" class="icon-button" :disabled="isRefreshing" aria-label="Actualiser les projets"
+          @click="handleManualRefresh">
+          <NexusIcon name="refresh" />
+        </button>
+      </div>
+      <p v-if="errorMessage" class="inline-error" role="alert">
+        {{ errorMessage }}
+      </p>
+      <div v-if="projectsList.length" class="project-list">
+        <button v-for="project in projectsList" :key="project.id || project.path" type="button" class="project-row"
+          :class="{ selected: isProjectActive(project) }" :disabled="isSwitchingProject || isSending"
+          :aria-label="`${isProjectActive(project) ? 'Ouvrir' : 'Choisir'} ${project.name}`"
+          @click="openProject(project)">
+          <span class="project-symbol">
+            <NexusIcon name="folder" />
+          </span><span class="project-info"><span class="project-name">{{ project.name }}</span><span
+              v-if="project.currentBranch" class="project-branch">
+              <NexusIcon name="branch" />{{ project.currentBranch }}
+            </span></span>
+          <span v-if="switchingProjectId === (project.id || project.path)"
+            class="project-selection">Ouverture…</span><span v-else-if="isProjectActive(project)"
+            class="project-selection">Actif
+            <NexusIcon name="check" />
+          </span>
+          <NexusIcon v-else name="chevron" />
+        </button>
+      </div>
+      <div v-else class="empty-state">
+        <NexusIcon name="folder" />
+        <h2>
+          {{
+            connectionStatus === 'error'
+              ? "Retrouvez vos projets."
+              : "Aucun projet pour le moment."
+          }}
+        </h2>
+        <p>
+          {{
+            connectionStatus === 'error'
+              ? "Connectez votre poste pour les retrouver ici."
+              : "Ouvrez un projet sur votre poste et démarrez Nexus."
+          }}
+        </p>
+        <button v-if="connectionStatus === 'error'" type="button" class="button primary" @click="showSettings = true">
+          Configurer la connexion
+        </button>
+      </div>
 
-        <div v-if="pendingApprovals.length > 0 && activeApproval" class="modal-content">
-          <!-- Expiration Alert -->
-          <div class="approval-countdown-banner" :class="{
-            urgent: getApprovalRemainingSeconds(activeApproval.expiresAt) <= 15 && !isApprovalExpired(activeApproval.expiresAt),
-            expired: isApprovalExpired(activeApproval.expiresAt)
-          }">
-            <span class="countdown-icon">⏱️</span>
-            <div class="countdown-info">
-              <template v-if="isApprovalExpired(activeApproval.expiresAt)">
-                <strong>Demande expirée</strong>
-                <p>Délai dépassé. L'action a été automatiquement refusée (Fail-Closed).</p>
-              </template>
-              <template v-else-if="getApprovalRemainingSeconds(activeApproval.expiresAt) <= 15">
-                <strong>Expiration imminente !</strong>
-                <p>Plus que <strong>{{ getApprovalRemainingSeconds(activeApproval.expiresAt) }}s</strong> avant rejet
-                  automatique.</p>
-              </template>
-              <template v-else>
-                <strong>Validation requise</strong>
-                <p>Temps restant : <strong>{{ getApprovalRemainingSeconds(activeApproval.expiresAt) }}s</strong> (rejet
-                  automatique à expiration).</p>
-              </template>
-            </div>
-          </div>
-
-          <!-- Metadata -->
-          <div class="approval-meta-grid">
-            <div class="meta-badge">
-              <span class="badge-label">Agent :</span>
-              <span class="badge-value">🤖 {{ activeApproval.agentName }}</span>
-            </div>
-            <div class="meta-badge" :class="activeApproval.kind">
-              <span class="badge-label">Type :</span>
-              <span class="badge-value">{{ approvalKindIcon(activeApproval.kind) }} {{
-                formatApprovalKind(activeApproval.kind)
+      <section class="workstation-section" aria-labelledby="workstation-title">
+        <h2 id="workstation-title" class="section-label">Poste de travail</h2>
+        <details v-for="node in onlineNodes" :key="node.nodeId" class="workstation">
+          <summary>
+            <NexusIcon name="computer" /><span>{{ node.nodeName }}</span><span class="node-state"><span
+                class="status-dot online" />{{
+                  formatState(node.state)
                 }}</span>
-            </div>
+            <NexusIcon name="down" />
+          </summary>
+          <div class="workstation-details">
+            <p v-if="node.activeProject?.path" class="project-path">
+              {{ node.activeProject.path }}
+            </p>
+            <p v-if="node.lastHeartbeat">
+              Dernier contact {{ formatRelativeTime(node.lastHeartbeat) }}
+            </p>
+            <button v-if="node.state === 'busy' && node.activeTaskId" type="button" class="text-button danger"
+              @click="cancelTask(node.activeTaskId)">
+              Arrêter la tâche
+            </button>
           </div>
-
-          <!-- Details / Code -->
-          <div class="approval-details-box">
-            <span class="details-label">Commande / Action demandée :</span>
-            <pre class="approval-code-block"><code>{{ activeApproval.details }}</code></pre>
-          </div>
-
-          <!-- Multiple approvals navigation -->
-          <div v-if="pendingApprovals.length > 1" class="approval-pagination">
-            <span>Approbation {{ activeApprovalIndex + 1 }} sur {{ pendingApprovals.length }}</span>
-            <div class="pagination-buttons">
-              <button type="button" class="btn-pager" :disabled="activeApprovalIndex === 0"
-                @click="activeApprovalIndex--">
-                ◀ Précédent
+        </details>
+        <div v-if="!onlineNodes.length" class="workstation-offline">
+          <NexusIcon name="computer" />
+          <div>
+            <h3>En attente de votre poste</h3>
+            <p>Démarrez Nexus sur votre ordinateur.</p>
+            <details class="setup-help">
+              <summary>Comment le connecter ?</summary>
+              <p>Dans le terminal de Nexus sur votre ordinateur :</p>
+              <div class="command-line">
+                <code>npm run desktop -- start</code><button type="button" class="text-button"
+                  @click="copyCommand('npm run desktop -- start')">
+                  {{ copied ? "Copié" : "Copier" }}
+                </button>
+              </div>
+              <button type="button" class="text-button" @click="showSettings = true">
+                Paramètres de connexion
               </button>
-              <button type="button" class="btn-pager" :disabled="activeApprovalIndex >= pendingApprovals.length - 1"
-                @click="activeApprovalIndex++">
-                Suivant ▶
-              </button>
-            </div>
-          </div>
-
-          <!-- Actions buttons -->
-          <div class="approval-modal-actions">
-            <template v-if="!isApprovalExpired(activeApproval.expiresAt)">
-              <button type="button" class="btn-modal-approve" :disabled="isDecidingApproval"
-                @click="decideApproval(activeApproval.approvalId, 'accept')">
-                <span v-if="isDecidingApproval && approvalDecidingId === activeApproval.approvalId"
-                  class="spinning">⏳</span>
-                <span v-else>✅ Autoriser l'action</span>
-              </button>
-              <button type="button" class="btn-modal-decline" :disabled="isDecidingApproval"
-                @click="decideApproval(activeApproval.approvalId, 'decline')">
-                <span v-if="isDecidingApproval && approvalDecidingId === activeApproval.approvalId"
-                  class="spinning">⏳</span>
-                <span v-else>❌ Refuser</span>
-              </button>
-            </template>
-            <template v-else>
-              <button type="button" class="btn-secondary btn-block" @click="showApprovalModal = false">
-                Fermer
-              </button>
-            </template>
+            </details>
           </div>
         </div>
+      </section>
+      <button v-if="deferredPrompt" type="button" class="button secondary install-button" @click="installPwa">
+        Installer Nexus
+      </button>
+    </main>
 
-        <!-- Empty State in Modal -->
-        <div v-else class="modal-empty-body">
-          <span class="modal-empty-icon">🛡️</span>
-          <h3>Aucune approbation en attente</h3>
-          <p>Toutes les demandes de sécurité ont été traitées ou sont synchronisées.</p>
-          <button type="button" class="btn-primary" @click="showApprovalModal = false">
-            Fermer
+    <!-- BOTTOM HUD NAVIGATION -->
+    <nav class="bottom-nav" aria-label="Navigation principale">
+      <button type="button" :aria-current="activeTab === 'chat' ? 'page' : undefined" @click="activeTab = 'chat'">
+        <span class="nav-icon">
+          <NexusIcon name="chat" /><span v-if="isSending" class="nav-dot" />
+        </span><span>Discussion</span>
+      </button>
+      <button type="button" :aria-current="activeTab === 'activity' ? 'page' : undefined"
+        @click="activeTab = 'activity'">
+        <span class="nav-icon">
+          <NexusIcon name="activity" /><span v-if="pendingApprovalsCount || runningTasksCount" class="nav-count">{{
+            pendingApprovalsCount || runningTasksCount }}</span>
+        </span><span>Activité</span>
+      </button>
+      <button type="button" :aria-current="activeTab === 'dashboard' ? 'page' : undefined"
+        @click="activeTab = 'dashboard'">
+        <span class="nav-icon">
+          <NexusIcon name="folder" />
+        </span><span>Projets</span>
+      </button>
+    </nav>
+
+    <!-- SETTINGS SHEET -->
+    <NexusSheet v-model="showSettings" title="Connexion & préférences">
+      <form class="settings-form" @submit.prevent="saveSettings">
+        <p>Reliez Nexus à votre poste de travail.</p>
+        <div class="field">
+          <label for="core-url">Adresse du serveur</label><input id="core-url" v-model="coreUrlInput" type="text"
+            inputmode="url" autocomplete="url" autocapitalize="none" spellcheck="false" required
+            aria-describedby="server-help" /><small id="server-help">{{
+              isNativeApp
+                ? "L’adresse de votre ordinateur sur le réseau, avec le port de Nexus."
+                : "L’adresse et le port de votre serveur Nexus."
+            }}</small>
+        </div>
+        <div class="field">
+          <label for="core-token">Jeton d’accès <span class="optional">si configuré</span></label><input id="core-token"
+            v-model="authTokenInput" type="password" autocomplete="current-password" spellcheck="false" />
+        </div>
+        <label class="switch-field"><span>Envoyer après la dictée<small>Désactivez pour relire avant
+              l’envoi.</small></span><input v-model="autoSendVoice" type="checkbox" role="switch" /></label>
+        <p v-if="settingsError" class="inline-error" role="alert">
+          {{ settingsError }}
+        </p>
+        <button type="submit" class="button primary full-width">
+          Enregistrer et connecter
+          <NexusIcon name="chevron" />
+        </button>
+        <details class="settings-details">
+          <summary>Options de connexion</summary>
+          <p>{{ connectionStatusText }}</p>
+          <p v-if="lastUpdated">Dernier contact {{ lastUpdatedText }}</p>
+          <button type="button" class="text-button" @click="resetSettings">
+            Rétablir les paramètres par défaut
+          </button>
+        </details>
+      </form>
+    </NexusSheet>
+
+    <!-- APPROVALS SHEET -->
+    <NexusSheet v-model="showApprovalModal" title="Autorisation requise">
+      <div v-if="activeApproval" class="approval-content">
+        <div class="approval-heading">
+          <NexusIcon name="shield" /><span>{{ activeApproval.agentName
+          }}<small>{{ formatApprovalKind(activeApproval.kind) }}</small></span>
+        </div>
+        <pre class="approval-code"><code>{{ activeApproval.details }}</code></pre>
+        <p class="approval-expiry" :class="{
+          danger: getApprovalRemainingSeconds(activeApproval.expiresAt) <= 15,
+        }">
+          {{
+            isApprovalExpired(activeApproval.expiresAt)
+              ? "Demande expirée. L’action a été refusée."
+              : `Refus automatique dans ${getApprovalRemainingSeconds(activeApproval.expiresAt)} s.`
+          }}
+        </p>
+        <div v-if="pendingApprovals.length > 1" class="approval-pagination">
+          <button type="button" class="icon-button" :disabled="activeApprovalIndex === 0"
+            aria-label="Demande précédente" @click="activeApprovalIndex--">
+            <NexusIcon name="chevron" class="reversed" />
+          </button><span>{{ activeApprovalIndex + 1 }} / {{ pendingApprovals.length }}</span><button type="button"
+            class="icon-button" :disabled="activeApprovalIndex >= pendingApprovals.length - 1"
+            aria-label="Demande suivante" @click="activeApprovalIndex++">
+            <NexusIcon name="chevron" />
+          </button>
+        </div>
+        <div class="approval-actions">
+          <button type="button" class="button secondary" :disabled="isDecidingApproval || isApprovalExpired(activeApproval.expiresAt)
+            " @click="decideApproval(activeApproval.approvalId, 'decline')">
+            Refuser</button><button type="button" class="button primary" :disabled="isDecidingApproval || isApprovalExpired(activeApproval.expiresAt)
+              " @click="decideApproval(activeApproval.approvalId, 'accept')">
+            {{ isDecidingApproval ? "Envoi…" : "Autoriser" }}
           </button>
         </div>
       </div>
-    </section>
+      <div v-else class="empty-state compact">
+        <NexusIcon name="check" />
+        <h3>Aucune demande en attente</h3>
+      </div>
+    </NexusSheet>
 
-    <!-- Bottom Status Bar -->
-    <footer class="nexus-footer">
-      <div class="footer-status">
-        <span class="core-ping-dot" :class="connectionStatus"></span>
-        <span>{{ coreUrlDisplay }}</span>
+    <!-- QUICK PROJECT SELECTOR SHEET -->
+    <NexusSheet v-model="showProjectMenu" title="Changer de projet">
+      <div v-if="projectsList.length" class="project-sheet-list">
+        <button v-for="project in projectsList" :key="project.id || project.path" type="button"
+          class="project-sheet-row" :class="{ selected: isProjectActive(project) }"
+          :disabled="isSwitchingProject || isSending" @click="openProject(project); showProjectMenu = false">
+          <span class="project-symbol">
+            <NexusIcon name="folder" />
+          </span>
+          <span class="project-info">
+            <span class="project-name">{{ project.name }}</span>
+            <span v-if="project.currentBranch" class="project-branch">
+              <NexusIcon name="branch" />{{ project.currentBranch }}
+            </span>
+          </span>
+          <span v-if="isProjectActive(project)" class="project-badge-active">Actif</span>
+        </button>
       </div>
-      <div class="footer-refresh-rate">
-        <span>Auto-sync 3s</span>
+      <div v-else class="empty-state compact">
+        <p>Aucun projet détecté sur le poste connecté.</p>
+        <button type="button" class="button secondary" @click="showProjectMenu = false; activeTab = 'dashboard'">
+          Voir le statut du poste
+        </button>
       </div>
-    </footer>
+    </NexusSheet>
+
+    <!-- PROMPT SUGGESTIONS (STARTERS) SHEET -->
+    <NexusSheet v-model="showStartersModal" title="Suggestions de prompts">
+      <div class="starters-sheet-list">
+        <button v-for="starter in starters" :key="starter.label" type="button" class="starter-card"
+          @click="preparePrompt(starter.prompt)">
+          <div class="starter-card-icon">
+            <NexusIcon :name="starter.icon" />
+          </div>
+          <div class="starter-card-content">
+            <strong>{{ starter.label }}</strong>
+            <p>{{ starter.prompt }}</p>
+          </div>
+          <NexusIcon name="arrow" class="starter-card-arrow" />
+        </button>
+      </div>
+    </NexusSheet>
+
+    <!-- AGENT SELECTOR SHEET -->
+    <NexusSheet v-model="showAgentPickerSheet" title="Choisir l'agent IA">
+      <div class="agent-sheet-list">
+        <button v-for="agent in agentOptions" :key="agent.id" type="button" class="agent-card-row"
+          :class="{ selected: selectedBackend === agent.id }"
+          @click="selectedBackend = agent.id; showAgentPickerSheet = false">
+          <div class="agent-card-icon">
+            <NexusIcon name="zap" />
+          </div>
+          <div class="agent-card-info">
+            <div class="agent-card-name">{{ agent.name }}</div>
+            <div class="agent-card-desc">{{ agent.description }}</div>
+          </div>
+          <span v-if="selectedBackend === agent.id" class="agent-selected-badge">
+            <NexusIcon name="check" />
+          </span>
+        </button>
+      </div>
+    </NexusSheet>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
-import { Capacitor } from '@capacitor/core';
-import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
-import { StatusBar, Style } from '@capacitor/status-bar';
-import { VoiceRecorder } from 'capacitor-voice-recorder';
-import { SpeechRecognition } from '@capacitor-community/speech-recognition';
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
+import { Capacitor } from "@capacitor/core";
+import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
+import { StatusBar, Style } from "@capacitor/status-bar";
+import { VoiceRecorder } from "capacitor-voice-recorder";
+import { SpeechRecognition } from "@capacitor-community/speech-recognition";
 
 interface ConnectedNodeInfo {
   nodeId: string;
   nodeName: string;
   online: boolean;
-  state: 'idle' | 'busy' | 'offline';
+  state: "idle" | "busy" | "offline";
   lastHeartbeat?: number;
   activeTaskId?: string;
   activeProject?: {
@@ -762,8 +611,8 @@ interface CoreStatusData {
 
 interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant';
-  backend: 'brain' | 'codex' | 'antigravity';
+  role: "user" | "assistant";
+  backend: "brain" | "codex" | "antigravity";
   text: string;
   timestamp: number;
   fileSummary?: string;
@@ -772,11 +621,11 @@ interface ChatMessage {
 
 interface RemoteTaskItem {
   taskId: string;
-  backend: 'codex' | 'antigravity' | 'brain';
+  backend: "codex" | "antigravity" | "brain";
   prompt: string;
   projectId?: string;
   nodeId: string;
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
   stage?: string;
   progressMessage?: string;
   activeTool?: string;
@@ -799,30 +648,63 @@ interface PendingApprovalItem {
   taskId: string;
   nodeId: string;
   agentName: string;
-  kind: 'command' | 'fileChange' | 'consent';
+  kind: "command" | "fileChange" | "consent";
   details: string;
   expiresAt: number;
   createdAt: number;
-  status: 'pending' | 'accepted' | 'declined' | 'cancelled' | 'timed_out';
+  status: "pending" | "accepted" | "declined" | "cancelled" | "timed_out";
   decidedAt?: number;
   decidedBy?: string;
-  decision?: 'accept' | 'decline';
+  decision?: "accept" | "decline";
   cancelReason?: string;
 }
 
 // Navigation & Tab state
-const activeTab = ref<'chat' | 'activity' | 'dashboard'>('chat');
-const selectedBackend = ref<'brain' | 'codex' | 'antigravity'>('brain');
+const activeTab = ref<"chat" | "activity" | "dashboard">("chat");
+const selectedBackend = ref<"brain" | "codex" | "antigravity">("brain");
+
+// Quick Dropdowns & HUD Modals state
+const showQuickMenu = ref<boolean>(false);
+const showProjectMenu = ref<boolean>(false);
+const showStartersModal = ref<boolean>(false);
+const showAgentPickerSheet = ref<boolean>(false);
+
+const agentOptions = [
+  {
+    id: "brain" as const,
+    name: "Nexus Brain",
+    description: "Orchestration & conversation globale",
+  },
+  {
+    id: "codex" as const,
+    name: "Codex",
+    description: "Modèle de code rapide & précis",
+  },
+  {
+    id: "antigravity" as const,
+    name: "Antigravity",
+    description: "Agent autonome multi-outils",
+  },
+];
+
+function selectedBackendShortLabel(b?: string): string {
+  if (b === "brain") return "Brain";
+  if (b === "codex") return "Codex";
+  if (b === "antigravity") return "AGY";
+  return "Agent";
+}
 
 // Core Connection state
-const coreUrl = ref<string>('');
-const coreUrlInput = ref<string>('');
-const authToken = ref<string>('');
-const authTokenInput = ref<string>('');
+const coreUrl = ref<string>("");
+const coreUrlInput = ref<string>("");
+const authToken = ref<string>("");
+const authTokenInput = ref<string>("");
 const showSettings = ref<boolean>(false);
 const isRefreshing = ref<boolean>(false);
-const connectionStatus = ref<'connecting' | 'connected' | 'error'>('connecting');
-const errorMessage = ref<string>('');
+const connectionStatus = ref<"connecting" | "connected" | "error">(
+  "connecting",
+);
+const errorMessage = ref<string>("");
 const lastUpdated = ref<number | null>(null);
 const now = ref<number>(Date.now());
 const copied = ref<boolean>(false);
@@ -833,25 +715,103 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 let clockTimer: ReturnType<typeof setInterval> | null = null;
 
 // Chat State
-const inputPrompt = ref<string>('');
+const inputPrompt = ref<string>("");
 const isSending = ref<boolean>(false);
-const currentProgressMessage = ref<string>('');
+const currentProgressMessage = ref<string>("");
 const currentInFlightTaskId = ref<string | null>(null);
 const messages = ref<ChatMessage[]>([]);
 const messagesScrollRef = ref<HTMLElement | null>(null);
 const chatTextareaRef = ref<HTMLTextAreaElement | null>(null);
 
-const quickChips = [
-  'Quel est le statut du projet ?',
-  'Sur quelle branche Git sommes-nous ?',
-  'Résume les derniers commits sur staging',
-  'Quels fichiers ont été modifiés récemment ?',
+const starters = [
+  {
+    label: "Faire le point",
+    prompt: "Fais le point sur le projet et les modifications en cours.",
+    icon: "activity" as const,
+  },
+  {
+    label: "Relire les changements",
+    prompt:
+      "Relis les modifications récentes et signale les problèmes éventuels.",
+    icon: "branch" as const,
+  },
+  {
+    label: "Générer un test",
+    prompt: "Propose un plan de test ou vérifie la couverture de nos fonctions clés.",
+    icon: "shield" as const,
+  },
+  {
+    label: "Structure du projet",
+    prompt: "Explique l'architecture et les composants essentiels du projet.",
+    icon: "folder" as const,
+  },
 ];
+const settingsError = ref("");
+
+function resizeComposer() {
+  const textarea = chatTextareaRef.value;
+  if (!textarea) return;
+  textarea.style.height = "auto";
+  textarea.style.height = `${Math.min(textarea.scrollHeight, 140)}px`;
+}
+
+function preparePrompt(prompt: string) {
+  inputPrompt.value = prompt;
+  showStartersModal.value = false;
+  nextTick(() => {
+    chatTextareaRef.value?.focus();
+    resizeComposer();
+  });
+}
+
+function handleComposerKeydown(event: KeyboardEvent) {
+  if (
+    event.key === "Enter" &&
+    (event.ctrlKey || event.metaKey) &&
+    !event.isComposing
+  ) {
+    event.preventDefault();
+    void submitMessage();
+  }
+}
+
+function projectLabel(id: string) {
+  return (
+    projectsList.value.find(
+      (project) => project.id === id || project.path === id,
+    )?.name || id
+  );
+}
+
+async function openProject(project: ProjectInfo) {
+  if (
+    isProjectActive(project) ||
+    (await switchProject(project.id || project.path))
+  )
+    activeTab.value = "chat";
+}
+
+watch(inputPrompt, () => nextTick(resizeComposer));
+watch(activeTab, (tab) => {
+  localStorage.setItem("nexus_active_tab", tab);
+  showQuickMenu.value = false;
+  if (tab === "chat") {
+    scrollToBottom();
+    nextTick(resizeComposer);
+  }
+});
+
+function syncViewport() {
+  document.documentElement.style.setProperty(
+    "--app-height",
+    `${window.visualViewport?.height || window.innerHeight}px`,
+  );
+}
 
 // Activity & Tasks State
 const tasks = ref<RemoteTaskItem[]>([]);
 const isRefreshingTasks = ref<boolean>(false);
-const activeTaskFilter = ref<'all' | 'running' | 'completed' | 'failed'>('all');
+const activeTaskFilter = ref<"all" | "running" | "completed" | "failed">("all");
 
 // Approvals State
 const approvals = ref<PendingApprovalItem[]>([]);
@@ -864,9 +824,13 @@ const activeApprovalIndex = ref<number>(0);
 // Voice / Push-to-Talk State
 const isListening = ref<boolean>(false);
 const isProcessingAudio = ref<boolean>(false);
-const interimTranscript = ref<string>('');
+const interimTranscript = ref<string>("");
 const autoSendVoice = ref<boolean>(true);
-const voiceBackendStatus = ref<{ available: boolean; engine?: string; language?: string } | null>(null);
+const voiceBackendStatus = ref<{
+  available: boolean;
+  engine?: string;
+  language?: string;
+} | null>(null);
 const isNativeApp = computed(() => Capacitor.isNativePlatform());
 
 let recognitionInstance: any = null;
@@ -881,37 +845,47 @@ let nativeRecorderActive = false;
 
 // Lifecycle
 onMounted(async () => {
-  if (typeof window !== 'undefined') {
-    const savedUrl = localStorage.getItem('nexus_core_url');
-    const savedToken = localStorage.getItem('nexus_auth_token') || '';
-    const savedTab = localStorage.getItem('nexus_active_tab') as 'chat' | 'activity' | 'dashboard' | null;
+  if (typeof window !== "undefined") {
+    syncViewport();
+    window.visualViewport?.addEventListener("resize", syncViewport);
+    const savedUrl = localStorage.getItem("nexus_core_url");
+    const savedToken = localStorage.getItem("nexus_auth_token") || "";
+    const savedTab = localStorage.getItem("nexus_active_tab") as
+      | "chat"
+      | "activity"
+      | "dashboard"
+      | null;
 
     if (savedUrl) {
       coreUrl.value = savedUrl;
     } else if (Capacitor.isNativePlatform()) {
-      coreUrl.value = 'http://192.168.1.100:4040';
+      coreUrl.value = "";
       showSettings.value = true;
-    } else if (window.location.port === '4040' || window.location.pathname.startsWith('/')) {
+    } else if (
+      window.location.port === "4040" ||
+      window.location.pathname.startsWith("/")
+    ) {
       coreUrl.value = window.location.origin;
     } else {
-      coreUrl.value = 'http://127.0.0.1:4040';
+      coreUrl.value = "http://127.0.0.1:4040";
     }
 
     if (Capacitor.isNativePlatform()) {
       try {
         await StatusBar.setStyle({ style: Style.Dark });
-        await StatusBar.setBackgroundColor({ color: '#090d16' });
+        await StatusBar.setBackgroundColor({ color: "#06090e" });
       } catch { }
     }
 
     coreUrlInput.value = coreUrl.value;
     authToken.value = savedToken;
     authTokenInput.value = savedToken;
-    if (savedTab) activeTab.value = savedTab;
+    if (savedTab && ["chat", "activity", "dashboard"].includes(savedTab))
+      activeTab.value = savedTab;
 
-    const savedAutoSend = localStorage.getItem('nexus_auto_send_voice');
+    const savedAutoSend = localStorage.getItem("nexus_auto_send_voice");
     if (savedAutoSend !== null) {
-      autoSendVoice.value = savedAutoSend === 'true';
+      autoSendVoice.value = savedAutoSend === "true";
     }
 
     // Load persisted chat messages
@@ -921,23 +895,29 @@ onMounted(async () => {
     initSpeechRecognition();
 
     // Purge legacy ServiceWorker / CacheStorage to avoid stale cached assets
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
-        for (const r of registrations) {
-          r.unregister();
-        }
-      }).catch(() => {});
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker
+        .getRegistrations()
+        .then((registrations) => {
+          for (const r of registrations) {
+            r.unregister();
+          }
+        })
+        .catch(() => { });
     }
-    if ('caches' in window) {
-      caches.keys().then((names) => {
-        for (const name of names) {
-          caches.delete(name);
-        }
-      }).catch(() => {});
+    if ("caches" in window) {
+      caches
+        .keys()
+        .then((names) => {
+          for (const name of names) {
+            caches.delete(name);
+          }
+        })
+        .catch(() => { });
     }
 
     // Listen for PWA install prompt
-    window.addEventListener('beforeinstallprompt', (e: Event) => {
+    window.addEventListener("beforeinstallprompt", (e: Event) => {
       e.preventDefault();
       deferredPrompt.value = e;
     });
@@ -960,6 +940,8 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  window.visualViewport?.removeEventListener("resize", syncViewport);
+  document.documentElement.style.removeProperty("--app-height");
   if (pollTimer) clearInterval(pollTimer);
   if (clockTimer) clearInterval(clockTimer);
   cancelVoiceRecording();
@@ -967,22 +949,16 @@ onUnmounted(() => {
 
 // Computed properties
 const connectionStatusText = computed(() => {
-  if (connectionStatus.value === 'connected') return 'Nexus Core connecté';
-  if (connectionStatus.value === 'connecting') return 'Connexion à Nexus Core...';
-  return 'Déconnecté de Nexus Core';
-});
-
-const coreUrlDisplay = computed(() => {
-  try {
-    const url = new URL(coreUrl.value);
-    return `${url.hostname}:${url.port || (url.protocol === 'https:' ? '443' : '80')}`;
-  } catch {
-    return coreUrl.value;
-  }
+  if (connectionStatus.value === "connected") return "Nexus Core connecté";
+  if (connectionStatus.value === "connecting")
+    return "Connexion à Nexus Core...";
+  return "Déconnecté de Nexus Core";
 });
 
 const onlineNodes = computed(() => {
-  return (coreStatus.value?.nodes || []).filter((n) => n.online);
+  return connectionStatus.value === "connected"
+    ? (coreStatus.value?.nodes || []).filter((n) => n.online)
+    : [];
 });
 
 const primaryNode = computed(() => {
@@ -990,24 +966,14 @@ const primaryNode = computed(() => {
 });
 
 const isNodeReady = computed(() => {
-  return onlineNodes.value.length > 0;
+  return connectionStatus.value === "connected" && onlineNodes.value.length > 0;
 });
 
 const activeProjectName = computed(() => {
   return (
     primaryNode.value?.activeProject?.name ||
     coreStatus.value?.projects?.find((p) => p.isActive)?.name ||
-    coreStatus.value?.projects[0]?.name ||
-    'nexus'
-  );
-});
-
-const activeProjectId = computed(() => {
-  return (
-    primaryNode.value?.activeProject?.id ||
-    coreStatus.value?.projects?.find((p) => p.isActive)?.id ||
-    coreStatus.value?.projects[0]?.id ||
-    ''
+    ""
   );
 });
 
@@ -1019,15 +985,17 @@ const isSwitchingProject = ref(false);
 const switchingProjectId = ref<string | null>(null);
 
 async function switchProject(projectId: string) {
-  if (!projectId || isSwitchingProject.value) return;
+  if (!projectId || isSwitchingProject.value || isSending.value) return false;
   isSwitchingProject.value = true;
   switchingProjectId.value = projectId;
   try {
     const res = await fetch(`${coreUrl.value}/api/projects/switch`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        ...(authToken.value ? { Authorization: `Bearer ${authToken.value}` } : {}),
+        "Content-Type": "application/json",
+        ...(authToken.value
+          ? { Authorization: `Bearer ${authToken.value}` }
+          : {}),
       },
       body: JSON.stringify({ projectId }),
     });
@@ -1036,76 +1004,87 @@ async function switchProject(projectId: string) {
       throw new Error(err.error || `Erreur HTTP ${res.status}`);
     }
     await fetchStatus();
+    return connectionStatus.value === "connected";
   } catch (err: any) {
-    console.error('Erreur basculement projet:', err);
-    errorMessage.value = `Échec du changement de projet: ${err.message}`;
+    console.error("Erreur basculement projet:", err);
+    errorMessage.value = `Échec du changement de projet : ${err.message}`;
+    return false;
   } finally {
     isSwitchingProject.value = false;
     switchingProjectId.value = null;
   }
 }
 
-function handleSelectProject(event: Event) {
-  const target = event.target as HTMLSelectElement;
-  if (target?.value) {
-    void switchProject(target.value);
-  }
-}
-
 const canSend = computed(() => {
-  return inputPrompt.value.trim().length > 0 && !isSending.value;
+  return (
+    inputPrompt.value.trim().length > 0 &&
+    !isSending.value &&
+    isNodeReady.value &&
+    !isSwitchingProject.value &&
+    !isListening.value &&
+    !isProcessingAudio.value
+  );
 });
 
 const lastUpdatedText = computed(() => {
-  if (!lastUpdated.value) return '';
+  if (!lastUpdated.value) return "";
   const diffSec = Math.floor((now.value - lastUpdated.value) / 1000);
   if (diffSec < 2) return "à l'instant";
   return `il y a ${diffSec}s`;
 });
 
 // Tasks Computeds
-const runningTasks = computed(() => tasks.value.filter((t) => t.status === 'running'));
+const runningTasks = computed(() =>
+  tasks.value.filter((t) => t.status === "running"),
+);
 const runningTasksCount = computed(() => {
   return runningTasks.value.length || (coreStatus.value?.activeTasks ?? 0);
 });
-const activeRunningTask = computed(() => runningTasks.value[0] || null);
 
 const filteredTasks = computed(() => {
-  if (activeTaskFilter.value === 'all') return tasks.value;
-  if (activeTaskFilter.value === 'running') {
-    return tasks.value.filter((t) => t.status === 'running' || t.status === 'pending');
+  if (activeTaskFilter.value === "all") return tasks.value;
+  if (activeTaskFilter.value === "running") {
+    return tasks.value.filter(
+      (t) => t.status === "running" || t.status === "pending",
+    );
   }
-  if (activeTaskFilter.value === 'completed') {
-    return tasks.value.filter((t) => t.status === 'completed');
+  if (activeTaskFilter.value === "completed") {
+    return tasks.value.filter((t) => t.status === "completed");
   }
-  if (activeTaskFilter.value === 'failed') {
-    return tasks.value.filter((t) => t.status === 'failed' || t.status === 'cancelled');
+  if (activeTaskFilter.value === "failed") {
+    return tasks.value.filter(
+      (t) => t.status === "failed" || t.status === "cancelled",
+    );
   }
   return tasks.value;
 });
 
 const taskFilterTabs = computed(() => [
-  { key: 'all' as const, label: 'Tous', count: tasks.value.length },
+  { key: "all" as const, label: "Tout", count: tasks.value.length },
   {
-    key: 'running' as const,
-    label: 'En cours',
-    count: tasks.value.filter((t) => t.status === 'running' || t.status === 'pending').length,
+    key: "running" as const,
+    label: "En cours",
+    count: tasks.value.filter(
+      (t) => t.status === "running" || t.status === "pending",
+    ).length,
   },
   {
-    key: 'completed' as const,
-    label: 'Terminés',
-    count: tasks.value.filter((t) => t.status === 'completed').length,
+    key: "completed" as const,
+    label: "Terminées",
+    count: tasks.value.filter((t) => t.status === "completed").length,
   },
   {
-    key: 'failed' as const,
-    label: 'Erreurs',
-    count: tasks.value.filter((t) => t.status === 'failed' || t.status === 'cancelled').length,
+    key: "failed" as const,
+    label: "Interrompues",
+    count: tasks.value.filter(
+      (t) => t.status === "failed" || t.status === "cancelled",
+    ).length,
   },
 ]);
 
 // Approvals Computeds
 const pendingApprovals = computed(() => {
-  return approvals.value.filter((a) => a.status === 'pending');
+  return approvals.value.filter((a) => a.status === "pending");
 });
 
 const pendingApprovalsCount = computed(() => {
@@ -1116,23 +1095,19 @@ const pendingApprovalsCount = computed(() => {
 
 const activeApproval = computed(() => {
   if (pendingApprovals.value.length === 0) return null;
-  const idx = Math.min(activeApprovalIndex.value, pendingApprovals.value.length - 1);
+  const idx = Math.min(
+    activeApprovalIndex.value,
+    pendingApprovals.value.length - 1,
+  );
   return pendingApprovals.value[idx] || pendingApprovals.value[0] || null;
 });
 
 // Helper functions for Approvals
 function formatApprovalKind(kind?: string): string {
-  if (kind === 'command') return 'Exécution de commande';
-  if (kind === 'fileChange') return 'Modification de fichier';
-  if (kind === 'consent') return 'Demande d’autorisation';
-  return 'Opération sécurisée';
-}
-
-function approvalKindIcon(kind?: string): string {
-  if (kind === 'command') return '⚡';
-  if (kind === 'fileChange') return '📝';
-  if (kind === 'consent') return '🛡️';
-  return '🔒';
+  if (kind === "command") return "Exécution de commande";
+  if (kind === "fileChange") return "Modification de fichier";
+  if (kind === "consent") return "Demande d’autorisation";
+  return "Opération sécurisée";
 }
 
 function getApprovalRemainingSeconds(expiresAt?: number): number {
@@ -1148,10 +1123,10 @@ function isApprovalExpired(expiresAt?: number): boolean {
 // Actions & HTTP Calls
 function getRequestHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
-    Accept: 'application/json',
+    Accept: "application/json",
   };
   if (authToken.value) {
-    headers['Authorization'] = `Bearer ${authToken.value}`;
+    headers["Authorization"] = `Bearer ${authToken.value}`;
   }
   return headers;
 }
@@ -1165,18 +1140,19 @@ async function handleManualRefresh() {
 }
 
 async function refreshActivity() {
-  await Promise.all([
-    fetchTasks(false),
-    fetchApprovals(false),
-  ]);
+  await Promise.all([fetchTasks(false), fetchApprovals(false)]);
 }
 
 async function fetchStatus(background = false) {
+  if (!coreUrl.value) {
+    connectionStatus.value = "error";
+    return;
+  }
   if (!background) isRefreshing.value = true;
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, '')}/status`;
+    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/status`;
     const res = await fetch(targetUrl, {
-      method: 'GET',
+      method: "GET",
       headers: getRequestHeaders(),
     });
 
@@ -1186,23 +1162,25 @@ async function fetchStatus(background = false) {
 
     const data = await res.json();
     coreStatus.value = data;
-    connectionStatus.value = 'connected';
-    errorMessage.value = '';
+    connectionStatus.value = "connected";
+    errorMessage.value = "";
     lastUpdated.value = Date.now();
   } catch (err: any) {
-    connectionStatus.value = 'error';
-    errorMessage.value = err?.message || 'Erreur réseau lors de la communication avec Core.';
+    connectionStatus.value = "error";
+    errorMessage.value =
+      "Connexion impossible. Vérifiez l’adresse du serveur et votre réseau.";
   } finally {
     if (!background) isRefreshing.value = false;
   }
 }
 
 async function fetchTasks(background = false) {
+  if (!coreUrl.value) return;
   if (!background) isRefreshingTasks.value = true;
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, '')}/api/tasks`;
+    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/tasks`;
     const res = await fetch(targetUrl, {
-      method: 'GET',
+      method: "GET",
       headers: getRequestHeaders(),
     });
 
@@ -1222,14 +1200,14 @@ async function fetchTasks(background = false) {
 async function cancelTask(taskId: string) {
   if (!taskId) return;
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, '')}/api/tasks/${encodeURIComponent(taskId)}/cancel`;
+    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/tasks/${encodeURIComponent(taskId)}/cancel`;
     const headers = getRequestHeaders();
-    headers['Content-Type'] = 'application/json';
+    headers["Content-Type"] = "application/json";
 
     await fetch(targetUrl, {
-      method: 'POST',
+      method: "POST",
       headers,
-      body: JSON.stringify({ reason: 'Annulé depuis l’interface Web mobile' }),
+      body: JSON.stringify({ reason: "Annulé depuis l’interface Web mobile" }),
     });
 
     await fetchTasks(true);
@@ -1240,11 +1218,12 @@ async function cancelTask(taskId: string) {
 }
 
 async function fetchApprovals(background = false) {
+  if (!coreUrl.value) return;
   if (!background) isRefreshingApprovals.value = true;
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, '')}/api/approvals`;
+    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/approvals`;
     const res = await fetch(targetUrl, {
-      method: 'GET',
+      method: "GET",
       headers: getRequestHeaders(),
     });
 
@@ -1254,7 +1233,10 @@ async function fetchApprovals(background = false) {
         approvals.value = data;
         // If index is beyond bounds, reset it
         if (activeApprovalIndex.value >= pendingApprovals.value.length) {
-          activeApprovalIndex.value = Math.max(0, pendingApprovals.value.length - 1);
+          activeApprovalIndex.value = Math.max(
+            0,
+            pendingApprovals.value.length - 1,
+          );
         }
       }
     }
@@ -1265,23 +1247,26 @@ async function fetchApprovals(background = false) {
   }
 }
 
-async function decideApproval(approvalId: string, decision: 'accept' | 'decline') {
+async function decideApproval(
+  approvalId: string,
+  decision: "accept" | "decline",
+) {
   if (!approvalId || isDecidingApproval.value) return;
 
   isDecidingApproval.value = true;
   approvalDecidingId.value = approvalId;
 
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, '')}/api/approvals/${encodeURIComponent(approvalId)}/decide`;
+    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/approvals/${encodeURIComponent(approvalId)}/decide`;
     const headers = getRequestHeaders();
-    headers['Content-Type'] = 'application/json';
+    headers["Content-Type"] = "application/json";
 
     const res = await fetch(targetUrl, {
-      method: 'POST',
+      method: "POST",
       headers,
       body: JSON.stringify({
         decision,
-        decidedBy: 'mobile-web',
+        decidedBy: "mobile-web",
       }),
     });
 
@@ -1294,7 +1279,7 @@ async function decideApproval(approvalId: string, decision: 'accept' | 'decline'
     // Update approval status locally
     const found = approvals.value.find((a) => a.approvalId === approvalId);
     if (found) {
-      found.status = decision === 'accept' ? 'accepted' : 'declined';
+      found.status = decision === "accept" ? "accepted" : "declined";
       found.decision = decision;
     }
 
@@ -1321,31 +1306,34 @@ async function decideApproval(approvalId: string, decision: 'accept' | 'decline'
 
 async function submitMessage() {
   const promptText = inputPrompt.value.trim();
-  if (!promptText || isSending.value) return;
+  if (!promptText || isSending.value || isSwitchingProject.value) return;
   if (!isNodeReady.value) {
-    errorMessage.value = "Desktop Node non connecté. Vérifiez que 'npm run desktop' tourne sur votre machine.";
+    errorMessage.value =
+      "Votre poste est hors ligne. Reconnectez-le pour envoyer votre message.";
     return;
   }
-  inputPrompt.value = '';
+  inputPrompt.value = "";
   await sendPrompt(promptText);
 }
 
 async function sendPrompt(promptText: string) {
-  if (!promptText || isSending.value) return;
+  if (!promptText || isSending.value || isSwitchingProject.value) return;
   if (!isNodeReady.value) {
     inputPrompt.value = promptText;
-    errorMessage.value = "Desktop Node non connecté. Vérifiez que 'npm run desktop' tourne sur votre machine.";
+    errorMessage.value =
+      "Votre poste est hors ligne. Reconnectez-le pour envoyer votre message.";
     return;
   }
 
+  const backend = selectedBackend.value;
   const generatedTaskId = `task-${Date.now()}`;
   currentInFlightTaskId.value = generatedTaskId;
 
   const userMsgId = `user-${Date.now()}`;
   const userMsg: ChatMessage = {
     id: userMsgId,
-    role: 'user',
-    backend: selectedBackend.value,
+    role: "user",
+    backend,
     text: promptText,
     timestamp: Date.now(),
   };
@@ -1358,18 +1346,19 @@ async function sendPrompt(promptText: string) {
   currentProgressMessage.value = `Envoi au ${selectedBackendLabel(selectedBackend.value)}...`;
 
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, '')}/api/tasks`;
+    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/tasks`;
     const headers = getRequestHeaders();
-    headers['Content-Type'] = 'application/json';
+    headers["Content-Type"] = "application/json";
 
     const res = await fetch(targetUrl, {
-      method: 'POST',
+      method: "POST",
       headers,
       body: JSON.stringify({
         taskId: generatedTaskId,
-        backend: selectedBackend.value,
+        backend,
         prompt: promptText,
-        projectId: primaryNode.value?.activeProject?.id || activeProjectName.value,
+        projectId:
+          primaryNode.value?.activeProject?.id || activeProjectName.value,
         wait: true,
       }),
     });
@@ -1383,9 +1372,9 @@ async function sendPrompt(promptText: string) {
     // Add Assistant response
     const assistantMsg: ChatMessage = {
       id: `asst-${Date.now()}`,
-      role: 'assistant',
-      backend: selectedBackend.value,
-      text: data.text || 'Tâche terminée sans sortie textuelle.',
+      role: "assistant",
+      backend,
+      text: data.text || "Tâche terminée sans sortie textuelle.",
       timestamp: Date.now(),
       fileSummary: data.fileSummary,
     };
@@ -1395,9 +1384,9 @@ async function sendPrompt(promptText: string) {
   } catch (err: any) {
     const errorMsg: ChatMessage = {
       id: `err-${Date.now()}`,
-      role: 'assistant',
-      backend: selectedBackend.value,
-      text: `❌ Erreur : ${err?.message || 'Échec de la tâche'}`,
+      role: "assistant",
+      backend,
+      text: `Erreur : ${err?.message || "Échec de la tâche"}`,
       timestamp: Date.now(),
       error: true,
     };
@@ -1406,7 +1395,7 @@ async function sendPrompt(promptText: string) {
   } finally {
     isSending.value = false;
     currentInFlightTaskId.value = null;
-    currentProgressMessage.value = '';
+    currentProgressMessage.value = "";
     scrollToBottom();
     // Refresh tasks and status
     fetchTasks(true);
@@ -1415,18 +1404,18 @@ async function sendPrompt(promptText: string) {
 }
 
 function clearChat() {
-  if (confirm('Voulez-vous effacer l’historique de conversation ?')) {
+  if (confirm("Voulez-vous effacer l’historique de conversation ?")) {
     messages.value = [];
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('nexus_brain_messages');
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("nexus_brain_messages");
     }
   }
 }
 
 function loadPersistedMessages() {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
   try {
-    const raw = localStorage.getItem('nexus_brain_messages');
+    const raw = localStorage.getItem("nexus_brain_messages");
     if (raw) {
       messages.value = JSON.parse(raw);
       scrollToBottom();
@@ -1437,11 +1426,11 @@ function loadPersistedMessages() {
 }
 
 function saveMessages() {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
   try {
     // Keep last 50 messages to preserve memory
     const trimmed = messages.value.slice(-50);
-    localStorage.setItem('nexus_brain_messages', JSON.stringify(trimmed));
+    localStorage.setItem("nexus_brain_messages", JSON.stringify(trimmed));
   } catch { }
 }
 
@@ -1454,54 +1443,58 @@ function scrollToBottom() {
 }
 
 function selectedBackendLabel(b?: string): string {
-  if (b === 'brain') return 'Nexus Brain';
-  if (b === 'codex') return 'Codex';
-  if (b === 'antigravity') return 'Antigravity';
-  return 'Agent';
+  if (b === "brain") return "Nexus Brain";
+  if (b === "codex") return "Codex";
+  if (b === "antigravity") return "Antigravity";
+  return "Agent";
 }
 
 function renderMarkdown(raw: string): string {
-  if (!raw) return '';
+  if (!raw) return "";
   let html = raw
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 
   // Code blocks: ```lang ... ```
-  html = html.replace(/```([a-zA-Z0-9_+-]*)\n([\s\S]*?)```/g, (_match, _lang, code) => {
-    return `<pre class="code-block"><code>${code.trim()}</code></pre>`;
-  });
+  html = html.replace(
+    /```([a-zA-Z0-9_+-]*)\n([\s\S]*?)```/g,
+    (_match, _lang, code) => {
+      return `<pre class="code-block"><code>${code.trim()}</code></pre>`;
+    },
+  );
 
   // Inline code: `code`
   html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
 
   // Bold: **text**
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
 
   // Italics: *text*
-  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
 
   // Line breaks
-  html = html.replace(/\n/g, '<br>');
+  html = html.replace(/\n/g, "<br>");
 
   return html;
 }
 
 function initSpeechRecognition() {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
   const SpeechRecognitionClass =
-    (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    (window as any).SpeechRecognition ||
+    (window as any).webkitSpeechRecognition;
 
   if (SpeechRecognitionClass) {
     try {
       const recognition = new SpeechRecognitionClass();
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang = 'fr-FR';
+      recognition.lang = "fr-FR";
 
       recognition.onresult = (event: any) => {
-        let finalChunk = '';
-        let interimChunk = '';
+        let finalChunk = "";
+        let interimChunk = "";
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           if (event.results[i].isFinal) {
             finalChunk += event.results[i][0].transcript;
@@ -1516,19 +1509,19 @@ function initSpeechRecognition() {
           const trimmed = finalChunk.trim();
           if (trimmed) {
             if (inputPrompt.value) {
-              inputPrompt.value += ' ' + trimmed;
+              inputPrompt.value += " " + trimmed;
             } else {
               inputPrompt.value = trimmed;
             }
           }
-          interimTranscript.value = '';
+          interimTranscript.value = "";
         }
       };
 
       recognition.onerror = (event: any) => {
-        console.warn('SpeechRecognition error:', event.error);
-        if (event.error !== 'no-speech') {
-          interimTranscript.value = '';
+        console.warn("SpeechRecognition error:", event.error);
+        if (event.error !== "no-speech") {
+          interimTranscript.value = "";
         }
       };
 
@@ -1540,16 +1533,17 @@ function initSpeechRecognition() {
 
       recognitionInstance = recognition;
     } catch (e) {
-      console.warn('Failed to initialize SpeechRecognition:', e);
+      console.warn("Failed to initialize SpeechRecognition:", e);
     }
   }
 }
 
 async function fetchVoiceStatus() {
+  if (!coreUrl.value) return;
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, '')}/api/voice/status`;
+    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/voice/status`;
     const res = await fetch(targetUrl, {
-      method: 'GET',
+      method: "GET",
       headers: getRequestHeaders(),
     });
     if (res.ok) {
@@ -1560,25 +1554,25 @@ async function fetchVoiceStatus() {
   }
 }
 
-async function triggerHaptic(type: 'press' | 'release' | 'cancel' | 'success') {
+async function triggerHaptic(type: "press" | "release" | "cancel" | "success") {
   if (Capacitor.isNativePlatform()) {
     try {
-      if (type === 'press') {
+      if (type === "press") {
         await Haptics.impact({ style: ImpactStyle.Medium });
-      } else if (type === 'release') {
+      } else if (type === "release") {
         await Haptics.impact({ style: ImpactStyle.Light });
-      } else if (type === 'success') {
+      } else if (type === "success") {
         await Haptics.notification({ type: NotificationType.Success });
-      } else if (type === 'cancel') {
+      } else if (type === "cancel") {
         await Haptics.notification({ type: NotificationType.Warning });
       }
       return;
     } catch { }
   }
-  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+  if (typeof navigator !== "undefined" && navigator.vibrate) {
     try {
-      if (type === 'press') navigator.vibrate(40);
-      else if (type === 'release') navigator.vibrate([20, 30, 20]);
+      if (type === "press") navigator.vibrate(40);
+      else if (type === "release") navigator.vibrate([20, 30, 20]);
     } catch { }
   }
 }
@@ -1591,38 +1585,40 @@ function appendTranscript(text: string) {
   } else {
     inputPrompt.value = trimmed;
   }
-  interimTranscript.value = '';
+  interimTranscript.value = "";
 }
 
 async function runNativeSpeechPopup() {
   try {
     const avail = await SpeechRecognition.available();
     if (!avail.available) {
-      console.warn('SpeechRecognition unavailable');
-      errorMessage.value = "Reconnaissance vocale non disponible sur cet appareil.";
+      console.warn("SpeechRecognition unavailable");
+      errorMessage.value =
+        "Reconnaissance vocale non disponible sur cet appareil.";
       return;
     }
     const perm = await SpeechRecognition.checkPermissions();
-    if (perm.speechRecognition !== 'granted') {
+    if (perm.speechRecognition !== "granted") {
       const req = await SpeechRecognition.requestPermissions();
-      if (req.speechRecognition !== 'granted') {
-        errorMessage.value = "Autorisation du micro requise pour la commande vocale.";
+      if (req.speechRecognition !== "granted") {
+        errorMessage.value =
+          "Autorisation du micro requise pour la commande vocale.";
         return;
       }
     }
-    await triggerHaptic('press');
+    await triggerHaptic("press");
     isListening.value = true;
-    errorMessage.value = '';
+    errorMessage.value = "";
     const result = await SpeechRecognition.start({
-      language: 'fr-FR',
+      language: "fr-FR",
       maxResults: 3,
-      prompt: 'Parlez au Brain Nexus...',
+      prompt: "Dicter un message",
       popup: true,
       partialResults: false,
     });
-    await triggerHaptic('success');
+    await triggerHaptic("success");
     if (result?.matches && result.matches.length > 0) {
-      const text = result.matches[0].trim();
+      const text = result.matches[0]?.trim() || "";
       if (text) {
         appendTranscript(text);
         if (autoSendVoice.value && isNodeReady.value) {
@@ -1633,8 +1629,8 @@ async function runNativeSpeechPopup() {
       }
     }
   } catch (err: any) {
-    console.warn('SpeechRecognition popup error:', err);
-    await triggerHaptic('cancel');
+    console.warn("SpeechRecognition popup error:", err);
+    await triggerHaptic("cancel");
   } finally {
     isListening.value = false;
     isPressingMic = false;
@@ -1725,9 +1721,9 @@ async function startPushToTalk() {
   if (!isNodeReady.value || isSending.value) return;
 
   speechRecordingStart = Date.now();
-  interimTranscript.value = '';
+  interimTranscript.value = "";
   isListening.value = true;
-  await triggerHaptic('press');
+  await triggerHaptic("press");
 
   if (Capacitor.isNativePlatform()) {
     // 1. Tenter la reconnaissance vocale native on-device
@@ -1736,35 +1732,41 @@ async function startPushToTalk() {
       const avail = await SpeechRecognition.available();
       if (avail.available) {
         const perm = await SpeechRecognition.checkPermissions();
-        if (perm.speechRecognition !== 'granted') {
+        if (perm.speechRecognition !== "granted") {
           const req = await SpeechRecognition.requestPermissions();
-          speechAvailable = req.speechRecognition === 'granted';
+          speechAvailable = req.speechRecognition === "granted";
         } else {
           speechAvailable = true;
         }
       }
     } catch (e) {
-      console.warn('SpeechRecognition check failed:', e);
+      console.warn("SpeechRecognition check failed:", e);
     }
 
     if (speechAvailable) {
       try {
         nativeSpeechActive = true;
         await SpeechRecognition.removeAllListeners();
-        await SpeechRecognition.addListener('partialResults', (data: { matches: string[] }) => {
-          if (data.matches && data.matches.length > 0) {
-            interimTranscript.value = data.matches[0];
-          }
-        });
+        await SpeechRecognition.addListener(
+          "partialResults",
+          (data: { matches: string[] }) => {
+            if (data.matches && data.matches.length > 0) {
+              interimTranscript.value = data.matches[0] || "";
+            }
+          },
+        );
         await SpeechRecognition.start({
-          language: 'fr-FR',
+          language: "fr-FR",
           maxResults: 3,
           partialResults: true,
           popup: false,
         });
         return;
       } catch (err) {
-        console.warn('SpeechRecognition.start failed, will use popup on tap or recorder:', err);
+        console.warn(
+          "SpeechRecognition.start failed, will use popup on tap or recorder:",
+          err,
+        );
         nativeSpeechActive = false;
       }
     }
@@ -1783,7 +1785,7 @@ async function startPushToTalk() {
       await VoiceRecorder.startRecording();
       return;
     } catch (err) {
-      console.warn('VoiceRecorder.startRecording failed:', err);
+      console.warn("VoiceRecorder.startRecording failed:", err);
       nativeRecorderActive = false;
       isListening.value = false;
       return;
@@ -1800,7 +1802,11 @@ async function startPushToTalk() {
     }
   }
 
-  if (typeof navigator !== 'undefined' && navigator.mediaDevices && typeof MediaRecorder !== 'undefined') {
+  if (
+    typeof navigator !== "undefined" &&
+    navigator.mediaDevices &&
+    typeof MediaRecorder !== "undefined"
+  ) {
     try {
       recordedAudioChunks = [];
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -1814,7 +1820,7 @@ async function startPushToTalk() {
       recorder.start(100);
       mediaRecorderInstance = recorder;
     } catch (err: any) {
-      console.warn('MediaRecorder error:', err);
+      console.warn("MediaRecorder error:", err);
       isListening.value = false;
       isPressingMic = false;
     }
@@ -1827,7 +1833,7 @@ async function stopPushToTalk() {
   const durationMs = Date.now() - speechRecordingStart;
   isPressingMic = false;
   isListening.value = false;
-  await triggerHaptic('release');
+  await triggerHaptic("release");
 
   if (Capacitor.isNativePlatform()) {
     if (nativeSpeechActive) {
@@ -1843,7 +1849,7 @@ async function stopPushToTalk() {
           return;
         }
       } catch (err) {
-        console.warn('SpeechRecognition.stop failed:', err);
+        console.warn("SpeechRecognition.stop failed:", err);
         if (interimTranscript.value.trim()) {
           appendTranscript(interimTranscript.value.trim());
         }
@@ -1857,24 +1863,30 @@ async function stopPushToTalk() {
       try {
         const result = await VoiceRecorder.stopRecording();
         if (result.value?.recordDataBase64 && durationMs > 300) {
-          await transcribeNativeAudio(result.value.recordDataBase64, result.value.mimeType || 'audio/aac');
+          await transcribeNativeAudio(
+            result.value.recordDataBase64,
+            result.value.mimeType || "audio/aac",
+          );
         }
       } catch (err) {
-        console.warn('VoiceRecorder.stopRecording failed:', err);
+        console.warn("VoiceRecorder.stopRecording failed:", err);
       } finally {
         nativeRecorderActive = false;
         isProcessingAudio.value = false;
       }
     }
 
-    if (autoSendVoice.value && inputPrompt.value.trim().length > 0 && durationMs > 400) {
+    if (
+      autoSendVoice.value &&
+      inputPrompt.value.trim().length > 0 &&
+      durationMs > 400
+    ) {
       setTimeout(() => {
         submitMessage();
       }, 250);
     }
     return;
   }
-
 
   // Web Browser fallback
   if (recognitionInstance) {
@@ -1883,13 +1895,13 @@ async function stopPushToTalk() {
     } catch { }
   }
 
-  if (mediaRecorderInstance && mediaRecorderInstance.state !== 'inactive') {
+  if (mediaRecorderInstance && mediaRecorderInstance.state !== "inactive") {
     isProcessingAudio.value = true;
     try {
       const audioBlob = await new Promise<Blob>((resolve) => {
         mediaRecorderInstance!.onstop = () => {
           const blob = new Blob(recordedAudioChunks, {
-            type: mediaRecorderInstance!.mimeType || 'audio/webm',
+            type: mediaRecorderInstance!.mimeType || "audio/webm",
           });
           resolve(blob);
         };
@@ -1908,13 +1920,17 @@ async function stopPushToTalk() {
         await transcribeAudioBlob(audioBlob);
       }
     } catch (err: any) {
-      console.warn('Error processing audio recording:', err);
+      console.warn("Error processing audio recording:", err);
     } finally {
       isProcessingAudio.value = false;
     }
   }
 
-  if (autoSendVoice.value && inputPrompt.value.trim().length > 0 && durationMs > 400) {
+  if (
+    autoSendVoice.value &&
+    inputPrompt.value.trim().length > 0 &&
+    durationMs > 400
+  ) {
     setTimeout(() => {
       submitMessage();
     }, 250);
@@ -1923,18 +1939,18 @@ async function stopPushToTalk() {
 
 async function transcribeNativeAudio(base64: string, mimeType: string) {
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, '')}/api/voice/transcribe`;
+    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/voice/transcribe`;
     const headers = {
       ...getRequestHeaders(),
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     };
     const res = await fetch(targetUrl, {
-      method: 'POST',
+      method: "POST",
       headers,
       body: JSON.stringify({
         audioBase64: base64,
-        mimeType: mimeType || 'audio/aac',
-        language: 'fr',
+        mimeType: mimeType || "audio/aac",
+        language: "fr",
       }),
     });
     if (res.ok) {
@@ -1944,18 +1960,18 @@ async function transcribeNativeAudio(base64: string, mimeType: string) {
       }
     }
   } catch (err) {
-    console.warn('Native audio backend transcription failed:', err);
+    console.warn("Native audio backend transcription failed:", err);
   }
 }
 
 async function transcribeAudioBlob(blob: Blob) {
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, '')}/api/voice/transcribe`;
+    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/voice/transcribe`;
     const headers = getRequestHeaders();
-    headers['Content-Type'] = blob.type || 'audio/webm';
+    headers["Content-Type"] = blob.type || "audio/webm";
 
     const res = await fetch(targetUrl, {
-      method: 'POST',
+      method: "POST",
       headers,
       body: blob,
     });
@@ -1967,7 +1983,7 @@ async function transcribeAudioBlob(blob: Blob) {
       }
     }
   } catch (err) {
-    console.warn('Backend transcription failed:', err);
+    console.warn("Backend transcription failed:", err);
   }
 }
 
@@ -1975,8 +1991,8 @@ async function cancelVoiceRecording() {
   isListening.value = false;
   isPressingMic = false;
   clickToggleActive = false;
-  interimTranscript.value = '';
-  await triggerHaptic('cancel');
+  interimTranscript.value = "";
+  await triggerHaptic("cancel");
 
   if (Capacitor.isNativePlatform()) {
     if (nativeSpeechActive) {
@@ -1996,10 +2012,14 @@ async function cancelVoiceRecording() {
   }
 
   if (recognitionInstance) {
-    try { recognitionInstance.abort(); } catch { }
+    try {
+      recognitionInstance.abort();
+    } catch { }
   }
-  if (mediaRecorderInstance && mediaRecorderInstance.state !== 'inactive') {
-    try { mediaRecorderInstance.stop(); } catch { }
+  if (mediaRecorderInstance && mediaRecorderInstance.state !== "inactive") {
+    try {
+      mediaRecorderInstance.stop();
+    } catch { }
   }
   if (mediaStreamInstance) {
     for (const track of mediaStreamInstance.getTracks()) {
@@ -2011,29 +2031,60 @@ async function cancelVoiceRecording() {
 }
 
 function saveSettings() {
-  let cleaned = coreUrlInput.value.trim().replace(/\/+$/, '');
-  if (!cleaned.startsWith('http://') && !cleaned.startsWith('https://')) {
+  settingsError.value = "";
+  if (!coreUrlInput.value.trim()) {
+    settingsError.value = "Renseignez l’adresse de votre serveur.";
+    return;
+  }
+  let cleaned = coreUrlInput.value.trim();
+  if (!cleaned.startsWith("http://") && !cleaned.startsWith("https://")) {
     cleaned = `http://${cleaned}`;
   }
+  try {
+    const url = new URL(cleaned);
+    if (
+      !["http:", "https:"].includes(url.protocol) ||
+      !url.hostname ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      url.pathname !== "/"
+    )
+      throw new Error();
+    cleaned = url.origin;
+  } catch {
+    settingsError.value =
+      "Saisissez une adresse HTTP ou HTTPS, avec son port si nécessaire.";
+    return;
+  }
+  coreStatus.value = null;
+  tasks.value = [];
+  approvals.value = [];
+  connectionStatus.value = "connecting";
   coreUrl.value = cleaned;
   authToken.value = authTokenInput.value.trim();
 
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('nexus_core_url', coreUrl.value);
-    localStorage.setItem('nexus_auth_token', authToken.value);
-    localStorage.setItem('nexus_auto_send_voice', autoSendVoice.value ? 'true' : 'false');
+  if (typeof window !== "undefined") {
+    localStorage.setItem("nexus_core_url", coreUrl.value);
+    localStorage.setItem("nexus_auth_token", authToken.value);
+    localStorage.setItem(
+      "nexus_auto_send_voice",
+      autoSendVoice.value ? "true" : "false",
+    );
   }
 
   showSettings.value = false;
   handleManualRefresh();
+  fetchVoiceStatus();
 }
 
 function resetSettings() {
-  if (typeof window !== 'undefined') {
-    coreUrlInput.value = window.location.origin;
-    authTokenInput.value = '';
+  if (typeof window !== "undefined") {
+    coreUrlInput.value = isNativeApp.value ? "" : window.location.origin;
+    authTokenInput.value = "";
     autoSendVoice.value = true;
-    saveSettings();
+    settingsError.value = "";
   }
 }
 
@@ -2043,41 +2094,32 @@ function isProjectActive(project: ProjectInfo): boolean {
     (n) =>
       n.activeProject?.name === project.name ||
       n.activeProject?.path === project.path ||
-      (project.id && n.activeProject?.id === project.id)
+      (project.id && n.activeProject?.id === project.id),
   );
 }
 
 function formatState(state: string): string {
-  if (state === 'idle') return 'Prêt (idle)';
-  if (state === 'busy') return 'En tâche (busy)';
+  if (state === "idle") return "Disponible";
+  if (state === "busy") return "En cours";
   return state;
 }
 
 function formatTaskStatus(status: string): string {
-  if (status === 'running') return 'En cours';
-  if (status === 'pending') return 'En attente';
-  if (status === 'completed') return 'Terminé';
-  if (status === 'failed') return 'Échoué';
-  if (status === 'cancelled') return 'Annulé';
+  if (status === "running") return "En cours";
+  if (status === "pending") return "En attente";
+  if (status === "completed") return "Terminé";
+  if (status === "failed") return "Échoué";
+  if (status === "cancelled") return "Annulé";
   return status;
 }
 
 function formatTime(timestamp: number): string {
   const d = new Date(timestamp);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-function formatUptime(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function formatRelativeTime(timestamp?: number): string {
-  if (!timestamp) return 'inconnu';
+  if (!timestamp) return "inconnu";
   const diffSec = Math.floor((now.value - timestamp) / 1000);
   if (diffSec <= 1) return "à l'instant";
   if (diffSec < 60) return `il y a ${diffSec}s`;
@@ -2100,2578 +2142,8 @@ async function installPwa() {
   if (!deferredPrompt.value) return;
   deferredPrompt.value.prompt();
   const choice = await deferredPrompt.value.userChoice;
-  if (choice.outcome === 'accepted') {
+  if (choice.outcome === "accepted") {
     deferredPrompt.value = null;
   }
 }
 </script>
-
-<style>
-/* CSS Reset & Design System Variables */
-:root {
-  --bg-primary: #05070a;
-  --bg-secondary: #080b11;
-  --bg-card: #0f141f;
-  --bg-card-hover: #141b2a;
-  --border-color: rgba(255, 255, 255, 0.07);
-  --border-accent: rgba(245, 158, 11, 0.35);
-
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-
-  --color-brand: #f59e0b;
-  --color-brand-glow: rgba(245, 158, 11, 0.2);
-  --color-success: #10b981;
-  --color-warning: #f59e0b;
-  --color-danger: #ef4444;
-
-  --radius-sm: 8px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
-
-  --safe-top: env(safe-area-inset-top, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-}
-
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  -webkit-tap-highlight-color: transparent;
-}
-
-body {
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  user-select: none;
-  min-height: 100vh;
-}
-
-/* App Shell */
-.nexus-app {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  max-width: 600px;
-  margin: 0 auto;
-  position: relative;
-  background-color: var(--bg-primary);
-  overflow: hidden;
-}
-
-/* Header */
-.nexus-header {
-  padding: calc(var(--safe-top) + 10px) 16px 10px;
-  background: rgba(8, 11, 17, 0.95);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--border-color);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-shrink: 0;
-  z-index: 50;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.brand-logo {
-  position: relative;
-  width: 32px;
-  height: 32px;
-  background: rgba(245, 158, 11, 0.12);
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  font-size: 0.78rem;
-  color: #fbbf24;
-  letter-spacing: 0.05em;
-  font-family: monospace;
-}
-
-.logo-nx {
-  font-weight: 800;
-  font-family: monospace;
-}
-
-.logo-dot {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  border: 2px solid var(--bg-primary);
-}
-
-.logo-dot.connected {
-  background-color: var(--color-success);
-  box-shadow: 0 0 6px var(--color-success);
-}
-
-.logo-dot.connecting {
-  background-color: var(--color-warning);
-}
-
-.logo-dot.error {
-  background-color: var(--color-danger);
-}
-
-.brand-text {
-  display: flex;
-  flex-direction: column;
-}
-
-.title-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.brand-title {
-  font-size: 1.1rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  color: #fff;
-}
-
-.version-tag {
-  font-size: 0.65rem;
-  background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-weight: 600;
-  font-family: monospace;
-}
-
-.brand-sub {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-family: monospace;
-}
-
-.header-project-pill {
-  margin-top: 2px;
-}
-
-.select-project-pill {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #fbbf24;
-  font-size: 0.72rem;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 12px;
-  cursor: pointer;
-  max-width: 140px;
-  outline: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.header-agent-segmented {
-  display: flex;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--radius-sm);
-  padding: 2px;
-  gap: 2px;
-}
-
-.btn-seg {
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  font-size: 0.74rem;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.btn-seg.active {
-  background: rgba(245, 158, 11, 0.18);
-  color: #fbbf24;
-  border: 1px solid rgba(245, 158, 11, 0.35);
-}
-
-.node-offline-pill {
-  margin: 8px 16px;
-  padding: 6px 12px;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.25);
-  border-radius: 8px;
-  color: #fca5a5;
-  font-size: 0.74rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.offline-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.offline-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #ef4444;
-}
-
-.btn-retry-pill {
-  background: rgba(239, 68, 68, 0.2);
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  color: #fff;
-  font-size: 0.68rem;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* Approval Alert Button in Header */
-.btn-approval-alert {
-  background: rgba(245, 158, 11, 0.2);
-  border: 1px solid var(--color-warning);
-  color: #fde68a;
-  height: 36px;
-  padding: 0 10px;
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 700;
-  font-size: 0.85rem;
-  cursor: pointer;
-  animation: pulse-amber-border 1.5s infinite;
-}
-
-.alert-count {
-  background: var(--color-warning);
-  color: #000;
-  font-size: 0.72rem;
-  padding: 1px 6px;
-  border-radius: 10px;
-  font-weight: 800;
-}
-
-@keyframes pulse-amber-border {
-  0% {
-    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.6);
-  }
-
-  70% {
-    box-shadow: 0 0 0 8px rgba(245, 158, 11, 0);
-  }
-
-  100% {
-    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
-  }
-}
-
-.btn-icon {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.btn-icon:active,
-.btn-icon.active {
-  background: rgba(56, 189, 248, 0.2);
-  border-color: var(--color-brand);
-}
-
-.spinning {
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* Tab Navigation Bar */
-.tab-nav {
-  display: flex;
-  background: rgba(13, 18, 29, 0.8);
-  border-bottom: 1px solid var(--border-color);
-  padding: 4px 8px;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.tab-btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
-  color: var(--text-muted);
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  position: relative;
-  transition: all 0.2s ease;
-}
-
-.tab-btn.active {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-  border-bottom: 2px solid var(--color-brand);
-}
-
-.tab-icon {
-  font-size: 1rem;
-}
-
-.tab-status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-}
-
-.tab-status-dot.online {
-  background-color: var(--color-success);
-}
-
-.tab-status-dot.offline {
-  background-color: var(--color-danger);
-}
-
-.tab-badge-pulse {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background-color: var(--color-brand);
-  animation: pulse-glow 1s infinite alternate;
-}
-
-.tab-badge-count {
-  background: rgba(56, 189, 248, 0.2);
-  color: var(--color-brand);
-  font-size: 0.7rem;
-  padding: 1px 6px;
-  border-radius: 10px;
-  font-weight: 700;
-}
-
-.tab-badge-approval {
-  background: var(--color-warning);
-  color: #000;
-  font-size: 0.7rem;
-  padding: 1px 6px;
-  border-radius: 10px;
-  font-weight: 800;
-  animation: pulse-glow 1s infinite alternate;
-}
-
-@keyframes pulse-glow {
-  from {
-    opacity: 0.4;
-    transform: scale(0.9);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1.1);
-  }
-}
-
-/* Error Banner */
-.error-banner {
-  background: rgba(239, 68, 68, 0.15);
-  border-bottom: 1px solid rgba(239, 68, 68, 0.3);
-  padding: 8px 16px;
-  font-size: 0.78rem;
-  color: #fca5a5;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.btn-retry {
-  background: rgba(239, 68, 68, 0.3);
-  border: 1px solid #ef4444;
-  color: #fff;
-  font-size: 0.72rem;
-  padding: 2px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-/* ======================================================== */
-/* CHAT TAB STYLES                                          */
-/* ======================================================== */
-.chat-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  position: relative;
-}
-
-.chat-context-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 14px;
-  background: rgba(19, 27, 46, 0.6);
-  border-bottom: 1px solid var(--border-color);
-  font-size: 0.75rem;
-  flex-shrink: 0;
-}
-
-.context-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.context-label {
-  color: var(--text-muted);
-}
-
-.context-value {
-  font-weight: 600;
-}
-
-.context-value.online {
-  color: var(--color-success);
-}
-
-.context-value.offline {
-  color: var(--color-danger);
-}
-
-.project-pill {
-  background: rgba(56, 189, 248, 0.1);
-  color: var(--color-brand);
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-family: monospace;
-}
-
-.select-backend {
-  background: #090d16;
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  font-size: 0.74rem;
-  padding: 2px 6px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.select-project {
-  background: #090d16;
-  border: 1px solid var(--border-color);
-  color: #38bdf8;
-  font-size: 0.74rem;
-  padding: 2px 6px;
-  border-radius: 4px;
-  cursor: pointer;
-  max-width: 140px;
-  text-overflow: ellipsis;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-/* Floating Approval Alert Banner in Chat */
-.approval-chat-banner {
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(19, 27, 46, 0.95));
-  border-bottom: 1px solid rgba(245, 158, 11, 0.4);
-  padding: 10px 14px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 0.2s ease;
-}
-
-.approval-chat-banner:hover {
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.3), rgba(19, 27, 46, 0.95));
-}
-
-.approval-banner-icon {
-  font-size: 1.4rem;
-}
-
-.approval-banner-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.banner-title-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.banner-title-line strong {
-  font-size: 0.82rem;
-  color: #fef3c7;
-}
-
-.badge-urgent-pill {
-  background: var(--color-warning);
-  color: #000;
-  font-size: 0.65rem;
-  font-weight: 800;
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
-.approval-banner-content p {
-  font-size: 0.74rem;
-  color: #fde68a;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.btn-approval-banner-action {
-  background: rgba(245, 158, 11, 0.3);
-  border: 1px solid var(--color-warning);
-  color: #fff;
-  font-size: 0.74rem;
-  font-weight: 700;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-/* Messages Stream */
-.messages-stream {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.chat-welcome {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  margin: auto 0;
-  padding: 24px 12px;
-  gap: 12px;
-}
-
-.welcome-icon {
-  font-size: 3rem;
-}
-
-.chat-welcome h3 {
-  font-size: 1.25rem;
-  font-weight: 800;
-  color: #fff;
-}
-
-.chat-welcome p {
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-  max-width: 420px;
-  line-height: 1.4;
-}
-
-.suggestions-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-  max-width: 380px;
-  margin-top: 10px;
-}
-
-.chip-btn {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  color: var(--color-brand);
-  font-size: 0.82rem;
-  padding: 10px 14px;
-  border-radius: var(--radius-sm);
-  text-align: left;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.chip-btn:hover:not(:disabled) {
-  background: var(--bg-card-hover);
-  border-color: var(--border-accent);
-}
-
-.chip-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* Message Wrappers */
-.message-wrapper {
-  display: flex;
-  flex-direction: column;
-  max-width: 85%;
-}
-
-.message-wrapper.user {
-  align-self: flex-end;
-}
-
-.message-wrapper.assistant {
-  align-self: flex-start;
-}
-
-.message-bubble {
-  padding: 10px 14px;
-  border-radius: var(--radius-md);
-  font-size: 0.88rem;
-  line-height: 1.45;
-  user-select: text;
-  word-break: break-word;
-}
-
-.message-wrapper.user .message-bubble {
-  background: #1e2538;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #f8fafc;
-  border-bottom-right-radius: 4px;
-}
-
-.message-wrapper.assistant .message-bubble {
-  background: #0f141f;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  color: #e2e8f0;
-  border-bottom-left-radius: 4px;
-}
-
-.message-bubble.is-error {
-  border-color: rgba(239, 68, 68, 0.4);
-  background: rgba(239, 68, 68, 0.1);
-  color: #fca5a5;
-}
-
-.message-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 4px;
-  font-size: 0.68rem;
-  opacity: 0.75;
-}
-
-.sender-name {
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.message-content {
-  line-height: 1.5;
-}
-
-.file-summary-box {
-  margin-top: 8px;
-  padding: 4px 8px;
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid var(--border-accent);
-  border-radius: 4px;
-  font-size: 0.74rem;
-  color: var(--color-brand);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-/* Typing Indicator */
-.typing-bubble {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  background: rgba(19, 27, 46, 0.8) !important;
-}
-
-.typing-top-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.typing-indicator {
-  display: flex;
-  gap: 4px;
-}
-
-.typing-indicator span {
-  width: 6px;
-  height: 6px;
-  background-color: var(--color-brand);
-  border-radius: 50%;
-  animation: typing 1.4s infinite ease-in-out;
-}
-
-.typing-indicator span:nth-child(1) {
-  animation-delay: 0s;
-}
-
-.typing-indicator span:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.typing-indicator span:nth-child(3) {
-  animation-delay: 0.4s;
-}
-
-@keyframes typing {
-
-  0%,
-  80%,
-  100% {
-    transform: scale(0.6);
-    opacity: 0.4;
-  }
-
-  40% {
-    transform: scale(1.1);
-    opacity: 1;
-  }
-}
-
-.btn-cancel-in-flight {
-  background: rgba(239, 68, 68, 0.2);
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  color: #fca5a5;
-  font-size: 0.7rem;
-  padding: 2px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.typing-text {
-  font-size: 0.78rem;
-  color: var(--text-muted);
-}
-
-.node-offline-alert {
-  padding: 6px 14px;
-  background: rgba(245, 158, 11, 0.12);
-  border-top: 1px solid rgba(245, 158, 11, 0.25);
-  font-size: 0.75rem;
-  color: #fde68a;
-  text-align: center;
-}
-
-.node-offline-alert code {
-  font-family: monospace;
-  background: rgba(0, 0, 0, 0.3);
-  padding: 1px 4px;
-  border-radius: 3px;
-}
-
-/* Voice Recording Wave Banner */
-.voice-recording-banner {
-  background: rgba(15, 23, 42, 0.95);
-  border-top: 1px solid rgba(239, 68, 68, 0.5);
-  padding: 8px 14px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  animation: slide-up 0.2s ease-out;
-}
-
-.voice-wave {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  height: 24px;
-}
-
-.wave-bar {
-  width: 3px;
-  background: #ef4444;
-  border-radius: 2px;
-  animation: sound-wave 1.2s ease-in-out infinite;
-}
-
-.wave-bar:nth-child(1) {
-  height: 8px;
-  animation-delay: 0.1s;
-}
-
-.wave-bar:nth-child(2) {
-  height: 16px;
-  animation-delay: 0.25s;
-}
-
-.wave-bar:nth-child(3) {
-  height: 22px;
-  animation-delay: 0.4s;
-}
-
-.wave-bar:nth-child(4) {
-  height: 14px;
-  animation-delay: 0.15s;
-}
-
-.wave-bar:nth-child(5) {
-  height: 10px;
-  animation-delay: 0.3s;
-}
-
-@keyframes sound-wave {
-
-  0%,
-  100% {
-    transform: scaleY(0.4);
-  }
-
-  50% {
-    transform: scaleY(1.2);
-  }
-}
-
-.voice-status-text {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.voice-caption {
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: #fff;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.voice-hint {
-  font-size: 0.68rem;
-  color: #fca5a5;
-}
-
-.btn-cancel-voice {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  font-size: 0.72rem;
-  padding: 4px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-/* Quick Chips (Horizontal, Thumb Friendly) */
-.chat-quick-chips {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  overflow-x: auto;
-  padding: 6px 14px;
-  flex-shrink: 0;
-  background: rgba(8, 11, 17, 0.7);
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
-  scrollbar-width: none;
-}
-
-.chat-quick-chips::-webkit-scrollbar {
-  display: none;
-}
-
-.chip-item {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #e2e8f0;
-  font-size: 0.74rem;
-  font-weight: 500;
-  padding: 5px 12px;
-  border-radius: 14px;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.chip-item:hover:not(:disabled) {
-  background: rgba(245, 158, 11, 0.12);
-  border-color: rgba(245, 158, 11, 0.3);
-  color: #fbbf24;
-}
-
-.chip-item:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* Mic Button */
-.btn-mic {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-md);
-  background: rgba(245, 158, 11, 0.1);
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  color: #fbbf24;
-  font-size: 1.15rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all 0.15s ease;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.btn-mic:hover:not(:disabled) {
-  border-color: #f59e0b;
-  background: rgba(245, 158, 11, 0.2);
-}
-
-.btn-mic.is-listening {
-  background: rgba(245, 158, 11, 0.25);
-  border-color: #f59e0b;
-  box-shadow: 0 0 16px rgba(245, 158, 11, 0.5);
-  animation: mic-pulse 1s infinite alternate;
-}
-
-@keyframes mic-pulse {
-  from {
-    transform: scale(0.96);
-    box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
-  }
-
-  to {
-    transform: scale(1.06);
-    box-shadow: 0 0 16px rgba(239, 68, 68, 0.8);
-  }
-}
-
-.btn-mic:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.checkbox-group {
-  margin-top: 4px;
-}
-
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.checkbox-input {
-  accent-color: var(--color-brand);
-  width: 16px;
-  height: 16px;
-}
-
-.native-platform-badge {
-  background: rgba(14, 165, 233, 0.1);
-  border: 1px solid rgba(14, 165, 233, 0.3);
-  border-radius: var(--radius-sm);
-  padding: 8px 12px;
-  margin-top: 6px;
-}
-
-.platform-chip {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #38bdf8;
-  display: block;
-  margin-bottom: 4px;
-}
-
-.helper-warn {
-  color: #fbbf24 !important;
-}
-
-/* Chat Input Bar */
-.chat-input-bar {
-  padding: 8px 14px calc(var(--safe-bottom) + 38px);
-  background: rgba(8, 11, 17, 0.95);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-top: 1px solid var(--border-color);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.chat-textarea {
-  flex: 1;
-  background: #0f141f;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  padding: 10px 14px;
-  color: #fff;
-  font-size: 0.88rem;
-  font-family: inherit;
-  resize: none;
-  min-height: 44px;
-  max-height: 120px;
-  outline: none;
-  transition: border-color 0.2s ease;
-}
-
-.chat-textarea:focus {
-  border-color: var(--color-brand);
-}
-
-.chat-textarea:disabled {
-  opacity: 0.5;
-}
-
-.btn-send {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-md);
-  background: var(--color-brand);
-  border: none;
-  color: #05070a;
-  font-size: 1.15rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all 0.15s ease;
-  font-weight: 700;
-}
-
-.btn-send:hover:not(:disabled) {
-  background: #d97706;
-}
-
-.btn-send:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-  background: var(--bg-card);
-  color: var(--text-muted);
-}
-
-/* Code Markdown Styling */
-.code-block {
-  background: #05070c;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 8px 10px;
-  margin: 8px 0;
-  font-family: monospace;
-  font-size: 0.78rem;
-  overflow-x: auto;
-  color: #38bdf8;
-}
-
-.inline-code {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--color-brand);
-  padding: 1px 5px;
-  border-radius: 4px;
-  font-family: monospace;
-  font-size: 0.82rem;
-}
-
-/* ======================================================== */
-/* ACTIVITY TAB STYLES                                      */
-/* ======================================================== */
-.activity-view {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.activity-top-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.activity-title-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.activity-badge {
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 999px;
-}
-
-.badge-running {
-  background: rgba(56, 189, 248, 0.2);
-  color: var(--color-brand);
-}
-
-.badge-idle {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-muted);
-}
-
-.btn-refresh-activity {
-  width: 32px;
-  height: 32px;
-}
-
-/* Approvals Box in Activity Tab */
-.activity-approvals-box {
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  border-radius: var(--radius-md);
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.activity-section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.section-header-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.section-title-sm {
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: #fde68a;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.pulse-warning-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--color-warning);
-  animation: pulse-glow 1s infinite alternate;
-}
-
-.approvals-cards-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.approval-item-card {
-  background: #0f1627;
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  border-radius: var(--radius-sm);
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.approval-item-card.expiring-soon {
-  border-color: #ef4444;
-  animation: pulse-amber-border 1.2s infinite;
-}
-
-.approval-item-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.approval-agent-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.approval-agent-tag {
-  font-weight: 700;
-  font-size: 0.8rem;
-  color: #fff;
-}
-
-.approval-kind-pill {
-  font-size: 0.7rem;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-secondary);
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-.approval-kind-pill.command {
-  color: #38bdf8;
-  background: rgba(56, 189, 248, 0.12);
-}
-
-.approval-kind-pill.fileChange {
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.12);
-}
-
-.approval-kind-pill.consent {
-  color: #10b981;
-  background: rgba(16, 185, 129, 0.12);
-}
-
-.approval-timer-pill {
-  font-size: 0.74rem;
-  font-weight: 700;
-  color: var(--text-muted);
-}
-
-.approval-timer-pill.urgent {
-  color: #ef4444;
-  font-weight: 800;
-}
-
-.text-expired {
-  color: #ef4444;
-}
-
-.approval-command-preview {
-  background: #05070c;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 8px;
-  overflow-x: auto;
-}
-
-.approval-command-preview pre code {
-  font-family: monospace;
-  font-size: 0.78rem;
-  color: #fde68a;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-.approval-item-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.btn-action-approve {
-  background: var(--color-success);
-  color: #041409;
-  font-weight: 700;
-  font-size: 0.82rem;
-  border: none;
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-action-decline {
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid #ef4444;
-  color: #fca5a5;
-  font-weight: 700;
-  font-size: 0.82rem;
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-action-approve:disabled,
-.btn-action-decline:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* Task Filter Pills */
-.task-filter-bar {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-}
-
-.filter-pill {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  font-size: 0.74rem;
-  padding: 6px 12px;
-  border-radius: 999px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-}
-
-.filter-pill.active {
-  background: rgba(56, 189, 248, 0.15);
-  border-color: var(--color-brand);
-  color: #fff;
-  font-weight: 700;
-}
-
-.filter-count {
-  font-size: 0.68rem;
-  opacity: 0.8;
-}
-
-/* Active Task Hero Banner */
-.active-task-hero {
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.12), var(--bg-card));
-  border: 1px solid var(--color-brand);
-  border-radius: var(--radius-md);
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.hero-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.hero-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.hero-badge {
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  color: var(--color-brand);
-}
-
-.pulse-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--color-brand);
-  box-shadow: 0 0 8px var(--color-brand);
-  animation: pulse-glow 1s infinite alternate;
-}
-
-.btn-stop-hero {
-  background: rgba(239, 68, 68, 0.2);
-  border: 1px solid #ef4444;
-  color: #fca5a5;
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 4px 10px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-
-.hero-prompt {
-  font-size: 0.85rem;
-  color: #fff;
-  font-weight: 600;
-}
-
-.hero-progress {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.78rem;
-  color: var(--text-secondary);
-}
-
-.hero-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  border-top: 1px solid var(--border-color);
-  padding-top: 8px;
-}
-
-/* Tasks Scroll List */
-.tasks-scroll-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.task-item-card {
-  padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.task-item-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.task-item-badges {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.task-status-pill {
-  font-size: 0.7rem;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 4px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.task-status-pill.running {
-  background: rgba(56, 189, 248, 0.15);
-  color: var(--color-brand);
-}
-
-.task-status-pill.pending {
-  background: rgba(245, 158, 11, 0.15);
-  color: var(--color-warning);
-}
-
-.task-status-pill.completed {
-  background: rgba(16, 185, 129, 0.15);
-  color: var(--color-success);
-}
-
-.task-status-pill.failed,
-.task-status-pill.cancelled {
-  background: rgba(239, 68, 68, 0.15);
-  color: var(--color-danger);
-}
-
-.pulse-dot-small {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--color-brand);
-}
-
-.backend-tag {
-  font-size: 0.68rem;
-  padding: 1px 5px;
-  border-radius: 3px;
-  font-weight: 600;
-  text-transform: uppercase;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-secondary);
-}
-
-.backend-tag.brain {
-  color: #a78bfa;
-}
-
-.backend-tag.codex {
-  color: #38bdf8;
-}
-
-.backend-tag.antigravity {
-  color: #fbbf24;
-}
-
-.task-header-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.task-date {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-}
-
-.btn-stop-item {
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  color: #fca5a5;
-  font-size: 0.68rem;
-  padding: 2px 6px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.task-prompt-text {
-  font-size: 0.82rem;
-  color: var(--text-primary);
-  line-height: 1.4;
-}
-
-.task-result-box {
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.result-header {
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: var(--text-muted);
-  text-transform: uppercase;
-}
-
-.result-preview {
-  font-size: 0.78rem;
-  color: var(--text-secondary);
-  line-height: 1.35;
-  max-height: 80px;
-  overflow-y: auto;
-}
-
-.task-error-box {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-}
-
-.error-badge {
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: #ef4444;
-}
-
-.error-desc {
-  font-size: 0.75rem;
-  color: #fca5a5;
-  margin-top: 2px;
-}
-
-.task-item-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  font-family: monospace;
-}
-
-.btn-stop-node {
-  background: rgba(239, 68, 68, 0.2);
-  border: 1px solid rgba(239, 68, 68, 0.5);
-  color: #fca5a5;
-  font-size: 0.68rem;
-  padding: 1px 6px;
-  border-radius: 4px;
-  cursor: pointer;
-  margin-left: 4px;
-}
-
-/* ======================================================== */
-/* DASHBOARD TAB STYLES                                     */
-/* ======================================================== */
-.nexus-main {
-  flex: 1;
-  padding: 14px 16px calc(var(--safe-bottom) + 50px);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.status-banner {
-  padding: 10px 14px;
-  border-radius: var(--radius-md);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 0.82rem;
-  border: 1px solid transparent;
-}
-
-.status-banner.connected {
-  background: rgba(16, 185, 129, 0.08);
-  border-color: rgba(16, 185, 129, 0.25);
-  color: #a7f3d0;
-}
-
-.status-banner.connecting {
-  background: rgba(245, 158, 11, 0.08);
-  border-color: rgba(245, 158, 11, 0.25);
-  color: #fde68a;
-}
-
-.status-banner.error {
-  background: rgba(239, 68, 68, 0.08);
-  border-color: rgba(239, 68, 68, 0.25);
-  color: #fca5a5;
-}
-
-.status-indicator {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-}
-
-.status-pulse {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.status-pulse.connected {
-  background-color: var(--color-success);
-  box-shadow: 0 0 8px var(--color-success);
-}
-
-.status-pulse.connecting {
-  background-color: var(--color-warning);
-  animation: blink 1s infinite alternate;
-}
-
-.status-pulse.error {
-  background-color: var(--color-danger);
-}
-
-@keyframes blink {
-  from {
-    opacity: 0.4;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-.status-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.75rem;
-  color: var(--text-muted);
-}
-
-.uptime-badge {
-  background: rgba(255, 255, 255, 0.06);
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-.section-container {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.section-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.section-title {
-  font-size: 0.95rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-secondary);
-}
-
-.card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  padding: 16px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-}
-
-.badge {
-  font-size: 0.72rem;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 999px;
-}
-
-.badge-success {
-  background: rgba(16, 185, 129, 0.15);
-  color: var(--color-success);
-}
-
-.badge-warning {
-  background: rgba(245, 158, 11, 0.15);
-  color: var(--color-warning);
-}
-
-.badge-neutral {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-muted);
-}
-
-.badge-active {
-  background: rgba(56, 189, 248, 0.18);
-  color: var(--color-brand);
-}
-
-.btn-switch-project {
-  background: rgba(56, 189, 248, 0.12);
-  border: 1px solid rgba(56, 189, 248, 0.3);
-  color: #38bdf8;
-  font-size: 0.75rem;
-  padding: 3px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.btn-switch-project:hover:not(:disabled) {
-  background: rgba(56, 189, 248, 0.25);
-  border-color: #38bdf8;
-}
-
-.btn-switch-project:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* Node Card */
-.node-card {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.node-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.node-identity {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.node-avatar {
-  font-size: 1.5rem;
-}
-
-.node-name {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: #fff;
-}
-
-.node-id {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  font-family: monospace;
-}
-
-.node-state-pill {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.76rem;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.node-state-pill .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-}
-
-.node-state-pill.idle {
-  background: rgba(16, 185, 129, 0.15);
-  color: var(--color-success);
-}
-
-.node-state-pill.idle .dot {
-  background: var(--color-success);
-}
-
-.node-state-pill.busy {
-  background: rgba(245, 158, 11, 0.15);
-  color: var(--color-warning);
-}
-
-.node-state-pill.busy .dot {
-  background: var(--color-warning);
-}
-
-.node-project-box {
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(56, 189, 248, 0.2);
-  border-radius: var(--radius-sm);
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.node-project-box.no-project {
-  color: var(--text-muted);
-  font-size: 0.85rem;
-  text-align: center;
-}
-
-.project-headline {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.project-tag {
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-brand);
-  font-weight: 700;
-}
-
-.branch-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  font-size: 0.72rem;
-  padding: 2px 7px;
-  border-radius: 4px;
-  color: var(--text-primary);
-  font-family: monospace;
-}
-
-.branch-icon {
-  font-size: 0.75rem;
-}
-
-.project-name {
-  font-size: 1rem;
-  font-weight: 700;
-  color: #fff;
-}
-
-.project-path {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  font-family: monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.node-meta-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  padding-top: 6px;
-  border-top: 1px solid var(--border-color);
-}
-
-.meta-item {
-  display: flex;
-  flex-direction: column;
-}
-
-.meta-label {
-  font-size: 0.68rem;
-  color: var(--text-muted);
-}
-
-.meta-val {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
-/* Node Offline State */
-.node-offline .offline-hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 12px 6px;
-  gap: 10px;
-}
-
-.offline-icon {
-  font-size: 2.2rem;
-  opacity: 0.8;
-}
-
-.offline-hero h3 {
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: #fff;
-}
-
-.offline-hero p {
-  font-size: 0.82rem;
-  color: var(--text-secondary);
-  line-height: 1.4;
-  max-width: 400px;
-}
-
-.code-box {
-  background: #05070b;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  padding: 6px 10px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 6px;
-  width: 100%;
-  max-width: 360px;
-}
-
-.code-box code {
-  flex: 1;
-  font-family: monospace;
-  font-size: 0.8rem;
-  color: var(--color-brand);
-  text-align: left;
-}
-
-.btn-copy {
-  background: rgba(255, 255, 255, 0.08);
-  border: none;
-  color: var(--text-primary);
-  font-size: 0.7rem;
-  padding: 4px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.btn-copy:active {
-  background: var(--color-brand);
-  color: #000;
-}
-
-/* Projects List */
-.projects-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.project-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px;
-}
-
-.project-card.active {
-  border-color: var(--border-accent);
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.04), var(--bg-card));
-}
-
-.project-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-}
-
-.project-title-area {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.folder-icon {
-  font-size: 1.3rem;
-}
-
-.project-title {
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: #fff;
-}
-
-.project-path-text {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  font-family: monospace;
-}
-
-.project-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 4px;
-}
-
-.timestamp {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-}
-
-.card-empty {
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 0.85rem;
-  padding: 24px;
-}
-
-/* Telemetry Grid */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-
-.stat-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  padding: 14px 10px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 4px;
-}
-
-.stat-interactive {
-  cursor: pointer;
-  transition: transform 0.15s ease, border-color 0.2s ease;
-}
-
-.stat-interactive:hover {
-  border-color: var(--color-brand);
-  transform: translateY(-1px);
-}
-
-.stat-approval-pulse {
-  border-color: var(--color-warning) !important;
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), var(--bg-card));
-  animation: pulse-amber-border 2s infinite;
-}
-
-.stat-number {
-  font-size: 1.5rem;
-  font-weight: 800;
-  color: #fff;
-}
-
-.stat-label {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-/* Settings Card */
-.settings-card {
-  position: absolute;
-  top: 90px;
-  left: 16px;
-  right: 16px;
-  background: #0f1627;
-  border: 1px solid var(--color-brand);
-  border-radius: var(--radius-md);
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  z-index: 100;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-}
-
-.settings-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.settings-header h2 {
-  font-size: 1rem;
-  font-weight: 700;
-  color: #fff;
-}
-
-.btn-close {
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  font-size: 1.2rem;
-  cursor: pointer;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.form-group label {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
-.input-field {
-  background: #070a12;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
-  color: #fff;
-  font-size: 0.9rem;
-  font-family: monospace;
-}
-
-.input-field:focus {
-  outline: none;
-  border-color: var(--color-brand);
-}
-
-.helper-text {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-}
-
-.settings-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.btn-primary {
-  background: var(--color-brand);
-  color: #040914;
-  font-weight: 700;
-  font-size: 0.9rem;
-  border: none;
-  border-radius: var(--radius-sm);
-  padding: 10px 16px;
-  cursor: pointer;
-}
-
-.btn-secondary {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-primary);
-  font-size: 0.85rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  padding: 8px 14px;
-  cursor: pointer;
-}
-
-/* Install Banner */
-.install-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-color: rgba(56, 189, 248, 0.35);
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.1), var(--bg-card));
-}
-
-.install-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.install-icon {
-  font-size: 1.6rem;
-}
-
-.install-info h4 {
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: #fff;
-}
-
-.install-info p {
-  font-size: 0.74rem;
-  color: var(--text-secondary);
-}
-
-.btn-install {
-  white-space: nowrap;
-  padding: 8px 14px;
-  font-size: 0.82rem;
-}
-
-/* ======================================================== */
-/* APPROVAL MODAL OVERLAY & BOTTOM SHEET                     */
-/* ======================================================== */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  z-index: 120;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding: 0;
-}
-
-@media (min-width: 600px) {
-  .modal-overlay {
-    align-items: center;
-    padding: 20px;
-  }
-}
-
-.modal-card.approval-modal {
-  width: 100%;
-  max-width: 540px;
-  background: #0f1628;
-  border: 1px solid rgba(245, 158, 11, 0.5);
-  border-top-left-radius: var(--radius-lg);
-  border-top-right-radius: var(--radius-lg);
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.8);
-  max-height: 85vh;
-  overflow-y: auto;
-}
-
-@media (min-width: 600px) {
-  .modal-card.approval-modal {
-    border-radius: var(--radius-lg);
-  }
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.modal-title-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.modal-icon {
-  font-size: 1.4rem;
-}
-
-.modal-header h2 {
-  font-size: 1.1rem;
-  font-weight: 800;
-  color: #fff;
-}
-
-.modal-content {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-/* Countdown Banner in Modal */
-.approval-countdown-banner {
-  background: rgba(56, 189, 248, 0.1);
-  border: 1px solid rgba(56, 189, 248, 0.3);
-  border-radius: var(--radius-sm);
-  padding: 10px 14px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.approval-countdown-banner.urgent {
-  background: rgba(245, 158, 11, 0.18);
-  border-color: var(--color-warning);
-}
-
-.approval-countdown-banner.expired {
-  background: rgba(239, 68, 68, 0.18);
-  border-color: var(--color-danger);
-}
-
-.countdown-icon {
-  font-size: 1.5rem;
-}
-
-.countdown-info strong {
-  font-size: 0.88rem;
-  color: #fff;
-  display: block;
-}
-
-.countdown-info p {
-  font-size: 0.78rem;
-  color: var(--text-secondary);
-}
-
-.approval-meta-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.meta-badge {
-  background: #090d18;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.badge-label {
-  font-size: 0.68rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-}
-
-.badge-value {
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: #fff;
-}
-
-.approval-details-box {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.details-label {
-  font-size: 0.74rem;
-  font-weight: 700;
-  color: var(--text-muted);
-  text-transform: uppercase;
-}
-
-.approval-code-block {
-  background: #05070c;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  padding: 12px;
-  max-height: 180px;
-  overflow-y: auto;
-}
-
-.approval-code-block code {
-  font-family: monospace;
-  font-size: 0.82rem;
-  color: #fde68a;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-/* Pagination */
-.approval-pagination {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  padding-top: 4px;
-}
-
-.pagination-buttons {
-  display: flex;
-  gap: 6px;
-}
-
-.btn-pager {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  font-size: 0.72rem;
-  padding: 4px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.btn-pager:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-/* Modal Action Buttons */
-.approval-modal-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  padding-top: 6px;
-}
-
-.btn-modal-approve {
-  background: var(--color-success);
-  color: #041409;
-  font-size: 0.95rem;
-  font-weight: 800;
-  border: none;
-  border-radius: var(--radius-md);
-  padding: 14px 16px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s ease;
-}
-
-.btn-modal-decline {
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid #ef4444;
-  color: #fca5a5;
-  font-size: 0.95rem;
-  font-weight: 800;
-  border-radius: var(--radius-md);
-  padding: 14px 16px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s ease;
-}
-
-.btn-modal-approve:disabled,
-.btn-modal-decline:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.btn-block {
-  width: 100%;
-  grid-column: span 2;
-}
-
-.modal-empty-body {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 24px 12px;
-  gap: 12px;
-}
-
-.modal-empty-icon {
-  font-size: 2.5rem;
-  opacity: 0.8;
-}
-
-.modal-empty-body h3 {
-  font-size: 1.1rem;
-  color: #fff;
-}
-
-.modal-empty-body p {
-  font-size: 0.82rem;
-  color: var(--text-secondary);
-  max-width: 320px;
-  line-height: 1.4;
-}
-
-/* Footer */
-.nexus-footer {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  max-width: 600px;
-  margin: 0 auto;
-  padding: 4px 16px calc(var(--safe-bottom) + 2px);
-  background: rgba(7, 9, 14, 0.95);
-  border-top: 1px solid var(--border-color);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  z-index: 40;
-}
-
-.footer-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-family: monospace;
-}
-
-.core-ping-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-}
-
-.core-ping-dot.connected {
-  background: var(--color-success);
-}
-
-.core-ping-dot.connecting {
-  background: var(--color-warning);
-}
-
-.core-ping-dot.error {
-  background: var(--color-danger);
-}
-</style>

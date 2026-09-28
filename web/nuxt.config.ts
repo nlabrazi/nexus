@@ -1,27 +1,31 @@
 export default defineNuxtConfig({
   ssr: false,
-  compatibilityDate: '2025-07-15',
+  compatibilityDate: "2025-07-15",
   devtools: { enabled: false },
+  css: ["~/assets/nexus.css"],
   app: {
     head: {
-      title: 'Nexus - Mobile Bridge',
+      title: "Nexus",
+      htmlAttrs: { lang: "fr" },
       meta: [
-        { charset: 'utf-8' },
+        { charset: "utf-8" },
         {
-          name: 'viewport',
-          content: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover',
+          name: "viewport",
+          content:
+            "width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content",
         },
-        { name: 'theme-color', content: '#090d16' },
-        { name: 'apple-mobile-web-app-capable', content: 'yes' },
-        { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' },
+        { name: "theme-color", content: "#06090e" },
+        { name: "apple-mobile-web-app-capable", content: "yes" },
         {
-          name: 'description',
-          content: 'Nexus Mobile Bridge - Coding Agents & Desktop Node Management',
+          name: "apple-mobile-web-app-status-bar-style",
+          content: "black-translucent",
+        },
+        {
+          name: "description",
+          content: "Vos projets et vos agents, à portée de main.",
         },
       ],
-      link: [
-        { rel: 'icon', type: 'image/png', href: '/favicon.ico' },
-      ],
+      link: [{ rel: "icon", type: "image/svg+xml", href: "/nexus.svg" }],
     },
   },
 });
