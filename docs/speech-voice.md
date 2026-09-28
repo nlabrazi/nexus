@@ -105,3 +105,29 @@ ancienne lecture ne peuvent plus interrompre la lecture actuelle.
 
 Les tests du contrôleur web s’exécutent avec `npm --prefix web run test:unit`.
 La qualité perçue et la lecture Android restent à vérifier sur l’appareil cible.
+
+## Réponse vocale dans l’application Android
+
+L’APK utilise le moteur TTS Android via `@capacitor-community/text-to-speech`.
+Le navigateur conserve son moteur Web Speech. La version précédente utilisait
+uniquement Web Speech, qui ne fournit pas de moteur exploitable dans certaines
+WebView Android : une dictée pouvait fonctionner sans aucune réponse audible.
+
+Avec « Activer la voix », une demande dictée reçoit désormais la réponse finale
+à voix haute, même si « Lire aussi les réponses aux messages écrits » est désactivé.
+Cela fonctionne également quand la dictée est relue puis envoyée manuellement.
+Désactiver la voix coupe toute lecture. Le micro arrête la lecture en cours.
+Le choix de voix, la vitesse, le nettoyage du Markdown et l’arrêt manuel restent
+pris en charge. Une erreur audio conserve la réponse textuelle et affiche un message.
+
+Il faut **installer la nouvelle APK** (`npm run android:build`, puis
+`nexus-debug.apk`) : une mise à jour du serveur seule n’ajoute pas le plugin natif.
+Sur le téléphone, vérifier qu’un moteur de synthèse vocale et une voix française
+sont installés dans les paramètres Android, puis utiliser « Écouter un exemple »
+dans les préférences Nexus. Aucune clé API cloud n’est nécessaire pour ce TTS.
+Une voix Android marquée locale est préférée automatiquement.
+
+Validation : tests du contrôleur natif simulé (fin de lecture, segments successifs,
+annulation, remplacement, voix manquante, erreur et délai), tests de la politique
+« dictée → réponse vocale » et compilation de l’APK. L’écoute et la reconnaissance
+sur un téléphone physique restent à vérifier après installation.

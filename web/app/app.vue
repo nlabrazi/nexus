@@ -402,7 +402,7 @@
           <p v-if="!ttsAvailable">La lecture vocale n’est pas disponible sur cet appareil.</p>
           <template v-else>
             <label class="switch-field"><span>Activer la voix</span><input v-model="ttsEnabled" type="checkbox" role="switch" /></label>
-            <label class="switch-field"><span>Lire automatiquement les réponses</span><input v-model="autoSpeak" :disabled="!ttsEnabled" type="checkbox" role="switch" /></label>
+            <label class="switch-field"><span>Lire aussi les réponses aux messages écrits<small>Une demande dictée reçoit une réponse vocale si la voix est activée.</small></span><input v-model="autoSpeak" :disabled="!ttsEnabled" type="checkbox" role="switch" /></label>
             <div class="field">
               <label for="speech-voice">Voix</label>
               <select id="speech-voice" v-model="speechVoice" :disabled="!ttsEnabled">
@@ -551,6 +551,9 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
+import { TextToSpeech } from "@capacitor-community/text-to-speech";
+import { createNativeSpeechPlayback } from "./utils/native-speech-playback.mjs";
+import { shouldSpeakReply } from "./utils/voice-reply.mjs";
 import { createSpeechPlayback } from "./utils/speech-playback.mjs";
 import { cleanTextForSpeech } from "./utils/speech-text.mjs";
 import { getAssistantState, assistantStateLabels, getInteractionMessage } from "./utils/assistant-state.mjs";
@@ -700,6 +703,8 @@ let clockTimer: ReturnType<typeof setInterval> | null = null;
 
 // Chat State
 const inputPrompt = ref<string>("");
+const draftFromVoice = ref(false);
+watch(inputPrompt, (text) => { if (!text.trim()) draftFromVoice.value = false; }, { flush: "sync" });
 const isSending = ref<boolean>(false);
 const inFlightBackend = ref<"brain" | "codex" | "antigravity" | null>(null);
 const lastTaskFailed = ref(false);
@@ -741,10 +746,10 @@ const currentSpeakingId = ref<string | null>(null);
 
 const speechError = ref("");
 const ttsAvailable = ref(false);
-let speechPlayback: ReturnType<typeof createSpeechPlayback> | undefined;
+let speechPlayback: ReturnType<typeof createSpeechPlayback> | ReturnType<typeof createNativeSpeechPlayback> | undefined;
 
 function stopSpeaking() {
-  speechPlayback?.stop();
+  return speechPlayback?.stop();
 }
 
 function speakMessage(text: string, messageId?: string) {
@@ -941,15 +946,26 @@ let nativeRecorderActive = false;
 
 // Lifecycle
 onMounted(async () => {
-  ttsAvailable.value = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
-  if (ttsAvailable.value) {
-    refreshSpeechVoices();
-    window.speechSynthesis.addEventListener("voiceschanged", refreshSpeechVoices);
-    speechPlayback = createSpeechPlayback(window.speechSynthesis,
-      (text: string) => new SpeechSynthesisUtterance(text), {
-        onState: (speaking: boolean, id: string | null) => { isSpeaking.value = speaking; currentSpeakingId.value = id; },
-        onError: (message: string) => { speechError.value = message; },
+  const speechCallbacks = {
+    onState: (speaking: boolean, id: string | null) => { isSpeaking.value = speaking; currentSpeakingId.value = id; },
+    onError: (message: string) => { speechError.value = message; },
+  };
+  if (Capacitor.isNativePlatform()) {
+    ttsAvailable.value = Capacitor.isPluginAvailable("TextToSpeech");
+    if (ttsAvailable.value) {
+      speechPlayback = createNativeSpeechPlayback(TextToSpeech, speechCallbacks);
+      void TextToSpeech.getSupportedVoices().then(({ voices }) => { speechVoices.value = voices; }).catch(() => {
+        speechError.value = "Vérifiez le moteur vocal et la voix française dans les paramètres Android.";
       });
+    }
+  } else {
+    ttsAvailable.value = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+    if (ttsAvailable.value) {
+      refreshSpeechVoices();
+      window.speechSynthesis.addEventListener("voiceschanged", refreshSpeechVoices);
+      speechPlayback = createSpeechPlayback(window.speechSynthesis,
+        (text: string) => new SpeechSynthesisUtterance(text), speechCallbacks);
+    }
   }
   if (typeof window !== "undefined") {
     syncViewport();
@@ -1068,7 +1084,7 @@ onUnmounted(() => {
   if (fastApprovalTimer) clearInterval(fastApprovalTimer);
   cancelVoiceRecording();
   stopSpeaking();
-  if (ttsAvailable.value) window.speechSynthesis.removeEventListener("voiceschanged", refreshSpeechVoices);
+  if (!Capacitor.isNativePlatform() && ttsAvailable.value) window.speechSynthesis.removeEventListener("voiceschanged", refreshSpeechVoices);
 });
 
 let fastApprovalTimer: ReturnType<typeof setInterval> | null = null;
@@ -1478,14 +1494,16 @@ async function submitMessage() {
       "Votre poste est hors ligne. Reconnectez-le pour envoyer votre message.";
     return;
   }
+  const fromVoice = draftFromVoice.value;
   inputPrompt.value = "";
-  await sendPrompt(promptText);
+  await sendPrompt(promptText, fromVoice);
 }
 
-async function sendPrompt(promptText: string) {
+async function sendPrompt(promptText: string, fromVoice = false) {
   if (!promptText || isSending.value || isSwitchingProject.value) return;
   if (!isNodeReady.value) {
     inputPrompt.value = promptText;
+    draftFromVoice.value = fromVoice;
     errorMessage.value =
       "Votre poste est hors ligne. Reconnectez-le pour envoyer votre message.";
     return;
@@ -1548,7 +1566,7 @@ async function sendPrompt(promptText: string) {
 
     messages.value.push(assistantMsg);
     saveMessages();
-    if (ttsEnabled.value && autoSpeak.value && ttsAvailable.value && !assistantMsg.error) {
+    if (shouldSpeakReply({ enabled: ttsEnabled.value, autoSpeak: autoSpeak.value, fromVoice, error: assistantMsg.error })) {
       speakMessage(assistantMsg.text, assistantMsg.id);
     }
   } catch (err: any) {
@@ -1678,15 +1696,7 @@ function initSpeechRecognition() {
           interimTranscript.value = interimChunk;
         }
         if (finalChunk) {
-          const trimmed = finalChunk.trim();
-          if (trimmed) {
-            if (inputPrompt.value) {
-              inputPrompt.value += " " + trimmed;
-            } else {
-              inputPrompt.value = trimmed;
-            }
-          }
-          interimTranscript.value = "";
+          appendTranscript(finalChunk);
         }
       };
 
@@ -1757,10 +1767,12 @@ function appendTranscript(text: string) {
   } else {
     inputPrompt.value = trimmed;
   }
+  draftFromVoice.value = true;
   interimTranscript.value = "";
 }
 
 async function runNativeSpeechPopup() {
+  await stopSpeaking();
   try {
     const avail = await SpeechRecognition.available();
     if (!avail.available) {
@@ -1890,6 +1902,7 @@ async function onMicPointerCancel(e: PointerEvent) {
 }
 
 async function startPushToTalk() {
+  await stopSpeaking();
   if (!isNodeReady.value || isSending.value) return;
 
   speechRecordingStart = Date.now();
