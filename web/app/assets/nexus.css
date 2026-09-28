@@ -957,6 +957,146 @@ svg.icon {
   color: var(--muted);
 }
 
+.agent-model-pill {
+  display: inline-block;
+  font-size: 9px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted-light);
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.message-meta-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tts-play-btn {
+  width: 24px;
+  min-height: 24px;
+  height: 24px;
+  padding: 3px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tts-play-btn:hover {
+  color: var(--accent);
+  background: rgba(0, 240, 255, 0.1);
+}
+
+.tts-play-btn.speaking {
+  color: #ffaa40;
+  background: rgba(255, 170, 64, 0.15);
+  animation: pulse-speaking 1s infinite alternate;
+}
+
+@keyframes pulse-speaking {
+  from {
+    opacity: 0.7;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+.agent-model-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sheet-section-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  margin-top: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.model-section-title {
+  margin-top: 14px;
+}
+
+.model-loading-spinner {
+  font-size: 10px;
+  color: var(--accent);
+  text-transform: none;
+}
+
+.models-sheet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.model-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+  width: 100%;
+}
+
+.model-card-row:hover {
+  background: var(--raised);
+  border-color: rgba(0, 240, 255, 0.3);
+}
+
+.model-card-row.selected {
+  border-color: var(--accent);
+  background: rgba(0, 240, 255, 0.08);
+}
+
+.model-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.model-card-name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.model-card-desc {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.models-empty-note {
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+  padding: 8px 0;
+}
+
 .composer-actions {
   display: flex;
   align-items: center;

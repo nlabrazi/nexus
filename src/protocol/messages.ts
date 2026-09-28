@@ -15,6 +15,9 @@ const KNOWN_MESSAGE_TYPES = new Set<NexusMessageType>([
   'node:heartbeat_ack',
   'node:status',
   'node:switch_project',
+  'node:models:list',
+  'node:models:result',
+  'node:models:select',
   'task:start',
   'task:cancel',
   'task:progress',
@@ -188,6 +191,15 @@ function validatePayload(type: NexusMessageType, payload: unknown): void {
     case 'node:switch_project':
       validateNodeSwitchProject(payload);
       break;
+    case 'node:models:list':
+      validateNodeModelsList(payload);
+      break;
+    case 'node:models:result':
+      validateNodeModelsResult(payload);
+      break;
+    case 'node:models:select':
+      validateNodeModelsSelect(payload);
+      break;
     case 'task:start':
       validateTaskStart(payload);
       break;
@@ -299,6 +311,31 @@ function validateNodeStatus(p: Record<string, unknown>): void {
 
 function validateNodeSwitchProject(p: Record<string, unknown>): void {
   assertNonEmptyString(p.projectId, 'projectId');
+}
+
+function validateNodeModelsList(p: Record<string, unknown>): void {
+  if (typeof p.backend !== 'string' || !VALID_BACKENDS.has(p.backend)) {
+    throw invalidMessageError(`Backend de modèle invalide : ${String(p.backend)}.`);
+  }
+}
+
+function validateNodeModelsResult(p: Record<string, unknown>): void {
+  if (typeof p.backend !== 'string' || !VALID_BACKENDS.has(p.backend)) {
+    throw invalidMessageError(`Backend de modèle invalide : ${String(p.backend)}.`);
+  }
+  if (!Array.isArray(p.models)) {
+    throw invalidMessageError('models doit être une liste.');
+  }
+}
+
+function validateNodeModelsSelect(p: Record<string, unknown>): void {
+  if (typeof p.backend !== 'string' || !VALID_BACKENDS.has(p.backend)) {
+    throw invalidMessageError(`Backend de modèle invalide : ${String(p.backend)}.`);
+  }
+  if (!isRecord(p.selection)) {
+    throw invalidMessageError('selection doit être un objet.');
+  }
+  assertNonEmptyString((p.selection as Record<string, unknown>).model, 'selection.model');
 }
 
 function validateTaskStart(p: Record<string, unknown>): void {
