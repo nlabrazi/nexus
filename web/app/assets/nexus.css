@@ -2202,3 +2202,9 @@ dialog[open].sheet {
     scroll-behavior: auto !important;
   }
 }
+
+/* The conversation landing screen keeps configuration in the secondary views. */
+.welcome-mark { display: inline-flex; width: 56px; height: 56px; color: var(--accent, #54d2d2); }
+.welcome-mark svg { width: 100%; height: 100%; }
+.welcome-title { font-size: clamp(1.5rem, 4vw, 2rem); line-height: 1.25; text-align: center; }
+.welcome-description { max-width: 32rem; margin: 0 0 1rem; color: var(--text-secondary, #9ba8b9); line-height: 1.6; text-align: center; }

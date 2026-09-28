@@ -43,19 +43,6 @@
     <!-- Quick Overflow Menu Dropdown -->
     <div v-if="showQuickMenu" class="menu-backdrop" @click="showQuickMenu = false" />
     <div v-if="showQuickMenu" class="quick-menu" role="menu">
-      <div class="menu-section">
-        <span class="menu-section-title">AGENT IA</span>
-        <div class="agent-segment">
-          <button v-for="b in (['brain', 'codex', 'antigravity'] as const)" :key="b" type="button"
-            class="agent-pill-btn" :class="{ active: selectedBackend === b }"
-            @click="selectedBackend = b; showQuickMenu = false">
-            {{ selectedBackendShortLabel(b) }}
-          </button>
-        </div>
-      </div>
-
-      <div class="menu-divider" />
-
       <button type="button" class="menu-item" @click="toggleTts(); showQuickMenu = false">
         <NexusIcon :name="ttsEnabled ? 'speaker' : 'speakerOff'" />
         <span>{{ ttsEnabled ? 'Voix activée' : 'Voix désactivée' }}</span>
@@ -83,48 +70,16 @@
     <main v-if="activeTab === 'chat'" class="chat-view" aria-label="Discussion">
       <div ref="messagesScrollRef" class="messages-stream" role="log" aria-label="Messages" aria-live="polite"
         aria-relevant="additions text">
-        <!-- Minimalist Jarvis Holographic Standby Screen -->
         <div v-if="!messages.length" class="welcome-hud">
-          <div class="arc-reactor" aria-hidden="true">
-            <div class="core-ring outer" />
-            <div class="core-ring middle" />
-            <div class="core-glyph">
-              <NexusIcon name="nexus" />
-            </div>
-          </div>
-
-          <div class="hud-status-block">
-            <p class="hud-code">// NEXUS PROTOCOL v1.0.0</p>
-            <h1 class="hud-title">
-              {{
-                isNodeReady
-                  ? "SYSTÈME EN LIGNE"
-                  : connectionStatus === "connecting"
-                    ? "CONNEXION EN COURS…"
-                    : "POSTE HORS LIGNE"
-              }}
-            </h1>
-            <div class="hud-telemetry">
-              <span class="hud-pill" :class="{ ready: isNodeReady }">
-                <span class="beacon-dot" />
-                {{ isNodeReady ? "CORE ACTIF" : "EN ATTENTE" }}
-              </span>
-              <span v-if="activeProjectName" class="hud-pill project">
-                <NexusIcon name="folder" /> {{ activeProjectName }}
-              </span>
-            </div>
-          </div>
-
+          <span class="welcome-mark" aria-hidden="true"><NexusIcon name="nexus" /></span>
+          <h1 class="welcome-title">Que souhaitez-vous faire ?</h1>
+          <p class="welcome-description">{{ isNodeReady
+            ? "Explorez une idée avec Brain ou confiez du code à votre agent."
+            : "Connectez votre poste pour commencer. Votre brouillon reste disponible." }}</p>
           <button v-if="!isNodeReady && connectionStatus !== 'connecting'" type="button"
-            class="button primary hud-connect-btn" @click="
-              connectionStatus === 'error' || !coreUrl
-                ? (showSettings = true)
-                : (activeTab = 'dashboard')
-              ">
-            <NexusIcon name="settings" />
-            <span>Connecter mon poste</span>
+            class="button primary" @click="showSettings = true">
+            <NexusIcon name="settings" /><span>Connecter mon poste</span>
           </button>
-
         </div>
 
         <!-- Chat Messages -->
@@ -189,7 +144,7 @@
           <span class="status-dot recording" /><span>{{
             interimTranscript ||
             (isProcessingAudio
-              ? "Transcription neuronale…"
+              ? "Transcription en cours…"
               : "Écoute en cours… Touchez pour terminer.")
           }}</span>
           <button type="button" class="icon-button" aria-label="Annuler la dictée" @click="cancelVoiceRecording">
@@ -200,15 +155,14 @@
         <form class="composer" @submit.prevent="submitMessage">
           <label for="message" class="sr-only">Votre message</label>
           <textarea id="message" ref="chatTextareaRef" v-model="inputPrompt" rows="1" :placeholder="isNodeReady
-            ? 'Donnez une instruction à Jarvis...'
+            ? 'Écrivez à Nexus…'
             : 'Poste hors ligne (brouillon actif)...'
             " :disabled="isSending" @keydown="handleComposerKeydown" @input="resizeComposer" />
           <div class="composer-tools">
             <button type="button" class="agent-badge-btn" aria-label="Changer d'agent et de modèle"
               @click="openAgentPicker">
               <NexusIcon :name="selectedBackend === 'brain' ? 'sparkles' : 'zap'" class="agent-zap-icon" />
-              <span>{{ selectedBackendShortLabel(selectedBackend) }}<span v-if="currentSelectedModelShort"
-                  class="agent-model-pill">{{ currentSelectedModelShort }}</span></span>
+              <span>{{ selectedBackendShortLabel(selectedBackend) }}</span>
               <NexusIcon name="down" />
             </button>
 
@@ -846,12 +800,6 @@ const currentBackendModels = computed(() => {
 
 const currentSelectedModel = computed(() => {
   return agentModels.value[selectedBackend.value]?.selected || "";
-});
-
-const currentSelectedModelShort = computed(() => {
-  const model = currentSelectedModel.value;
-  if (!model) return "";
-  return model.split(":")[0].replace("gemini-2.5-", "").replace("gemini-", "");
 });
 
 async function fetchModelsForBackend(backend: "brain" | "codex" | "antigravity") {
