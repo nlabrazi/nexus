@@ -917,21 +917,6 @@ function handleComposerKeydown(event: KeyboardEvent) {
   }
 }
 
-function projectLabel(id: string) {
-  return (
-    projectsList.value.find(
-      (project) => project.id === id || project.path === id,
-    )?.name || id
-  );
-}
-
-async function openProject(project: ProjectInfo) {
-  if (
-    isProjectActive(project) ||
-    (await switchProject(project.id || project.path))
-  )
-    activeTab.value = "chat";
-}
 
 watch(inputPrompt, () => nextTick(resizeComposer));
 watch(activeTab, (tab) => {
@@ -1193,6 +1178,22 @@ async function switchProject(projectId: string) {
     isSwitchingProject.value = false;
     switchingProjectId.value = null;
   }
+}
+
+function projectLabel(id: string) {
+  return (
+    projectsList.value.find(
+      (project) => project.id === id || project.path === id,
+    )?.name || id
+  );
+}
+
+async function openProject(project: ProjectInfo) {
+  if (
+    isProjectActive(project) ||
+    (await switchProject(project.id || project.path))
+  )
+    activeTab.value = "chat";
 }
 
 const canSend = computed(() => {
