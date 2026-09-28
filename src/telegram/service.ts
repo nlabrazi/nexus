@@ -850,26 +850,18 @@ export class TelegramService {
       if (!this.transcribeVoice) {
         throw new SpeechError('not_configured');
       }
-      await this.client.sendMessage(chatId, '⏳ Téléchargement du message vocal…', 'plain', signal);
+      await this.client.sendMessage(chatId, '🎙 Nexus traite votre message vocal…', 'plain', signal);
       if (signal.aborted || generation !== this.operationGeneration) {
         return;
       }
       phase = 'download';
+      logger.debug('Telegram', 'voice_download', { status: 'started' });
       audio = await this.client.downloadVoice(voice, signal);
       if (signal.aborted || generation !== this.operationGeneration) {
         return;
       }
-      phase = 'delivery';
-      await this.client.sendMessage(
-        chatId,
-        '⏳ Transcription locale du message vocal…',
-        'plain',
-        signal
-      );
-      if (signal.aborted || generation !== this.operationGeneration) {
-        return;
-      }
       phase = 'transcription';
+      logger.debug('Telegram', 'voice_transcribe', { status: 'started' });
       const transcript = await this.transcribeVoice(audio, signal);
       if (signal.aborted || generation !== this.operationGeneration) {
         return;
@@ -882,10 +874,9 @@ export class TelegramService {
         throw new SpeechError('empty_transcript');
       }
       phase = 'delivery';
-      await this.client.sendMessage(chatId, `🎙 Transcription :\n\n${trimmed}`, 'plain', signal);
       await this.client.sendMessage(
         chatId,
-        '✅ Bien compris. Je prends en charge votre demande.',
+        `🎙 Transcription :\n\n${trimmed}\n\n✅ Bien compris. Je prends en charge votre demande.`,
         'plain',
         signal
       );
@@ -940,7 +931,13 @@ export class TelegramService {
         }
         return;
       }
-      await this.runRemoteAntigravityPrompt(chatId, text, this.abortController!.signal, generation);
+      await this.runRemoteAntigravityPrompt(
+        chatId,
+        text,
+        this.abortController!.signal,
+        generation,
+        true
+      );
     } else {
       if (!this.onRemotePrompt) {
         await this.client.sendMessage(chatId, 'Codex is unavailable.');
@@ -949,7 +946,7 @@ export class TelegramService {
         }
         return;
       }
-      await this.runRemotePrompt(chatId, text, this.abortController!.signal, generation);
+      await this.runRemotePrompt(chatId, text, this.abortController!.signal, generation, true);
     }
   }
 
@@ -1131,7 +1128,8 @@ export class TelegramService {
     chatId: number,
     prompt: string,
     signal: AbortSignal,
-    generation = this.operationGeneration
+    generation = this.operationGeneration,
+    acknowledged = false
   ): Promise<void> {
     const stopTyping = startTyping(
       this.client,
@@ -1140,7 +1138,7 @@ export class TelegramService {
       () => generation === this.operationGeneration
     );
     try {
-      await this.client.sendMessage(chatId, '⏳ Codex is working...');
+      if (!acknowledged) await this.client.sendMessage(chatId, '⏳ Nexus travaille…');
       if (signal.aborted || generation !== this.operationGeneration) {
         return;
       }
@@ -1178,7 +1176,8 @@ export class TelegramService {
     chatId: number,
     prompt: string,
     signal: AbortSignal,
-    generation = this.operationGeneration
+    generation = this.operationGeneration,
+    acknowledged = false
   ): Promise<void> {
     const stopTyping = startTyping(
       this.client,
@@ -1187,7 +1186,7 @@ export class TelegramService {
       () => generation === this.operationGeneration
     );
     try {
-      await this.client.sendMessage(chatId, '⏳ Gemini Antigravity is working...');
+      if (!acknowledged) await this.client.sendMessage(chatId, '⏳ Nexus travaille…');
       if (signal.aborted || generation !== this.operationGeneration) {
         return;
       }

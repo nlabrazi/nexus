@@ -109,3 +109,15 @@ npm run compile
    et enfin la réponse finale de l'agent.
 4. Envoyer `/ping` : le bot doit répondre `pong`.
 5. Si l'opération est encore en cours, envoyer `/stop` pour vérifier l'annulation sans résultat tardif.
+
+### Feedback pendant le traitement
+
+Un vocal produit désormais trois messages texte : prise en charge, transcription
+avec acquittement, puis réponse de l’agent (hors erreur, approbation ou résumé de
+fichiers). La voix Piper reste facultative. Les étapes internes de téléchargement
+et de transcription sont consignées en niveau `debug`.
+
+Les tâches longues utilisent aussi l’indicateur éphémère
+[`sendChatAction`](https://core.telegram.org/bots/api#sendchataction).
+Son envoi est borné, renouvelé pendant le travail et arrêté à l’annulation ou à la
+fin de la demande. Un échec de cet indicateur ne bloque pas l’agent.

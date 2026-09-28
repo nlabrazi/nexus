@@ -53,7 +53,7 @@ suite('Telegram polling with approvals', () => {
     assert.deepEqual(
       send.mock.calls.map((call) => call.arguments),
       [
-        [20, '⏳ Codex is working...'],
+        [20, '⏳ Nexus travaille…'],
         [20, '**Terminé**', 'markdown'],
       ]
     );

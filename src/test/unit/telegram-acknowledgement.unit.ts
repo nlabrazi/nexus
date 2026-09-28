@@ -57,7 +57,11 @@ suite('Telegram acknowledgement', () => {
       await flush();
       assert.equal(send.mock.callCount(), failure === 'delivery' ? 1 : 0);
       assert.deepEqual(codex.mock.calls[0].arguments, ['Check coverage above 70%']);
-      assert.ok(client.messages.includes('✅ Bien compris. Je prends en charge votre demande.'));
+      assert.ok(
+        client.messages.some((message) =>
+          message.includes('✅ Bien compris. Je prends en charge votre demande.')
+        )
+      );
       assert.equal(client.messages.at(-1), 'Done');
       assert.equal(
         client.messages.some((text) => text.includes('private')),
