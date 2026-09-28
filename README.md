@@ -137,6 +137,24 @@ Nexus is not intended to replace VS Code, Git, Codex, or Antigravity. It acts as
   - Nexus restores persisted session information (Codex and Antigravity) after reload or restart.
   - Session lifecycle is isolated per workspace to prevent cross-project contamination.
 
+- 🧠 **Nexus Brain (Ollama & Free Fallback)**
+  - Dedicated conversational intelligence for brainstorming, architectural discussions, and technical exchanges.
+  - Runs on local Ollama models (`llama3.2:3b`, etc.) by default, with free online Gemini API fallback.
+  - Zero token consumption from paid Codex / Antigravity subscriptions during brainstorm and planning phases.
+  - Unrestricted directory exploration starting by default in `/code` or `~/code`.
+
+- ⚡ **Instant Remote Approvals**
+  - Tool execution and command approvals automatically pop up modally on screen with haptic feedback.
+  - No buried pills or missed timeouts: one-tap "Autoriser" or "Refuser".
+
+- 🗣️ **Vocal Responses (TTS)**
+  - Assistant responses are optionally spoken aloud automatically via Web SpeechSynthesis.
+  - Per-message replay controls and global quick toggle.
+
+- 🎛️ **Dynamic Agent & Model Switcher**
+  - Seamlessly switch between Brain (Ollama/Gemini), Codex, and Antigravity.
+  - Query installed models dynamically via `/api/models` and pick target model per agent.
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ---
