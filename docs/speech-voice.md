@@ -31,7 +31,7 @@ Définir les paramètres **Utilisateur**, ou **Distant** dans WSL/SSH :
 {
   "nexus.speech.tts.pythonPath": "/chemin/vers/nexus/.nexus-speech/piper/bin/python",
   "nexus.speech.tts.modelPath": "/chemin/vers/nexus/.nexus-speech/voices/fr_FR-upmc-medium.onnx",
-  "nexus.speech.tts.speakerId": 0
+  "nexus.speech.tts.speakerId": 1
 }
 ```
 
