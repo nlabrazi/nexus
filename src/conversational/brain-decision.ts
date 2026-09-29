@@ -37,10 +37,20 @@ export function brainSystemPrompt(
   project: ConversationProjectContext | undefined,
   toolsAllowed: boolean
 ): string {
-  const context = project
-    ? `Contexte projet : ${project.name} (branche: ${project.branch ?? 'aucune'})`
-    : 'Aucun projet spécifique ciblé (espace racine /code)';
-  return `${BRAIN_INSTRUCTIONS}\n${context}\nOutils autorisés : ${toolsAllowed ? 'oui' : 'non'}.`;
+  const parts: string[] = [BRAIN_INSTRUCTIONS];
+  if (project) {
+    parts.push(`Contexte projet : ${project.name} (branche: ${project.branch ?? 'aucune'})`);
+    if (project.preferences) {
+      parts.push(`Directives et préférences du développeur :\n${project.preferences}`);
+    }
+    if (project.decisionsSummary) {
+      parts.push(`Décisions architecturales actives consignées :\n${project.decisionsSummary}`);
+    }
+  } else {
+    parts.push('Aucun projet spécifique ciblé (espace racine /code)');
+  }
+  parts.push(`Outils autorisés : ${toolsAllowed ? 'oui' : 'non'}.`);
+  return parts.join('\n\n');
 }
 
 export function parseBrainDecision(

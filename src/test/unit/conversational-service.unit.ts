@@ -1,8 +1,15 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import * as assert from 'node:assert/strict';
 import { suite, test } from 'node:test';
 import { ConversationalService } from '../../conversational/service';
 import { CodingAgentTools } from '../../conversational/tools';
 import { BrainDecision, BrainMessage } from '../../conversational/model';
+import {
+  FileBrainSessionPersistence,
+  MemoryBrainSessionPersistence,
+} from '../../conversational/persistence';
 import { deferred, flush } from './helpers';
 
 const signal = () => new AbortController().signal;
@@ -186,5 +193,118 @@ suite('Nexus Brain conversation loop', () => {
     const reply = await service.respond(input('Bascule sur riftvision'), signal());
     assert.equal(reply.text, 'Contexte basculé sur riftvision !');
     assert.equal(currentProject, 'riftvision');
+  });
+
+  test('persists conversation history across service instances and reloads upon restart', async () => {
+    const persistence = new MemoryBrainSessionPersistence();
+    const tools = new CodingAgentTools({
+      resolveWorkspace: async () => target,
+    });
+
+    const service1 = new ConversationalService(
+      {
+        decide: async () => ({ action: 'reply', text: 'Première réponse' }),
+      },
+      tools,
+      persistence
+    );
+
+    const reply1 = await service1.respond(
+      input('Bonjour, retiens ce message', 'conv-p1'),
+      signal()
+    );
+    assert.equal(reply1.text, 'Première réponse');
+
+    // Recreate a new service instance (simulating restart) with the same persistence
+    const seenMessages: BrainMessage[][] = [];
+    const service2 = new ConversationalService(
+      {
+        decide: async (messages) => {
+          seenMessages.push([...messages]);
+          return { action: 'reply', text: 'Deuxième réponse avec contexte' };
+        },
+      },
+      tools,
+      persistence
+    );
+
+    const reply2 = await service2.respond(input('Que disais-je ?', 'conv-p1'), signal());
+    assert.equal(reply2.text, 'Deuxième réponse avec contexte');
+    assert.equal(seenMessages.length, 1);
+    // Should have: previous user + previous assistant + new user
+    assert.equal(seenMessages[0].length, 3);
+    assert.equal(seenMessages[0][0].text, 'Bonjour, retiens ce message');
+    assert.equal(seenMessages[0][1].text, 'Première réponse');
+    assert.equal(seenMessages[0][2].text, 'Que disais-je ?');
+  });
+
+  test('/reset or reset clears conversation memory and persistence', async () => {
+    const persistence = new MemoryBrainSessionPersistence();
+    const tools = new CodingAgentTools({
+      resolveWorkspace: async () => target,
+    });
+
+    const service = new ConversationalService(
+      {
+        decide: async () => ({ action: 'reply', text: 'Réponse' }),
+      },
+      tools,
+      persistence
+    );
+
+    await service.respond(input('Premier message', 'conv-reset'), signal());
+    assert.ok(persistence.load('conv-reset'));
+
+    const resetReply = await service.respond(input('/reset', 'conv-reset'), signal());
+    assert.match(resetReply.text, /réinitialisée/);
+    assert.equal(persistence.load('conv-reset'), undefined);
+    assert.equal(service.getConversationMessages('conv-reset'), undefined);
+  });
+
+  test('FileBrainSessionPersistence stores, bounds messages, compacts bulky tool results and clears', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-brain-file-test-'));
+    try {
+      const filePersistence = new FileBrainSessionPersistence(tempDir, 4);
+
+      assert.equal(filePersistence.load('non-existent'), undefined);
+
+      const bulkyObservation = JSON.stringify({
+        action: 'inspect_project',
+        question: 'analyse',
+        result: 'A'.repeat(2000),
+      });
+
+      filePersistence.save({
+        version: 1,
+        conversationId: 'session:1',
+        context: '{"name":"test"}',
+        messages: [
+          { role: 'user', text: 'msg1' },
+          { role: 'assistant', text: 'resp1' },
+          { role: 'tool', text: bulkyObservation },
+          { role: 'user', text: 'msg2' },
+          { role: 'assistant', text: 'resp2' },
+          { role: 'user', text: 'msg3' },
+        ],
+        updatedAt: Date.now(),
+      });
+
+      const loaded = filePersistence.load('session:1');
+      assert.ok(loaded);
+      assert.equal(loaded.conversationId, 'session:1');
+      // Max 4 messages bounded
+      assert.equal(loaded.messages.length, 4);
+      // Older tool message should be compacted if retained
+      const toolMsg = loaded.messages.find((m) => m.role === 'tool');
+      if (toolMsg) {
+        assert.ok(toolMsg.text.length < 500);
+        assert.match(toolMsg.text, /condensé/);
+      }
+
+      filePersistence.clear('session:1');
+      assert.equal(filePersistence.load('session:1'), undefined);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });

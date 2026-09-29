@@ -1,4 +1,5 @@
 import { RuntimeDashboard, AgentDashboard, QuotaMetric } from './dashboard-types';
+import { homedir } from 'node:os';
 import { basename, resolve } from 'node:path';
 import { AntigravityService } from '../antigravity/service';
 import { WorkspaceAntigravitySessionPersistence } from '../antigravity/persistence';
@@ -10,6 +11,7 @@ import { ModelMenu, ModelSelection } from '../codex/types';
 import { CodexBrainModel } from '../conversational/codex-model';
 import { CodexProjectInspector } from '../conversational/codex-inspector';
 import { ConversationalService } from '../conversational/service';
+import { FileBrainSessionPersistence } from '../conversational/persistence';
 import { BrainModel } from '../conversational/model';
 import { OllamaBrainModel, listOllamaModels } from '../conversational/ollama-model';
 import { RoutedBrainModel } from '../conversational/routed-model';
@@ -125,7 +127,14 @@ export class NexusRuntime {
         ? new CodexBrainModel()
         : new RoutedBrainModel());
     this.brainModel = brainModel;
-    this.conversationalService = new ConversationalService(brainModel, codingTools);
+    const brainPersistence =
+      options.brainPersistence ??
+      new FileBrainSessionPersistence(resolve(homedir(), '.nexus', 'brain-sessions'));
+    this.conversationalService = new ConversationalService(
+      brainModel,
+      codingTools,
+      brainPersistence
+    );
   }
 
   private async resolveWorkspaceForInspection(targetPath?: string) {
@@ -184,6 +193,7 @@ export class NexusRuntime {
       targetPath?: string;
       onFilesChanged?: (paths: readonly string[]) => void;
       signal?: AbortSignal;
+      disableContextAugmentation?: boolean;
     }
   ): Promise<TaskExecutionResult> {
     if (backend === 'brain') {
@@ -198,6 +208,9 @@ export class NexusRuntime {
     }
 
     const path = this.resolveTargetPath(options?.targetPath);
+    const effectivePrompt = options?.disableContextAugmentation
+      ? prompt
+      : this.projectMemory.augmentPrompt(prompt, path);
     let files: readonly string[] = [];
 
     const onFiles = (paths: readonly string[]) => {
@@ -209,10 +222,10 @@ export class NexusRuntime {
     let fileSummary: string | undefined;
 
     if (backend === 'codex') {
-      text = await this.codexService.sendPrompt(prompt, path, onFiles);
+      text = await this.codexService.sendPrompt(effectivePrompt, path, onFiles);
       fileSummary = formatFileSummary(files, this.codexService.getStatus().workspacePath ?? path);
     } else {
-      text = await this.antigravityService.sendPrompt(prompt, path, onFiles);
+      text = await this.antigravityService.sendPrompt(effectivePrompt, path, onFiles);
       fileSummary = formatFileSummary(
         files,
         this.antigravityService.getStatus().workspacePath ?? path
@@ -238,10 +251,18 @@ export class NexusRuntime {
     const path = this.resolveTargetPath(options?.targetPath);
     const workspace = await this.workspaceGuard.validate(path).catch(() => undefined);
     const folderName = basename(path);
+    const contextSnapshot = this.projectMemory.buildAgentContext(path);
 
-    const project =
+    const project: ConversationProjectContext | undefined =
       options?.projectContext ??
-      (workspace ? { name: folderName, branch: workspace.git?.branch } : undefined);
+      (workspace || contextSnapshot.hasContext
+        ? {
+            name: folderName,
+            branch: workspace?.git?.branch,
+            preferences: contextSnapshot.preferences || undefined,
+            decisionsSummary: contextSnapshot.decisionsSummary || undefined,
+          }
+        : undefined);
 
     const conversationId = options?.conversationId ?? `brain:${path}`;
 
@@ -255,6 +276,11 @@ export class NexusRuntime {
     );
 
     return reply.text;
+  }
+
+  async clearBrainConversation(targetPath?: string): Promise<void> {
+    const path = this.resolveTargetPath(targetPath);
+    await this.conversationalService.clearConversation(`brain:${path}`);
   }
 
   async handleSessionAction(

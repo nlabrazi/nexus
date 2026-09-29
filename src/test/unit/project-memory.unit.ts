@@ -211,4 +211,83 @@ suite('Project Decision Memory', () => {
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  test('manages project preferences and includes them in snapshot and context', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-preferences-test-'));
+    try {
+      const memory = new ProjectMemory();
+      assert.equal(memory.readPreferences(tempDir), '');
+
+      memory.setPreferences(tempDir, '• Langue : Français\n• Style : TypeScript strict');
+      assert.match(memory.readPreferences(tempDir), /TypeScript strict/);
+
+      const snapshot = memory.getSnapshot(tempDir);
+      assert.match(snapshot.preferences ?? '', /TypeScript strict/);
+
+      const context = memory.buildAgentContext(tempDir);
+      assert.equal(context.hasContext, true);
+      assert.match(context.preferences, /Français/);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('formatActiveDecisions filters out non-accepted decisions and bounds length', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-active-dec-test-'));
+    try {
+      const memory = new ProjectMemory();
+      memory.recordDecision(tempDir, {
+        title: 'Décision active',
+        decision: 'Utiliser Biome pour le formatage.',
+        status: 'accepted',
+      });
+      memory.recordDecision(tempDir, {
+        title: 'Décision obsolète',
+        decision: 'Utiliser Prettier.',
+        status: 'superseded',
+      });
+
+      const formatted = memory.formatActiveDecisions(tempDir);
+      assert.match(formatted, /Décision active/);
+      assert.match(formatted, /Biome/);
+      assert.doesNotMatch(formatted, /Prettier/);
+      assert.doesNotMatch(formatted, /obsolète/);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('augmentPrompt enriches user prompt when context exists and leaves intact otherwise', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-prompt-aug-test-'));
+    try {
+      const memory = new ProjectMemory();
+
+      // No context: prompt left intact
+      assert.equal(memory.augmentPrompt('Ajoute un bouton', tempDir), 'Ajoute un bouton');
+
+      // Diagnostic heartbeat: prompt left intact even with context
+      memory.recordDecision(tempDir, {
+        title: 'Architecture MVC',
+        decision: 'Contrôleurs minces et services isolés.',
+        status: 'accepted',
+      });
+      assert.equal(
+        memory.augmentPrompt('Reply only with: Nexus connected', tempDir),
+        'Reply only with: Nexus connected'
+      );
+
+      // Normal task: prompt is augmented
+      const augmented = memory.augmentPrompt('Ajoute un bouton', tempDir);
+      assert.match(augmented, /\[CONTEXTE PROJET & DIRECTIVES NEXUS\]/);
+      assert.match(augmented, /Architecture MVC/);
+      assert.match(augmented, /\[DEMANDE UTILISATEUR\]/);
+      assert.match(augmented, /Ajoute un bouton/);
+
+      // Does not double augment
+      const double = memory.augmentPrompt(augmented, tempDir);
+      assert.equal(double, augmented);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });

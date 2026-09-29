@@ -340,12 +340,22 @@ export class TelegramCoreBridge {
     const mem = this.core.getProjectMemory();
     if (action.type === 'show') {
       const snapshot = mem.getSnapshot(activeProject.path);
-      if (!snapshot.exists || snapshot.decisions.length === 0) {
-        return `🧠 **Mémoire de décisions : ${activeProject.name}**\nAucune décision consignée (fichier \`.nexus/memory.md\` vierge).`;
+      const lines: string[] = [];
+      if (snapshot.preferences) {
+        lines.push(`📋 **Préférences & directives :**\n${snapshot.preferences}`);
       }
-      const lines = [
-        `🧠 **Mémoire de décisions : ${activeProject.name}** (${snapshot.decisions.length} décision${snapshot.decisions.length > 1 ? 's' : ''}) :`,
-      ];
+      if (!snapshot.exists || snapshot.decisions.length === 0) {
+        if (!snapshot.preferences) {
+          return `🧠 **Mémoire de décisions : ${activeProject.name}**\nAucune décision consignée (fichier \`.nexus/memory.md\` vierge).`;
+        }
+        lines.unshift(
+          `🧠 **Mémoire de décisions : ${activeProject.name}**\nAucune décision technique consignée.`
+        );
+        return lines.join('\n\n');
+      }
+      lines.unshift(
+        `🧠 **Mémoire de décisions : ${activeProject.name}** (${snapshot.decisions.length} décision${snapshot.decisions.length > 1 ? 's' : ''}) :`
+      );
       for (const d of snapshot.decisions) {
         lines.push(
           `• **[${d.date}] ${d.title}** (\`${d.status}\`)\n  ID: \`${d.id}\`\n  ${d.decision}${d.context ? `\n  _Contexte : ${d.context}_` : ''}`

@@ -2,6 +2,8 @@
 export interface ConversationProjectContext {
   readonly name: string;
   readonly branch?: string;
+  readonly preferences?: string;
+  readonly decisionsSummary?: string;
 }
 
 export interface ConversationInput {

@@ -545,6 +545,7 @@ Detailed documentation:
 - [Gemini Antigravity errors](docs/antigravity-errors.md)
 - [Nexus Brain cloud providers and API key setup](docs/brain-cloud.md)
 - [Nexus Brain initial spike](docs/nexus-brain.md)
+- [Agent Memory and Context Augmentation](docs/agent-memory.md)
 - [Nexus Protocol](docs/nexus-protocol.md)
 - [Agent Runtime Isolation](docs/runtime-isolation.md)
 - [Desktop Node](docs/desktop-node.md)
