@@ -11,14 +11,6 @@
         </a>
       </div>
 
-      <div class="header-center">
-        <button type="button" class="project-pill" :aria-label="`Changer de projet : ${activeProjectName || 'aucun'}`" :title="activeProjectName" @click="showProjectMenu = true">
-          <NexusIcon name="folder" />
-          <span class="project-pill-name">{{ activeProjectName || "Projet..." }}</span>
-          <NexusIcon name="down" />
-        </button>
-      </div>
-
       <div class="header-right">
         <button class="status-beacon" type="button" :class="runtimeStatus.toLowerCase()"
           :aria-label="`Nexus : ${runtimeStatusText}. Ouvrir les paramètres`" @click="showSettings = true">
@@ -60,6 +52,7 @@
 
     <!-- MAIN CHAT VIEW (Purified, only strict necessary) -->
     <main v-if="activeTab === 'chat'" class="chat-view" aria-label="Discussion">
+      <p v-if="activeProjectName" class="chat-context"><span>Dossier de travail</span> {{ activeProjectName }}</p>
       <div ref="messagesScrollRef" class="messages-stream" role="log" aria-label="Messages" aria-live="polite"
         aria-relevant="additions text">
         <div v-if="!messages.length" class="welcome-hud">
@@ -254,60 +247,10 @@
       </div>
     </main>
 
-    <!-- PROJECTS VIEW -->
-    <main v-if="activeTab === 'dashboard'" class="page-view" aria-labelledby="projects-title">
-      <div class="page-heading">
-        <div>
-          <p class="eyebrow">VOTRE ESPACE</p>
-          <h1 id="projects-title">Projets<span class="accent">.</span></h1>
-        </div>
-        <button type="button" class="icon-button" :disabled="isRefreshing" aria-label="Actualiser les projets"
-          @click="handleManualRefresh">
-          <NexusIcon name="refresh" />
-        </button>
-      </div>
-      <p v-if="errorMessage" class="inline-error" role="alert">
-        {{ errorMessage }}
-      </p>
-      <div v-if="projectsList.length" class="project-list">
-        <button v-for="project in projectsList" :key="project.id || project.path" type="button" class="project-row"
-          :class="{ selected: isProjectActive(project) }" :disabled="isSwitchingProject || isSending"
-          :aria-label="`${isProjectActive(project) ? 'Ouvrir' : 'Choisir'} ${project.name}`"
-          @click="openProject(project)">
-          <span class="project-symbol">
-            <NexusIcon name="folder" />
-          </span><span class="project-info"><span class="project-name">{{ project.name }}</span><span
-              v-if="project.currentBranch" class="project-branch">
-              <NexusIcon name="branch" />{{ project.currentBranch }}
-            </span></span>
-          <span v-if="switchingProjectId === (project.id || project.path)"
-            class="project-selection">Ouverture…</span><span v-else-if="isProjectActive(project)"
-            class="project-selection">Actif
-            <NexusIcon name="check" />
-          </span>
-          <NexusIcon v-else name="chevron" />
-        </button>
-      </div>
-      <div v-else class="empty-state">
-        <NexusIcon name="folder" />
-        <h2>
-          {{
-            connectionStatus === 'error'
-              ? "Retrouvez vos projets."
-              : "Aucun projet pour le moment."
-          }}
-        </h2>
-        <p>
-          {{
-            connectionStatus === 'error'
-              ? "Connectez votre poste pour les retrouver ici."
-              : "Ouvrez un projet sur votre poste et démarrez Nexus."
-          }}
-        </p>
-        <button v-if="connectionStatus === 'error'" type="button" class="button primary" @click="showSettings = true">
-          Configurer la connexion
-        </button>
-      </div>
+    <!-- WORKSTATION FILE BROWSER -->
+    <main v-if="activeTab === 'dashboard'" class="page-view" aria-labelledby="folders-title">
+      <div class="page-heading"><div><p class="eyebrow">VOTRE ORDINATEUR</p><h1 id="folders-title">Dossiers<span class="accent">.</span></h1></div></div>
+      <NexusFileBrowser :core-url="coreUrl" :token="authToken" :nodes="onlineNodes" :busy="isSending || isSwitchingProject" @settings="showSettings = true; settingsTab = 'preferences'" @opened="handleFolderOpened" />
 
       <section class="workstation-section" aria-labelledby="workstation-title">
         <h2 id="workstation-title" class="section-label">Poste de travail</h2>
@@ -376,7 +319,7 @@
         @click="activeTab = 'dashboard'">
         <span class="nav-icon">
           <NexusIcon name="folder" />
-        </span><span>Projets</span>
+        </span><span>Dossiers</span>
       </button>
     </nav>
 
@@ -489,15 +432,17 @@
 
     <!-- QUICK PROJECT SELECTOR SHEET -->
     <NexusSheet v-model="showProjectMenu" title="Changer de projet">
+      <p v-if="errorMessage" class="inline-error" role="alert">{{ errorMessage }}</p>
       <div v-if="projectsList.length" class="project-sheet-list">
-        <button v-for="project in projectsList" :key="project.id || project.path" type="button"
+        <button v-for="project in projectsList" :key="`${project.nodeId || ''}:${project.id || project.path}`" type="button"
           class="project-sheet-row" :class="{ selected: isProjectActive(project) }"
-          :disabled="isSwitchingProject || isSending" @click="openProject(project); showProjectMenu = false">
+          :disabled="isSwitchingProject || isSending" @click="openProject(project)">
           <span class="project-symbol">
             <NexusIcon name="folder" />
           </span>
           <span class="project-info">
             <span class="project-name">{{ project.name }}</span>
+            <span class="project-quick-path">{{ project.path }}</span>
             <span v-if="project.currentBranch" class="project-branch">
               <NexusIcon name="branch" />{{ project.currentBranch }}
             </span>
@@ -508,9 +453,10 @@
       <div v-else class="empty-state compact">
         <p>Aucun projet détecté sur le poste connecté.</p>
         <button type="button" class="button secondary" @click="showProjectMenu = false; activeTab = 'dashboard'">
-          Voir le statut du poste
+          Parcourir les dossiers du PC
         </button>
       </div>
+      <button v-if="projectsList.length" type="button" class="button secondary" @click="showProjectMenu = false; activeTab = 'dashboard'">Parcourir les dossiers du PC</button>
     </NexusSheet>
 
     <!-- AGENT & MODEL SELECTOR SHEET -->
@@ -559,6 +505,8 @@
 </template>
 
 <script setup lang="ts">
+import NexusFileBrowser from './components/NexusFileBrowser.vue';
+import NexusUsageDashboard from './components/NexusUsageDashboard.vue';
 import type { RuntimeDashboard } from "../../src/runtime/dashboard-types";
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
 import { TextToSpeech } from "@capacitor-community/text-to-speech";
@@ -592,6 +540,7 @@ interface ProjectInfo {
   id?: string;
   name: string;
   path: string;
+  nodeId?: string;
   currentBranch?: string;
   lastActive?: number;
   isActive?: boolean;
@@ -836,28 +785,33 @@ function handleSettingsTabKey(event: KeyboardEvent) {
 }
 
 async function fetchDashboard() {
-  if (dashboardLoading.value || !coreUrl.value || !isNodeReady.value) return;
+  if (dashboardLoading.value) return;
+  if (!coreUrl.value || !isNodeReady.value) {
+    dashboardError.value = 'Connectez votre poste dans Voix & connexion pour consulter ses informations.';
+    return;
+  }
   dashboardLoading.value = true;
+  dashboardError.value = '';
   dashboardFetchedAt = Date.now();
   const controller = new AbortController();
   dashboardController = controller;
-  const source = `${coreUrl.value}|${authToken.value}|${primaryNode.value?.nodeId}`;
+  // Also works in Android WebViews without AbortSignal.any/timeout.
+  const timer = setTimeout(() => controller.abort(), 10000);
   try {
     const query = primaryNode.value?.nodeId ? `?nodeId=${encodeURIComponent(primaryNode.value.nodeId)}` : '';
     const response = await fetch(`${coreUrl.value.replace(/\/+$/, '')}/api/dashboard${query}`, {
-      headers: getRequestHeaders(), signal: AbortSignal.any([controller.signal, AbortSignal.timeout(9000)]),
+      headers: getRequestHeaders(), signal: controller.signal,
     });
-    if (!response.ok) throw new Error(response.status === 401 ? 'Renseignez le jeton Nexus dans Voix & connexion pour consulter les quotas.' : 'Dashboard indisponible. Vérifiez la connexion et la version du poste Nexus.');
+    if (!response.ok) throw new Error(response.status === 401 ? 'Renseignez le jeton Nexus dans Voix & connexion pour consulter les quotas.' : response.status === 404 ? 'Mettez à jour Nexus Core et Nexus Desktop pour consulter cet aperçu.' : 'Le poste ne peut pas fournir ses quotas. Réessayez ou vérifiez Nexus Desktop.');
     const data = await response.json();
-    if (`${coreUrl.value}|${authToken.value}|${primaryNode.value?.nodeId}` !== source) return;
-    if (!data?.brain || !Array.isArray(data.agents)) throw new Error('Mettez à jour le poste Nexus pour afficher le dashboard.');
+    if (dashboardController !== controller) return;
+    if (!data?.brain || !Array.isArray(data.brain.providers) || !Array.isArray(data.agents)) throw new Error('Mettez à jour Nexus Desktop pour afficher les informations de session.');
     usageDashboard.value = data;
-    dashboardError.value = '';
   } catch (error: any) {
-    if (!controller.signal.aborted) dashboardError.value = error?.message || 'Impossible d’actualiser les quotas.';
+    if (dashboardController === controller) dashboardError.value = controller.signal.aborted ? 'Le poste ne répond pas dans le délai prévu. Réessayez.' : error?.message || 'Impossible d’actualiser les quotas.';
   } finally {
-    dashboardLoading.value = false;
-    if (dashboardController === controller) dashboardController = undefined;
+    clearTimeout(timer);
+    if (dashboardController === controller) { dashboardLoading.value = false; dashboardController = undefined; }
   }
 }
 
@@ -1056,8 +1010,8 @@ onMounted(async () => {
 
     if (Capacitor.isNativePlatform()) {
       try {
-        await StatusBar.setStyle({ style: Style.Dark });
-        await StatusBar.setBackgroundColor({ color: "#06090e" });
+        await StatusBar.setStyle({ style: Style.Light });
+        await StatusBar.setBackgroundColor({ color: "#f5f3ed" });
       } catch { }
     }
 
@@ -1195,9 +1149,15 @@ const onlineNodes = computed(() => {
     : [];
 });
 
+const selectedNodeId = ref('');
 const primaryNode = computed(() => {
-  return onlineNodes.value[0] || null;
+  return onlineNodes.value.find(node => node.nodeId === selectedNodeId.value) || onlineNodes.value[0] || null;
 });
+async function handleFolderOpened(nodeId: string) {
+  selectedNodeId.value = nodeId;
+  await fetchStatus();
+  activeTab.value = 'chat';
+}
 
 const isNodeReady = computed(() => {
   return connectionStatus.value === "connected" && onlineNodes.value.length > 0;
@@ -1218,12 +1178,12 @@ const projectsList = computed(() => {
 const isSwitchingProject = ref(false);
 const switchingProjectId = ref<string | null>(null);
 
-async function switchProject(projectId: string) {
+async function switchProject(projectId: string, nodeId?: string) {
   if (!projectId || isSwitchingProject.value || isSending.value) return false;
   isSwitchingProject.value = true;
   switchingProjectId.value = projectId;
   try {
-    const res = await fetch(`${coreUrl.value}/api/projects/switch`, {
+    const res = await fetch(`${coreUrl.value.replace(/\/+$/, "")}/api/filesystem/open`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -1231,12 +1191,13 @@ async function switchProject(projectId: string) {
           ? { Authorization: `Bearer ${authToken.value}` }
           : {}),
       },
-      body: JSON.stringify({ projectId }),
+      body: JSON.stringify({ path: projectId, nodeId: nodeId || primaryNode.value?.nodeId }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || `Erreur HTTP ${res.status}`);
     }
+    if (nodeId) selectedNodeId.value = nodeId;
     await fetchStatus();
     return connectionStatus.value === "connected";
   } catch (err: any) {
@@ -1260,19 +1221,24 @@ function projectLabel(id: string) {
 async function openProject(project: ProjectInfo) {
   if (
     isProjectActive(project) ||
-    (await switchProject(project.id || project.path))
-  )
+    (await switchProject(project.path, project.nodeId))
+  ) {
+    if (project.nodeId) selectedNodeId.value = project.nodeId;
+    showProjectMenu.value = false;
     activeTab.value = "chat";
+  }
 }
 
 watch([coreUrl, authToken, () => primaryNode.value?.nodeId], () => {
   dashboardController?.abort();
+  dashboardController = undefined;
+  dashboardLoading.value = false;
   usageDashboard.value = null;
   dashboardError.value = '';
+  if (showSettings.value && isNodeReady.value) void fetchDashboard();
 });
-watch([showSettings, isNodeReady], ([settings, ready]) => {
-  if (ready) void fetchDashboard();
-  else if (settings) settingsTab.value = 'preferences';
+watch([showSettings, settingsTab, isNodeReady], ([settings, tab, ready]) => {
+  if (settings && tab === 'overview' && ready) void fetchDashboard();
 });
 
 const canSend = computed(() => {
@@ -1617,6 +1583,7 @@ async function sendPrompt(promptText: string, fromVoice = false) {
         taskId: generatedTaskId,
         backend,
         prompt: promptText,
+        nodeId: primaryNode.value?.nodeId,
         projectId:
           primaryNode.value?.activeProject?.id || activeProjectName.value,
         wait: true,
@@ -2351,12 +2318,9 @@ function resetSettings() {
 }
 
 function isProjectActive(project: ProjectInfo): boolean {
-  if (project.isActive) return true;
-  return onlineNodes.value.some(
-    (n) =>
-      n.activeProject?.name === project.name ||
-      n.activeProject?.path === project.path ||
-      (project.id && n.activeProject?.id === project.id),
+  return onlineNodes.value.some(node =>
+    (!project.nodeId || node.nodeId === project.nodeId) &&
+    (node.activeProject?.path === project.path || Boolean(project.id && node.activeProject?.id === project.id)),
   );
 }
 

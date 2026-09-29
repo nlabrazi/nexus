@@ -43,6 +43,7 @@ export interface NodeProjectSummary {
 }
 
 export interface NodeCapabilities {
+  readonly filesystem?: boolean;
   readonly backends: readonly TaskBackend[];
   readonly speech?: {
     readonly stt: boolean;
@@ -211,7 +212,28 @@ export interface NodeDashboardResultPayload {
   readonly unavailable?: boolean;
 }
 
+export interface DirectoryListing {
+  readonly path: string;
+  readonly parent: string | null;
+  readonly home: string;
+  readonly roots: readonly { name: string; path: string }[];
+  readonly directories: readonly { name: string; path: string; hidden: boolean }[];
+}
+export interface NodeFilesystemRequest {
+  readonly requestId: string;
+  readonly action: 'browse' | 'open';
+  readonly path?: string;
+}
+export interface NodeFilesystemResult {
+  readonly requestId: string;
+  readonly listing?: DirectoryListing;
+  readonly project?: NodeProjectSummary;
+  readonly error?: string;
+}
+
 export interface NexusPayloadMap {
+  'node:filesystem:get': NodeFilesystemRequest;
+  'node:filesystem:result': NodeFilesystemResult;
   'node:dashboard:get': NodeDashboardRequestPayload;
   'node:dashboard:result': NodeDashboardResultPayload;
   'node:hello': NodeHelloPayload;

@@ -4,18 +4,26 @@ Client Nuxt de Nexus, intégré à l’application Android avec Capacitor.
 
 ## Parcours
 
-- **Discussion** : écrire ou dicter un message, choisir son agent et consulter sa réponse. Les deux suggestions de départ préparent un brouillon modifiable.
+- **Discussion** : écrire ou dicter un message, choisir son agent et consulter sa réponse.
 - **Activité** : suivre ou arrêter les tâches, déplier leurs résultats et examiner les demandes d’autorisation.
-- **Projets** : sélectionner un projet pour revenir directement à la discussion. Les informations du poste se déplient à la demande.
+- **Dossiers** : explorer les dossiers réels du PC connecté, remonter au parent, rejoindre l’accueil ou une racine, saisir un chemin absolu et afficher les dossiers masqués. « Travailler dans ce dossier » attend la confirmation du PC avant de revenir à la discussion. Le menu de droite conserve les projets de la session pour un changement rapide.
 - **Connexion** : toucher l’état de connexion en haut à droite pour renseigner le serveur, le jeton et les préférences de dictée.
 
 Entrée ajoute une ligne dans le message. Ctrl+Entrée ou Cmd+Entrée l’envoie. Hors ligne, le brouillon reste éditable et l’envoi est désactivé.
 
 ## Interface
 
-Le thème graphite et cuivre se trouve dans `app/assets/nexus.css`. Les composants `NexusIcon` et `NexusSheet` centralisent les icônes et les panneaux modaux. Les dialogues gèrent le focus et la fermeture avec Échap ; les zones tactiles principales mesurent au moins 48 px. La hauteur de l’application suit le clavier via le viewport visuel et respecte les marges système.
+Le thème ivoire et bleu encre, avec des accents inspirés des micro-ordinateurs des années 80, se trouve dans `app/assets/nexus.css`. Les composants `NexusIcon` et `NexusSheet` centralisent les icônes et les panneaux modaux. Les dialogues gèrent le focus et la fermeture avec Échap ; les zones tactiles principales mesurent au moins 44 px. La hauteur de l’application suit le clavier via le viewport visuel et respecte les marges système.
 
 Les états et les branches affichés proviennent du serveur : aucune branche de remplacement ni statistique fictive.
+
+## Dossiers et quotas
+
+La navigation demande le jeton Nexus et un Nexus Desktop connecté. Les dossiers sont lus sur le PC, avec les permissions du compte qui exécute Desktop, pas sur le serveur Core. Sous WSL, les disques Windows accessibles sont sous `/mnt` ; sous Windows natif, les lecteurs sont proposés dans l’explorateur. On peut parcourir les dossiers pendant une tâche, mais il faut attendre sa fin pour changer de dossier de travail. Les dossiers ouverts sont conservés dans la liste de projets de la session Desktop.
+
+Après mise à jour, depuis la racine du dépôt, exécuter `npm run compile` et `npm run web:build`, puis relancer Nexus Core et Nexus Desktop avec leurs paramètres habituels. Le navigateur et l’application Android doivent aussi utiliser la nouvelle interface (reconstruction de l’APK pour Android).
+
+**Aperçu & quotas**, dans les paramètres, affiche la session et les relevés fournis par les agents. Une limite non communiquée reste indiquée comme telle ; ce n’est pas un quota illimité. Les erreurs de connexion, de jeton ou de version sont affichées avec une possibilité de réessayer.
 
 ## Développement
 

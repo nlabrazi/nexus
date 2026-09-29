@@ -14,7 +14,7 @@ export default defineNuxtConfig({
           content:
             "width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content",
         },
-        { name: "theme-color", content: "#06090e" },
+        { name: "theme-color", content: "#f5f3ed" },
         { name: "apple-mobile-web-app-capable", content: "yes" },
         {
           name: "apple-mobile-web-app-status-bar-style",

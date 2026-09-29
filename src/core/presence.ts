@@ -99,6 +99,9 @@ export class NodePresenceManager extends EventEmitter {
     node.activeTaskId = status.activeTaskId;
     if (status.activeProject) {
       node.activeProject = status.activeProject;
+      if (!node.projects.some((project) => project.id === status.activeProject!.id)) {
+        node.projects = [...node.projects, status.activeProject];
+      }
     }
 
     this.emit('node:status', node);
@@ -187,9 +190,7 @@ export class NodePresenceManager extends EventEmitter {
         if (!seen.has(key)) {
           seen.add(key);
           const isActive =
-            node.activeProject?.id === proj.id ||
-            node.activeProject?.path === proj.path ||
-            node.activeProject?.name === proj.name;
+            node.activeProject?.id === proj.id || node.activeProject?.path === proj.path;
           projects.push({
             ...proj,
             isActive: Boolean(isActive),

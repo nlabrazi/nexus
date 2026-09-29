@@ -15,6 +15,8 @@ const KNOWN_MESSAGE_TYPES = new Set<NexusMessageType>([
   'node:heartbeat_ack',
   'node:status',
   'node:switch_project',
+  'node:filesystem:get',
+  'node:filesystem:result',
   'node:dashboard:get',
   'node:dashboard:result',
   'node:models:list',
@@ -192,6 +194,34 @@ function validatePayload(type: NexusMessageType, payload: unknown): void {
       break;
     case 'node:switch_project':
       validateNodeSwitchProject(payload);
+      break;
+    case 'node:filesystem:get':
+      assertNonEmptyString(payload.requestId, 'requestId');
+      if (payload.action !== 'browse' && payload.action !== 'open')
+        throw invalidMessageError('Action de navigation invalide.');
+      if (payload.path !== undefined || payload.action === 'open')
+        assertNonEmptyString(payload.path, 'path');
+      break;
+    case 'node:filesystem:result':
+      assertNonEmptyString(payload.requestId, 'requestId');
+      if (payload.error !== undefined) assertNonEmptyString(payload.error, 'error');
+      else if (isRecord(payload.project)) {
+        assertNonEmptyString(payload.project.id, 'project.id');
+        assertNonEmptyString(payload.project.name, 'project.name');
+        assertNonEmptyString(payload.project.path, 'project.path');
+      } else if (isRecord(payload.listing)) {
+        const listing = payload.listing;
+        assertNonEmptyString(listing.path, 'listing.path');
+        assertNonEmptyString(listing.home, 'listing.home');
+        if (listing.parent !== null) assertNonEmptyString(listing.parent, 'listing.parent');
+        if (!Array.isArray(listing.roots) || !Array.isArray(listing.directories))
+          throw invalidMessageError('Liste de dossiers invalide.');
+        for (const entry of [...listing.roots, ...listing.directories]) {
+          if (!isRecord(entry)) throw invalidMessageError('Dossier invalide.');
+          assertNonEmptyString(entry.name, 'directory.name');
+          assertNonEmptyString(entry.path, 'directory.path');
+        }
+      } else throw invalidMessageError('Résultat de navigation manquant.');
       break;
     case 'node:dashboard:get':
       assertNonEmptyString(payload.requestId, 'requestId');

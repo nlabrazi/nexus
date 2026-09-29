@@ -1,7 +1,9 @@
 import { logger } from '../logging/logger';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { realpath, stat } from 'node:fs/promises';
+import { browseDirectory } from './filesystem';
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { basename, dirname, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, resolve } from 'node:path';
 import { NexusRuntime } from '../runtime/nexus-runtime';
 import {
   RuntimeApprovalHandler,
@@ -21,6 +23,7 @@ import {
   ApprovalDecisionPayload,
   ApprovalKind,
   NodeModelsListPayload,
+  NodeFilesystemRequest,
   NodeModelsSelectPayload,
   NodeSwitchProjectPayload,
   TaskCancelPayload,
@@ -255,6 +258,7 @@ export class DesktopNode {
 
   getCapabilities(): NodeCapabilities {
     return {
+      filesystem: true,
       backends: ['codex', 'antigravity', 'brain'],
       speech: {
         stt: false,
@@ -291,14 +295,11 @@ export class DesktopNode {
         );
       }
       if (!found && existsSync(resolved) && statSync(resolved).isDirectory()) {
-        const name = basename(resolved);
-        const id = name.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
-        const guard = new WorkspaceGuard(() => ({
-          trusted: true,
-          folders: [{ scheme: 'file', path: resolved }],
-          dirtyDocuments: [],
-          protectedBranches: this.config.protectedBranches ?? [],
-        }));
+        const name = basename(resolved) || resolved;
+        const id = `folder-${createHash('sha256').update(resolved).digest('hex').slice(0, 20)}`;
+        const guard = createStandaloneWorkspaceGuard(resolved, {
+          protectedBranches: this.config.protectedBranches,
+        });
         const summary: NodeProjectSummary = {
           id,
           name,
@@ -558,6 +559,9 @@ export class DesktopNode {
       case 'node:switch_project':
         this.handleRemoteSwitchProject(message.payload as NodeSwitchProjectPayload, message.id);
         break;
+      case 'node:filesystem:get':
+        void this.handleFilesystemRequest(message.payload);
+        break;
       case 'node:dashboard:get':
         void this.handleDashboardRequest(message.payload.requestId);
         break;
@@ -567,6 +571,48 @@ export class DesktopNode {
       case 'node:models:select':
         void this.handleRemoteModelsSelect(message.payload as NodeModelsSelectPayload, message.id);
         break;
+    }
+  }
+
+  private async handleFilesystemRequest(payload: NodeFilesystemRequest): Promise<void> {
+    try {
+      if (payload.action === 'browse') {
+        const listing = await browseDirectory(payload.path);
+        this.coreClient?.send(
+          createNexusMessage('node:filesystem:result', { requestId: payload.requestId, listing })
+        );
+      } else {
+        const known = this.getProject(payload.path!);
+        if (!known && !isAbsolute(payload.path!)) throw new Error('Indiquez un chemin absolu.');
+        const path = await realpath(known?.path ?? payload.path!);
+        if (!(await stat(path)).isDirectory())
+          throw new Error('Ce chemin ne désigne pas un dossier.');
+        if (this.state !== 'idle')
+          throw new Error('Attendez la fin de la tâche avant de changer de dossier.');
+        const project = this.setActiveProject(known?.id ?? path);
+        this.coreClient?.send(createNexusMessage('node:status', this.createStatusPayload()));
+        this.coreClient?.send(
+          createNexusMessage('node:filesystem:result', { requestId: payload.requestId, project })
+        );
+      }
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      const message =
+        code === 'EACCES' || code === 'EPERM'
+          ? 'Accès refusé à ce dossier par le système.'
+          : code === 'ENOENT'
+            ? 'Ce dossier n’existe plus.'
+            : code === 'ENOTDIR'
+              ? 'Ce chemin ne désigne pas un dossier.'
+              : error instanceof Error
+                ? error.message
+                : 'Dossier indisponible.';
+      this.coreClient?.send(
+        createNexusMessage('node:filesystem:result', {
+          requestId: payload.requestId,
+          error: message,
+        })
+      );
     }
   }
 
@@ -675,6 +721,8 @@ export class DesktopNode {
   private handleRemoteSwitchProject(payload: NodeSwitchProjectPayload, messageId?: string): void {
     const { projectId } = payload;
     try {
+      if (this.state !== 'idle')
+        throw new Error('Attendez la fin de la tâche avant de changer de dossier.');
       this.setActiveProject(projectId);
       logger.info('Desktop', 'switch_project', { status: 'success' });
       this.coreClient?.send(createNexusMessage('node:status', this.createStatusPayload()));

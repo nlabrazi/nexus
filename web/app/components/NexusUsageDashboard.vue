@@ -5,7 +5,7 @@
       <button class="icon-button" type="button" :disabled="loading || !online" aria-label="Actualiser les quotas" @click="$emit('refresh')"><NexusIcon name="refresh" :class="{ 'is-refreshing': loading }" /></button>
     </div>
     <p v-if="!online" class="dashboard-notice" role="status">Poste hors ligne. Les relevés conservés ne décrivent pas son état actuel.</p>
-    <p v-if="error" class="inline-error" role="status">{{ error }}</p>
+    <div v-if="error" class="inline-error" role="alert"><p>{{ error }}</p><button v-if="online" type="button" class="text-button" :disabled="loading" @click="$emit('refresh')">Réessayer</button></div>
     <div v-if="loading && !dashboard" class="dashboard-skeleton" role="status"><span /><span /><p>Lecture des informations du poste…</p></div>
     <template v-if="dashboard">
       <section class="brain-overview">
@@ -17,6 +17,7 @@
       </section>
       <div class="dashboard-section-heading"><h4>Fournisseurs Brain</h4><small>Consommation depuis {{ time(dashboard.startedAt) }}</small></div>
       <p class="dashboard-caption">Les tokens ci-dessous sont mesurés par Nexus. Les quotas restants viennent des fournisseurs et peuvent inclure vos autres applications.</p>
+      <p v-if="!dashboard.brain.providers.length" class="dashboard-caption">Ce moteur Brain ne transmet pas de relevés par fournisseur.</p>
       <div class="provider-grid">
         <section v-for="provider in dashboard.brain.providers" :key="provider.provider" class="provider-card" :class="{ 'not-configured': !provider.configured }">
           <div class="dashboard-card-heading"><h4>{{ provider.provider === 'ollama' ? 'Ollama' : provider.provider }}</h4><span class="usage-badge" :class="{ enabled: provider.configured }">{{ provider.provider === 'ollama' ? 'Local' : provider.configured ? 'Configuré' : 'Clé absente' }}</span></div>
@@ -36,16 +37,18 @@
       <section v-for="agent in dashboard.agents" :key="agent.id" class="provider-card">
         <div class="dashboard-card-heading"><h4>{{ agent.id === 'codex' ? 'Codex' : 'Antigravity' }}</h4><span class="usage-badge">{{ agent.state === 'running' ? 'En cours' : agent.state === 'ready' ? 'Session active' : 'Arrêté' }}</span></div>
         <p class="provider-model">{{ agent.model || 'Modèle non communiqué' }}</p>
-        <p class="dashboard-caption">{{ formatCount(agent.totalTokens) }} tokens dans la session</p>
+        <p class="dashboard-caption">{{ agent.totalTokens === undefined ? 'Consommation non communiquée par cet agent.' : `${formatCount(agent.totalTokens)} tokens dans la session` }}</p>
         <NexusQuota v-for="metric in agent.limits" :key="metric.id" :metric="metric" :now="now" />
         <p v-if="!agent.limits.length" class="dashboard-caption">Quota d’abonnement non communiqué par cet agent.</p>
       </section>
       <p class="dashboard-footnote">Actualisé à {{ time(dashboard.generatedAt) }}. Les fenêtres en heures indiquent le renouvellement d’un quota, pas un nombre d’heures de travail disponibles. Les compteurs Nexus repartent à zéro au redémarrage.</p>
     </template>
-    <p v-else-if="!loading && !error" class="dashboard-caption">Connectez votre poste pour consulter les modèles et les quotas.</p>
+    <p v-else-if="!loading && !error" class="dashboard-caption">{{ online ? 'Les informations de session n’ont pas encore été chargées.' : 'Connectez votre poste pour consulter les modèles et les quotas.' }}</p>
   </section>
 </template>
 <script setup lang="ts">
+import NexusQuota from './NexusQuota.vue';
+import NexusIcon from './NexusIcon.vue';
 import type { RuntimeDashboard } from '../../../src/runtime/dashboard-types';
 import { formatCount } from '../utils/usage-dashboard.mjs';
 defineProps<{ dashboard: RuntimeDashboard | null; loading: boolean; error: string; online: boolean; agentLabel: string; modelLabel: string; now: number }>();
