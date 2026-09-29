@@ -7,17 +7,18 @@
           <span class="brand-mark">
             <NexusIcon name="nexus" />
           </span>
-          <span>nexus<span class="brand-period">.</span></span>
+          <span class="brand-copy">Nexus<span class="brand-subtitle">Votre espace de travail intelligent</span></span>
         </a>
       </div>
 
       <div class="header-right">
         <button class="status-beacon" type="button" :class="runtimeStatus.toLowerCase()"
-          :aria-label="`Nexus : ${runtimeStatusText}. Ouvrir les paramètres`" @click="showSettings = true">
+          :aria-label="`Nexus : ${runtimeStatusText}. Ouvrir la connexion`" @click="openConnectionSettings">
           <span class="beacon-dot" />
-          <span class="beacon-label" role="status" aria-live="polite">{{ runtimeStatus }}</span>
+          <span class="beacon-label" role="status" aria-live="polite">{{ connectionStatus === 'connecting' ? 'Connexion…' : isNodeReady ? 'Connecté' : 'Hors ligne' }}</span>
         </button>
-        <button type="button" class="header-menu-btn" aria-label="Menu des options"
+        <button type="button" class="icon-button" aria-label="Ouvrir les paramètres" @click="activeTab = 'system'"><NexusIcon name="settings" /></button>
+        <button type="button" class="header-menu-btn" aria-label="Options de la discussion" :aria-expanded="showQuickMenu"
           @click="showQuickMenu = !showQuickMenu">
           <NexusIcon name="dots" />
         </button>
@@ -26,7 +27,7 @@
 
     <!-- Quick Overflow Menu Dropdown -->
     <div v-if="showQuickMenu" class="menu-backdrop" @click="showQuickMenu = false" />
-    <div v-if="showQuickMenu" class="quick-menu" role="menu">
+    <div v-if="showQuickMenu" class="quick-menu" aria-label="Options de la discussion">
       <button type="button" class="menu-item" @click="toggleTts(); showQuickMenu = false">
         <NexusIcon :name="ttsEnabled ? 'speaker' : 'speakerOff'" />
         <span>{{ ttsEnabled ? 'Voix activée' : 'Voix désactivée' }}</span>
@@ -52,18 +53,25 @@
 
     <!-- MAIN CHAT VIEW (Purified, only strict necessary) -->
     <main v-if="activeTab === 'chat'" class="chat-view" aria-label="Discussion">
-      <p v-if="activeProjectName" class="chat-context"><span>Dossier de travail</span> {{ activeProjectName }}</p>
+      <div class="assistant-toolbar">
+        <button type="button" class="context-project" @click="showProjectMenu = true">
+          <NexusIcon name="folder" /><span>{{ activeProjectName || 'Choisir un projet' }}</span><NexusIcon name="down" />
+        </button>
+        <button type="button" class="context-agent" @click="activeTab = 'agent'">
+          <span class="status-dot" :class="{ online: isNodeReady }" />{{ selectedBackendShortLabel(selectedBackend) }}<NexusIcon name="chevron" />
+        </button>
+      </div>
       <div ref="messagesScrollRef" class="messages-stream" role="log" aria-label="Messages" aria-live="polite"
         aria-relevant="additions text">
         <div v-if="!messages.length" class="welcome-hud">
-          <span class="welcome-mark" aria-hidden="true"><NexusIcon name="nexus" /></span>
-          <h1 class="welcome-title">Que souhaitez-vous faire ?</h1>
+          <p class="eyebrow">NEXUS ASSISTANT</p>
+          <h1 class="welcome-title">Une idée. Une question.<br /><span>On avance ensemble.</span></h1>
           <p class="welcome-description">{{ isNodeReady
-            ? "Explorez une idée avec Brain ou confiez du code à votre agent."
-            : "Connectez votre poste pour commencer. Votre brouillon reste disponible." }}</p>
+            ? "Parlez à Nexus ou écrivez-lui. Votre agent prend le relais."
+            : "Votre assistant, vos agents et vos projets. Connectez votre poste pour commencer." }}</p>
           <button v-if="!isNodeReady && connectionStatus !== 'connecting'" type="button"
-            class="button primary" @click="showSettings = true">
-            <NexusIcon name="settings" /><span>Connecter mon poste</span>
+            class="text-button connect-link" @click="openConnectionSettings">
+            <NexusIcon name="computer" /><span>Connecter mon poste</span><NexusIcon name="chevron" />
           </button>
         </div>
 
@@ -139,11 +147,23 @@
           </button>
         </div>
 
+        <div class="voice-control" :class="{ compact: messages.length, listening: isListening }">
+          <button type="button" class="voice-orb" :class="{ recording: isListening, processing: isProcessingAudio }"
+            :disabled="isSending || isProcessingAudio" :aria-pressed="isListening"
+            :aria-label="isListening ? 'Terminer la dictée' : 'Parler à Nexus'" aria-describedby="voice-hint" @click="handleMicClick">
+            <span class="voice-orb-inner"><NexusIcon :name="isListening ? 'stop' : 'mic'" /></span>
+          </button>
+          <div class="voice-caption">
+            <strong>{{ isListening ? 'Je vous écoute' : isProcessingAudio ? 'Transcription en cours' : isSending ? 'Nexus travaille' : 'Parlez, simplement.' }}</strong>
+            <span id="voice-hint">{{ isListening ? 'Touchez le micro pour terminer' : 'Touchez le micro pour dicter' }}</span>
+          </div>
+          <button v-if="isSpeaking" type="button" class="text-button" @click="stopSpeaking">Arrêter la lecture</button>
+        </div>
         <form class="composer" @submit.prevent="submitMessage">
           <label for="message" class="sr-only">Votre message</label>
           <textarea id="message" ref="chatTextareaRef" v-model="inputPrompt" rows="1" :placeholder="isNodeReady
             ? 'Écrivez à Nexus…'
-            : 'Poste hors ligne (brouillon actif)...'
+            : 'Écrivez un brouillon…'
             " :disabled="isSending" @keydown="handleComposerKeydown" @input="resizeComposer" />
           <div class="composer-tools">
             <button type="button" class="agent-badge-btn" aria-label="Changer d'agent et de modèle"
@@ -154,11 +174,6 @@
             </button>
 
             <div class="composer-actions">
-              <button type="button" class="icon-button mic-button" :class="{ recording: isListening }"
-                :disabled="isSending || isProcessingAudio" :aria-label="isListening ? 'Terminer la dictée' : 'Dicter un message'
-                  " :aria-pressed="isListening" @click="handleMicClick">
-                <NexusIcon :name="isListening ? 'stop' : 'mic'" />
-              </button>
               <button type="submit" class="send-button" :disabled="!canSend" aria-label="Envoyer le message">
                 <NexusIcon name="arrow" />
               </button>
@@ -166,6 +181,42 @@
           </div>
         </form>
       </div>
+    </main>
+
+    <!-- Agent details use the connected workstation's actual state. -->
+    <main v-if="activeTab === 'agent'" class="page-view agent-view" aria-labelledby="agent-title">
+      <div class="page-heading"><div><p class="eyebrow">VOTRE PARTENAIRE</p><h1 id="agent-title">L’agent à vos côtés</h1></div>
+        <button type="button" class="icon-button" aria-label="Configurer l’agent et le modèle" @click="openAgentPicker"><NexusIcon name="settings" /></button>
+      </div>
+      <section class="agent-profile">
+        <div class="agent-avatar"><NexusIcon :name="selectedBackend === 'brain' ? 'sparkles' : 'cpu'" /></div>
+        <div class="agent-identity"><p class="eyebrow">AGENT SÉLECTIONNÉ</p><h2>{{ selectedBackendLabel(selectedBackend) }}</h2><p>{{ agentOptions.find(agent => agent.id === selectedBackend)?.description }}</p></div>
+        <span class="agent-state" :class="{ online: isNodeReady }"><span class="status-dot" />{{ isNodeReady ? 'En ligne' : 'Hors ligne' }}</span>
+      </section>
+      <dl class="agent-facts">
+        <div><dt>État</dt><dd>{{ runtimeStatusText }}</dd></div>
+        <div><dt>Modèle</dt><dd>{{ selectedModelLabel || 'Automatique' }}</dd></div>
+        <div><dt>Projet en cours</dt><dd>{{ activeProjectName || 'Aucun projet sélectionné' }}</dd></div>
+        <div><dt>Poste de travail</dt><dd>{{ primaryNode?.nodeName || 'Non connecté' }}</dd></div>
+      </dl>
+      <div class="agent-commands"><button type="button" class="button primary" @click="activeTab = 'chat'"><NexusIcon name="chat" />Ouvrir la discussion</button><button type="button" class="button secondary" @click="openAgentPicker">Changer d’agent</button></div>
+      <div class="section-heading"><h2>Session & consommation</h2><span>Données du poste</span></div>
+      <NexusUsageDashboard :dashboard="usageDashboard" :loading="dashboardLoading" :error="dashboardError" :online="isNodeReady" :agent-label="selectedBackendLabel(selectedBackend)" :model-label="selectedModelLabel" :now="now" @refresh="fetchDashboard" />
+    </main>
+
+    <main v-if="activeTab === 'system'" class="page-view system-view" aria-labelledby="system-title">
+      <div class="page-heading"><div><p class="eyebrow">VOTRE ESPACE</p><h1 id="system-title">Système</h1><p class="page-description">Tout ce qu’il faut, à sa place.</p></div><span class="system-emblem"><NexusIcon name="settings" /></span></div>
+      <div class="system-menu">
+        <button type="button" @click="openConnectionSettings"><span class="system-menu-icon"><NexusIcon name="computer" /></span><span><strong>Connexion au poste</strong><small>{{ connectionStatusText }}</small></span><NexusIcon name="chevron" /></button>
+        <button type="button" @click="activeTab = 'agent'"><span class="system-menu-icon"><NexusIcon name="cpu" /></span><span><strong>Agent & modèle</strong><small>{{ selectedBackendLabel(selectedBackend) }} · Configuration et consommation</small></span><NexusIcon name="chevron" /></button>
+        <button type="button" @click="openConnectionSettings"><span class="system-menu-icon amber"><NexusIcon name="speaker" /></span><span><strong>Voix & dictée</strong><small>{{ ttsEnabled ? 'Lecture vocale activée' : 'Lecture vocale désactivée' }}</small></span><NexusIcon name="chevron" /></button>
+        <button type="button" @click="showApprovalModal = true"><span class="system-menu-icon green"><NexusIcon name="shield" /></span><span><strong>Autorisations</strong><small>{{ pendingApprovalsCount ? `${pendingApprovalsCount} action(s) à valider` : 'Aucune action en attente de votre accord' }}</small></span><NexusIcon name="chevron" /></button>
+        <button type="button" @click="activeTab = 'dashboard'"><span class="system-menu-icon amber"><NexusIcon name="folder" /></span><span><strong>Projets & dossiers</strong><small>{{ activeProjectName || 'Parcourir votre poste de travail' }}</small></span><NexusIcon name="chevron" /></button>
+        <button type="button" @click="activeTab = 'activity'"><span class="system-menu-icon green"><NexusIcon name="activity" /></span><span><strong>Historique d’activité</strong><small>Retrouvez vos tâches et leurs résultats</small></span><NexusIcon name="chevron" /></button>
+      </div>
+      <section class="system-health" aria-label="État du système"><div><span class="status-dot" :class="{ online: isNodeReady }" /><h2>État du système</h2><span>{{ isNodeReady ? 'Connecté' : 'Hors ligne' }}</span></div><dl><div><dt>Postes connectés</dt><dd>{{ onlineNodes.length }}</dd></div><div><dt>Tâches en cours</dt><dd>{{ runningTasksCount }}</dd></div><div><dt>Dernier contact</dt><dd>{{ lastUpdated ? lastUpdatedText : 'En attente' }}</dd></div></dl></section>
+      <button v-if="deferredPrompt" type="button" class="button secondary full-width" @click="installPwa">Installer Nexus sur cet appareil</button>
+      <p class="system-footer">NEXUS<span>Votre base de travail intelligente.</span></p>
     </main>
 
     <!-- ACTIVITY VIEW -->
@@ -306,8 +357,9 @@
       <button type="button" :aria-current="activeTab === 'chat' ? 'page' : undefined" @click="activeTab = 'chat'">
         <span class="nav-icon">
           <NexusIcon name="chat" /><span v-if="isSending" class="nav-dot" />
-        </span><span>Discussion</span>
+        </span><span>Assistant</span>
       </button>
+      <button type="button" :aria-current="activeTab === 'agent' ? 'page' : undefined" @click="activeTab = 'agent'"><span class="nav-icon"><NexusIcon name="cpu" /></span><span>Agent</span></button>
       <button type="button" :aria-current="activeTab === 'activity' ? 'page' : undefined"
         @click="activeTab = 'activity'">
         <span class="nav-icon">
@@ -315,12 +367,10 @@
             pendingApprovalsCount || runningTasksCount }}</span>
         </span><span>Activité</span>
       </button>
-      <button type="button" :aria-current="activeTab === 'dashboard' ? 'page' : undefined"
-        @click="activeTab = 'dashboard'">
-        <span class="nav-icon">
-          <NexusIcon name="folder" />
-        </span><span>Dossiers</span>
+      <button type="button" :aria-current="activeTab === 'system' || activeTab === 'dashboard' ? 'page' : undefined" @click="activeTab = 'system'">
+        <span class="nav-icon"><NexusIcon name="settings" /></span><span>Système</span>
       </button>
+      <div class="nav-workspace"><span class="eyebrow">ESPACE DE TRAVAIL</span><button type="button" @click="showProjectMenu = true"><NexusIcon name="folder" /><span>{{ activeProjectName || 'Choisir un projet' }}</span></button><p><span class="status-dot" :class="{ online: isNodeReady }" />{{ isNodeReady ? 'Poste connecté' : 'Poste hors ligne' }}</p></div>
     </nav>
 
     <!-- SETTINGS SHEET -->
@@ -607,7 +657,7 @@ interface PendingApprovalItem {
 }
 
 // Navigation & Tab state
-const activeTab = ref<"chat" | "activity" | "dashboard">("chat");
+const activeTab = ref<"chat" | "agent" | "activity" | "dashboard" | "system">("chat");
 const selectedBackend = ref<"brain" | "codex" | "antigravity">("brain");
 
 // Quick Dropdowns & HUD Modals state
@@ -647,6 +697,10 @@ const authToken = ref<string>("");
 const authTokenInput = ref<string>("");
 const showSettings = ref<boolean>(false);
 const settingsTab = ref('overview');
+function openConnectionSettings() {
+  settingsTab.value = 'preferences';
+  showSettings.value = true;
+}
 const usageDashboard = ref<RuntimeDashboard | null>(null);
 const dashboardLoading = ref(false);
 const dashboardError = ref('');
@@ -991,6 +1045,8 @@ onMounted(async () => {
     const savedTab = localStorage.getItem("nexus_active_tab") as
       | "chat"
       | "activity"
+      | "agent"
+      | "system"
       | "dashboard"
       | null;
 
@@ -998,7 +1054,7 @@ onMounted(async () => {
       coreUrl.value = savedUrl;
     } else if (Capacitor.isNativePlatform()) {
       coreUrl.value = "";
-      showSettings.value = true;
+      openConnectionSettings();
     } else if (
       window.location.port === "4040" ||
       window.location.pathname.startsWith("/")
@@ -1011,14 +1067,14 @@ onMounted(async () => {
     if (Capacitor.isNativePlatform()) {
       try {
         await StatusBar.setStyle({ style: Style.Light });
-        await StatusBar.setBackgroundColor({ color: "#f5f3ed" });
+        await StatusBar.setBackgroundColor({ color: "#0c1721" });
       } catch { }
     }
 
     coreUrlInput.value = coreUrl.value;
     authToken.value = savedToken;
     authTokenInput.value = savedToken;
-    if (savedTab && ["chat", "activity", "dashboard"].includes(savedTab))
+    if (savedTab && ["chat", "agent", "activity", "dashboard", "system"].includes(savedTab))
       activeTab.value = savedTab;
 
     const savedAutoSend = localStorage.getItem("nexus_auto_send_voice");
@@ -1082,7 +1138,7 @@ onMounted(async () => {
   fetchModelsForBackend(selectedBackend.value);
 
   pollTimer = setInterval(() => {
-    if ((showSettings.value || isSending.value) && Date.now() - dashboardFetchedAt > 5000) void fetchDashboard();
+    if ((showSettings.value || activeTab.value === 'agent' || isSending.value) && Date.now() - dashboardFetchedAt > 5000) void fetchDashboard();
     fetchStatus(true);
     fetchTasks(true);
     fetchApprovals(true);
@@ -1235,10 +1291,10 @@ watch([coreUrl, authToken, () => primaryNode.value?.nodeId], () => {
   dashboardLoading.value = false;
   usageDashboard.value = null;
   dashboardError.value = '';
-  if (showSettings.value && isNodeReady.value) void fetchDashboard();
+  if ((showSettings.value || activeTab.value === 'agent') && isNodeReady.value) void fetchDashboard();
 });
-watch([showSettings, settingsTab, isNodeReady], ([settings, tab, ready]) => {
-  if (settings && tab === 'overview' && ready) void fetchDashboard();
+watch([showSettings, settingsTab, isNodeReady, activeTab], ([settings, tab, ready, view]) => {
+  if (ready && ((settings && tab === 'overview') || view === 'agent')) void fetchDashboard();
 });
 
 const canSend = computed(() => {
