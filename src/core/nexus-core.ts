@@ -1,3 +1,5 @@
+import { RuntimeDashboard } from '../runtime/dashboard-types';
+import { NodeDashboardResultPayload } from '../protocol/types';
 import { logger, registerLogSecret } from '../logging/logger';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
@@ -9,6 +11,8 @@ import { invalidMessageError, NexusProtocolError } from '../protocol/errors';
 import { createNexusMessage, parseNexusMessage, serializeNexusMessage } from '../protocol/messages';
 import {
   AnyNexusMessage,
+  NodeFilesystemRequest,
+  NodeFilesystemResult,
   NodeHeartbeatPayload,
   NodeHelloPayload,
   NodeModelsResultPayload,
@@ -73,6 +77,24 @@ export class NexusCore extends EventEmitter {
     {
       resolve: (payload: NodeModelsResultPayload) => void;
       reject: (err: unknown) => void;
+      timer: NodeJS.Timeout;
+    }
+  >();
+  private readonly pendingDashboardRequests = new Map<
+    string,
+    {
+      nodeId: string;
+      resolve: (value: RuntimeDashboard) => void;
+      reject: (error: Error) => void;
+      timer: NodeJS.Timeout;
+    }
+  >();
+  private readonly pendingFilesystemRequests = new Map<
+    string,
+    {
+      nodeId: string;
+      resolve: (value: NodeFilesystemResult) => void;
+      reject: (error: Error) => void;
       timer: NodeJS.Timeout;
     }
   >();
@@ -432,6 +454,28 @@ export class NexusCore extends EventEmitter {
           return undefined;
         }
 
+        case 'node:filesystem:result': {
+          const payload = message.payload;
+          const pending = this.pendingFilesystemRequests.get(payload.requestId);
+          if (pending && senderNodeId === pending.nodeId) {
+            clearTimeout(pending.timer);
+            this.pendingFilesystemRequests.delete(payload.requestId);
+            if (payload.error) pending.reject(new Error(payload.error));
+            else pending.resolve(payload);
+          }
+          return undefined;
+        }
+        case 'node:dashboard:result': {
+          const payload = message.payload as NodeDashboardResultPayload;
+          const pending = this.pendingDashboardRequests.get(payload.requestId);
+          if (pending && senderNodeId === pending.nodeId) {
+            clearTimeout(pending.timer);
+            this.pendingDashboardRequests.delete(payload.requestId);
+            if (payload.dashboard) pending.resolve(payload.dashboard);
+            else pending.reject(new Error('Dashboard indisponible sur le poste.'));
+          }
+          return undefined;
+        }
         case 'node:models:result': {
           const payload = message.payload as NodeModelsResultPayload;
           const reqId = payload.requestId || message.id;
@@ -543,6 +587,16 @@ export class NexusCore extends EventEmitter {
   }
 
   async stop(): Promise<void> {
+    for (const pending of this.pendingDashboardRequests.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error('Nexus Core arrêté.'));
+    }
+    this.pendingDashboardRequests.clear();
+    for (const pending of this.pendingFilesystemRequests.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error('Nexus Core arrêté.'));
+    }
+    this.pendingFilesystemRequests.clear();
     this.presence.stopLivenessMonitoring();
 
     for (const [nodeId] of this.nodeWsConnections.entries()) {
@@ -671,6 +725,78 @@ export class NexusCore extends EventEmitter {
           JSON.stringify({
             error: err instanceof Error ? err.message : String(err),
             code: err instanceof NexusProtocolError ? err.code : 'INTERNAL_ERROR',
+          })
+        );
+      }
+      return;
+    }
+
+    if (
+      (method === 'GET' && pathname === '/api/filesystem') ||
+      (method === 'POST' && pathname === '/api/filesystem/open')
+    ) {
+      res.setHeader('Cache-Control', 'no-store');
+      const token = req.headers.authorization?.replace(/^Bearer /, '');
+      if (!token || !this.config.authTokens.includes(token)) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            error: 'Renseignez le jeton Nexus dans les paramètres pour accéder aux dossiers du PC.',
+          })
+        );
+        return;
+      }
+      try {
+        const input =
+          method === 'GET'
+            ? Object.fromEntries(url.searchParams)
+            : JSON.parse(await this.readRequestBody(req));
+        if (
+          !input ||
+          typeof input !== 'object' ||
+          (input.nodeId !== undefined && typeof input.nodeId !== 'string') ||
+          (input.path !== undefined && (typeof input.path !== 'string' || !input.path.trim())) ||
+          (method === 'POST' && !input.path)
+        )
+          throw new Error('Chemin ou poste invalide.');
+        const result = await this.requestNodeFilesystem(
+          method === 'GET' ? 'browse' : 'open',
+          input.path,
+          input.nodeId
+        );
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(method === 'GET' ? result.listing : result.project));
+      } catch (error) {
+        res.writeHead(
+          error instanceof NexusProtocolError && error.code === 'NODE_OFFLINE' ? 503 : 400,
+          { 'Content-Type': 'application/json' }
+        );
+        res.end(
+          JSON.stringify({
+            error: error instanceof Error ? error.message : 'Dossier indisponible.',
+          })
+        );
+      }
+      return;
+    }
+
+    if (method === 'GET' && pathname === '/api/dashboard') {
+      res.setHeader('Cache-Control', 'no-store');
+      const token = req.headers.authorization?.replace(/^Bearer /, '');
+      if (this.config.authTokens.length && (!token || !this.config.authTokens.includes(token))) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Jeton Nexus requis pour consulter les quotas.' }));
+        return;
+      }
+      try {
+        const dashboard = await this.getNodeDashboard(url.searchParams.get('nodeId') || undefined);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(dashboard));
+      } catch {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            error: 'Dashboard indisponible. Vérifiez la connexion et la version du poste Nexus.',
           })
         );
       }
@@ -1175,6 +1301,74 @@ export class NexusCore extends EventEmitter {
 
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Endpoint non trouvé' }));
+  }
+
+  async requestNodeFilesystem(
+    action: NodeFilesystemRequest['action'],
+    path?: string,
+    nodeId?: string,
+    timeoutMs = 10000
+  ): Promise<NodeFilesystemResult> {
+    const node = nodeId ? this.presence.getNode(nodeId) : this.presence.getPrimaryOnlineNode();
+    const connection = node ? this.nodeWsConnections.get(node.nodeId) : undefined;
+    if (!node?.online || !connection)
+      throw new NexusProtocolError('NODE_OFFLINE', 'Votre poste est hors ligne.');
+    if (!node.capabilities.filesystem)
+      throw new Error(
+        'Redémarrez Nexus Desktop avec la nouvelle version pour explorer les dossiers.'
+      );
+    if (this.pendingFilesystemRequests.size >= 32)
+      throw new Error('Trop de demandes de navigation.');
+    const requestId = randomUUID();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingFilesystemRequests.delete(requestId);
+        reject(new Error('Le poste ne répond pas. Réessayez.'));
+      }, timeoutMs);
+      timer.unref?.();
+      this.pendingFilesystemRequests.set(requestId, {
+        nodeId: node.nodeId,
+        resolve,
+        reject,
+        timer,
+      });
+      try {
+        connection.send(
+          serializeNexusMessage(
+            createNexusMessage('node:filesystem:get', { requestId, action, path })
+          )
+        );
+      } catch (error) {
+        clearTimeout(timer);
+        this.pendingFilesystemRequests.delete(requestId);
+        reject(error);
+      }
+    });
+  }
+
+  async getNodeDashboard(nodeId?: string, timeoutMs = 7000): Promise<RuntimeDashboard> {
+    const node = nodeId ? this.presence.getNode(nodeId) : this.presence.getPrimaryOnlineNode();
+    const connection = node ? this.nodeWsConnections.get(node.nodeId) : undefined;
+    if (!node?.online || !connection) throw new Error('Poste indisponible.');
+    if (this.pendingDashboardRequests.size >= 32) throw new Error('Trop de demandes de dashboard.');
+    const requestId = randomUUID();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingDashboardRequests.delete(requestId);
+        reject(new Error('Délai dépassé pour le dashboard.'));
+      }, timeoutMs);
+      timer.unref?.();
+      this.pendingDashboardRequests.set(requestId, { nodeId: node.nodeId, resolve, reject, timer });
+      try {
+        connection.send(
+          serializeNexusMessage(createNexusMessage('node:dashboard:get', { requestId }))
+        );
+      } catch {
+        clearTimeout(timer);
+        this.pendingDashboardRequests.delete(requestId);
+        reject(new Error('Poste déconnecté.'));
+      }
+    });
   }
 
   async listNodeModels(

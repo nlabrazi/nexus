@@ -1,5 +1,5 @@
 const { createServer } = require('node:http');
-const { readFileSync, mkdtempSync, rmSync } = require('node:fs');
+const { readFileSync, writeFileSync, mkdtempSync, rmSync } = require('node:fs');
 const { join, extname } = require('node:path');
 const { spawn } = require('node:child_process');
 const assert = require('node:assert/strict');
@@ -31,6 +31,71 @@ const server = createServer((req, res) => {
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify(data));
   };
+  if (path === '/api/dashboard')
+    return json({
+      generatedAt: Date.now(),
+      startedAt: Date.now() - 3600000,
+      brain: {
+        selection: 'auto',
+        lastUsed: {
+          provider: 'groq',
+          model: 'effective-model',
+          completedAt: Date.now(),
+          durationMs: 1250,
+        },
+        providers: [
+          {
+            provider: 'groq',
+            model: 'configured-model',
+            configured: true,
+            requests: 8,
+            measuredRequests: 8,
+            totalTokens: 1250,
+            lastStatus: 'success',
+            limits: [
+              {
+                id: 'tokens',
+                label: 'Tokens / minute',
+                unit: 'tokens',
+                limit: 1000,
+                remaining: 0,
+                resetsAt: Date.now() + 60000,
+                observedAt: Date.now(),
+              },
+            ],
+            accountUrl: 'https://console.groq.com/settings/limits',
+          },
+          {
+            provider: 'gemini',
+            model: 'gemini',
+            configured: false,
+            requests: 0,
+            measuredRequests: 0,
+            totalTokens: 0,
+            limits: [],
+          },
+        ],
+      },
+      agents: [
+        {
+          id: 'codex',
+          state: 'ready',
+          model: 'code-model',
+          totalTokens: 4200,
+          limits: [
+            {
+              id: 'primary',
+              label: 'Codex · 5 h',
+              unit: 'percent',
+              limit: 100,
+              remaining: 75,
+              observedAt: Date.now(),
+              resetsAt: Date.now() + 3600000,
+            },
+          ],
+        },
+      ],
+    });
   if (path === '/status') return json(fixture);
   if (path === '/api/tasks' && req.method === 'POST') {
     taskResponse = res;
@@ -204,6 +269,41 @@ const server = createServer((req, res) => {
       await evaluate("document.querySelector('.mic-button').click()");
       await waitFor("document.querySelector('#message').value.includes('demande dictée')");
     };
+    // The settings dashboard shows real provider/model semantics and exhausted quotas.
+    await evaluate("document.querySelector('.status-beacon').click()");
+    await waitFor("document.querySelector('.brain-last')?.textContent.includes('effective-model')");
+    assert.equal(
+      await evaluate("document.querySelector('.quota-heading strong').textContent"),
+      '0 tokens'
+    );
+    assert.equal(await evaluate("document.querySelector('progress').value"), 0);
+    assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true);
+    assert.equal(
+      await evaluate(
+        "document.querySelector('dialog[open]').scrollWidth <= document.querySelector('dialog[open]').clientWidth"
+      ),
+      true
+    );
+    if (process.env.NEXUS_SCREENSHOT) {
+      await delay(300);
+      await call('Page.captureScreenshot', { format: 'png' }).then((r) =>
+        writeFileSync(process.env.NEXUS_SCREENSHOT, Buffer.from(r.data, 'base64'))
+      );
+    }
+    await call('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
+    });
+    assert.equal(
+      await evaluate("getComputedStyle(document.querySelector('.welcome-mark')).animationName"),
+      'none'
+    );
+    await evaluate(
+      "document.querySelector('#overview-tab').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}))"
+    );
+    await waitFor(
+      "document.querySelector('#preferences-tab').getAttribute('aria-selected')==='true'"
+    );
+    await evaluate('document.querySelector(\'dialog[open] [aria-label="Fermer"]\').click()');
     // Dictation followed by manual send must preserve the voice origin.
     await dictate();
     await submit();
@@ -232,6 +332,7 @@ const server = createServer((req, res) => {
     await delay(100);
     assert.equal(await evaluate('window.spoken.length'), 1);
     await evaluate("document.querySelector('.status-beacon').click()");
+    await evaluate("document.querySelector('#preferences-tab').click()");
     await waitFor("document.querySelector('dialog[open] .switch-field')");
     await evaluate(
       "[...document.querySelectorAll('.switch-field')].find(e=>e.textContent.includes('Envoyer après')).querySelector('input').click()"
@@ -245,6 +346,7 @@ const server = createServer((req, res) => {
     await waitFor("document.querySelector('.beacon-label').textContent==='READY'");
     // Global mute overrides voice-origin replies.
     await evaluate("document.querySelector('.status-beacon').click()");
+    await evaluate("document.querySelector('#preferences-tab').click()");
     await waitFor("document.querySelector('dialog[open] .switch-field')");
     await evaluate(
       "[...document.querySelectorAll('.switch-field')].find(e=>e.textContent.includes('Activer la voix')).querySelector('input').click()"
@@ -256,7 +358,7 @@ const server = createServer((req, res) => {
     assert.equal(await evaluate('window.spoken.length'), 2);
     assert.equal(exceptions.length, 0, JSON.stringify(exceptions));
     console.log(
-      'Android bridge smoke passed: manual and automatic dictation → native TTS, Markdown cleanup, voice/speed, microphone interruption, typed draft reset, global mute, no runtime exceptions.'
+      'Android dashboard and bridge smoke passed: models, zero quota, mobile geometry, reduced motion, manual and automatic dictation → native TTS, Markdown cleanup, voice/speed, microphone interruption, typed draft reset, global mute, no runtime exceptions.'
     );
   } finally {
     ws?.close();

@@ -31,7 +31,7 @@ Définir les paramètres **Utilisateur**, ou **Distant** dans WSL/SSH :
 {
   "nexus.speech.tts.pythonPath": "/chemin/vers/nexus/.nexus-speech/piper/bin/python",
   "nexus.speech.tts.modelPath": "/chemin/vers/nexus/.nexus-speech/voices/fr_FR-upmc-medium.onnx",
-  "nexus.speech.tts.speakerId": 0
+  "nexus.speech.tts.speakerId": 1
 }
 ```
 
@@ -134,3 +134,20 @@ sur un téléphone physique restent à vérifier après installation.
 
 Le parcours complet de dictée est aussi testé avec un pont Android simulé :
 `node scripts/test-android-voice.cjs` après `npm run web:build`.
+
+### Accent et continuité de lecture
+
+Le choix automatique privilégie maintenant `fr-FR` avant les autres variantes
+francophones. Une voix en ligne est préférée dans cette locale ; elle peut
+nécessiter Internet. Si elle échoue, Android réessaie avec une voix locale
+française de France lorsqu’elle est disponible. Un choix de voix explicite est
+respecté, y compris un choix local pour travailler hors ligne. Les paramètres
+identifient les voix locales et en ligne ; choisir « Automatique · français de
+France » permet de quitter une ancienne sélection québécoise.
+
+Android lit des passages de plusieurs phrases, limités à 1 200 caractères,
+au lieu de redémarrer le moteur après chaque phrase. Le délai de surveillance
+s’adapte à leur longueur ; l’arrêt et le remplacement restent immédiats. Le
+navigateur conserve ses segments courts pour éviter les blocages de Web Speech.
+Le timbre et l’intonation restent ceux des voix installées sur l’appareil : Nexus
+ne transforme pas une voix Android en une nouvelle voix de synthèse.

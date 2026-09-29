@@ -1,4 +1,5 @@
-import { splitSpeechText } from './speech-text.mjs';
+import { chooseSpeechVoice } from './speech-voice.mjs';
+import { splitNativeSpeechText } from './speech-text.mjs';
 
 /** Capacitor speak resolves at the end of an utterance; stop can leave it pending. */
 export function createNativeSpeechPlayback(engine, callbacks, timers = globalThis) {
@@ -21,10 +22,10 @@ export function createNativeSpeechPlayback(engine, callbacks, timers = globalThi
     if (!text.trim()) return;
     callbacks.onState(true, id ?? null);
     const cancelled = new Promise((resolve) => { cancelPending = resolve; });
-    async function bounded(promise) {
+    async function bounded(promise, timeoutMs = 5_000) {
       let timer;
       const timeout = new Promise((_, reject) => {
-        timer = timers.setTimeout(() => reject(new Error('timeout')), 60_000);
+        timer = timers.setTimeout(() => reject(new Error('timeout')), timeoutMs);
       });
       try { return await Promise.race([promise, cancelled, timeout]); }
       finally { timers.clearTimeout(timer); }
@@ -35,16 +36,24 @@ export function createNativeSpeechPlayback(engine, callbacks, timers = globalThi
       const result = await bounded(engine.getSupportedVoices());
       if (current !== generation) return;
       const voices = result.voices;
-      let voice = voices.findIndex((v) => v.voiceURI === options.voiceURI);
-      if (voice < 0) voice = voices.findIndex((v) => v.lang.toLowerCase().startsWith('fr') && v.localService);
-      if (voice < 0) voice = voices.findIndex((v) => v.lang.toLowerCase().startsWith('fr'));
+      let voice = chooseSpeechVoice(voices, options.voiceURI);
       if (voice < 0) throw new Error('missing voice');
-      for (const chunk of splitSpeechText(text)) {
-        await bounded(engine.speak({
+      const explicitVoice = voices.some((v) => v.voiceURI === options.voiceURI);
+      const localFrance = voices.findIndex((v) => v.lang.toLowerCase().replaceAll('_', '-') === 'fr-fr' && v.localService);
+      for (const chunk of splitNativeSpeechText(text)) {
+        const play = () => bounded(engine.speak({
           text: chunk, lang: voices[voice].lang, voice,
           rate: Number.isFinite(options.rate) && options.rate >= 0.8 && options.rate <= 1.3 ? options.rate : 1,
           pitch: 1, volume: 1, queueStrategy: 0, category: 'playback',
-        }));
+        }), Math.max(60_000, chunk.length * 125));
+        try { await play(); }
+        catch (error) {
+          if (current !== generation) return;
+          if (explicitVoice || voices[voice].localService || localFrance < 0) throw error;
+          // Automatic online voices can be unavailable offline; retain the France accent.
+          voice = localFrance;
+          await play();
+        }
         if (current !== generation) return;
       }
       callbacks.onState(false, null);

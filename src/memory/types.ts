@@ -20,4 +20,12 @@ export interface ProjectMemorySnapshot {
   readonly exists: boolean;
   readonly rawContent: string;
   readonly decisions: readonly ProjectDecision[];
+  readonly preferences?: string;
+}
+
+export interface AgentContextSnapshot {
+  readonly rootPath: string;
+  readonly decisionsSummary: string;
+  readonly preferences: string;
+  readonly hasContext: boolean;
 }

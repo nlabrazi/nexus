@@ -37,10 +37,17 @@ export function brainSystemPrompt(
   project: ConversationProjectContext | undefined,
   toolsAllowed: boolean
 ): string {
-  const context = project
-    ? `Contexte projet : ${project.name} (branche: ${project.branch ?? 'aucune'})`
-    : 'Aucun projet spécifique ciblé (espace racine /code)';
-  return `${BRAIN_INSTRUCTIONS}\n${context}\nOutils autorisés : ${toolsAllowed ? 'oui' : 'non'}.`;
+  const parts: string[] = [BRAIN_INSTRUCTIONS];
+  if (project) {
+    parts.push(`Contexte projet : ${project.name} (branche: ${project.branch ?? 'aucune'})`);
+    if (project.decisionsSummary) {
+      parts.push(`Décisions architecturales actives consignées :\n${project.decisionsSummary}`);
+    }
+  } else {
+    parts.push('Aucun projet spécifique ciblé (espace racine /code)');
+  }
+  parts.push(`Outils autorisés : ${toolsAllowed ? 'oui' : 'non'}.`);
+  return parts.join('\n\n');
 }
 
 export function parseBrainDecision(
@@ -56,16 +63,16 @@ export function parseBrainDecision(
   try {
     parsed = JSON.parse(cleaned);
   } catch {
-    if (strict) throw new Error('Invalid decision JSON');
+    if (strict) { throw new Error('Invalid decision JSON'); }
     return { action: 'reply', text: raw || 'Je n’ai pas pu générer de réponse intelligible.' };
   }
-  if (!parsed || typeof parsed !== 'object') throw new Error('Invalid decision');
+  if (!parsed || typeof parsed !== 'object') { throw new Error('Invalid decision'); }
   const value = parsed as Record<string, unknown>;
   const action = value.action as BrainDecision['action'];
   if (!VALID_ACTIONS.has(action) || typeof value.text !== 'string' || !value.text.trim()) {
-    if (strict) throw new Error('Invalid decision shape');
+    if (strict) { throw new Error('Invalid decision shape'); }
     return { action: 'reply', text: typeof value.text === 'string' ? value.text : raw };
   }
-  if (!toolsAllowed && action !== 'reply') throw new Error('Tools are disabled');
+  if (!toolsAllowed && action !== 'reply') { throw new Error('Tools are disabled'); }
   return { action, text: value.text };
 }

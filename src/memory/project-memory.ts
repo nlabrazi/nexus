@@ -1,7 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { DecisionRecordInput, ProjectDecision, ProjectMemorySnapshot } from './types';
+import { homedir } from 'node:os';
+import {
+  AgentContextSnapshot,
+  DecisionRecordInput,
+  ProjectDecision,
+  ProjectMemorySnapshot,
+} from './types';
 
 const INITIAL_HEADER = `# Mémoire de Décisions Nexus
 
@@ -83,11 +89,113 @@ export class ProjectMemory {
     return decision;
   }
 
+  getPreferencesPath(rootPath: string): string {
+    return resolve(rootPath, '.nexus', 'preferences.md');
+  }
+
+  getGlobalPreferencesPath(): string {
+    return resolve(homedir(), '.nexus', 'preferences.md');
+  }
+
+  readPreferences(rootPath: string): string {
+    const parts: string[] = [];
+    try {
+      const globalPath = this.getGlobalPreferencesPath();
+      if (existsSync(globalPath)) {
+        const globalContent = readFileSync(globalPath, 'utf-8').trim();
+        if (globalContent) { parts.push(globalContent); }
+      }
+    } catch {
+      // Ignore filesystem errors
+    }
+    try {
+      const localPath = this.getPreferencesPath(rootPath);
+      if (existsSync(localPath)) {
+        const localContent = readFileSync(localPath, 'utf-8').trim();
+        if (localContent) { parts.push(localContent); }
+      }
+    } catch {
+      // Ignore filesystem errors
+    }
+    return parts.join('\n\n');
+  }
+
+  setPreferences(rootPath: string, content: string): void {
+    const filePath = this.getPreferencesPath(rootPath);
+    const dir = dirname(filePath);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+    writeFileSync(filePath, content.trim(), 'utf-8');
+  }
+
+  formatActiveDecisions(rootPath: string, maxDecisions = 8, maxChars = 2000): string {
+    const decisions = this.listDecisions(rootPath).filter((d) => d.status === 'accepted');
+    if (decisions.length === 0) {
+      return '';
+    }
+    const selected = decisions.slice(-maxDecisions);
+    const formattedLines: string[] = [];
+    let currentLength = 0;
+
+    for (const d of selected) {
+      const line = `• [${d.date}] ${d.title} : ${d.decision}${d.context ? ` (Contexte: ${d.context})` : ''}`;
+      if (currentLength + line.length > maxChars && formattedLines.length > 0) {
+        break;
+      }
+      formattedLines.push(line);
+      currentLength += line.length + 1;
+    }
+
+    return formattedLines.join('\n');
+  }
+
+  buildAgentContext(rootPath: string): AgentContextSnapshot {
+    const preferences = this.readPreferences(rootPath);
+    const decisionsSummary = this.formatActiveDecisions(rootPath);
+    const hasContext = Boolean(preferences.trim() || decisionsSummary.trim());
+    return {
+      rootPath,
+      decisionsSummary,
+      preferences,
+      hasContext,
+    };
+  }
+
+  augmentPrompt(prompt: string, rootPath?: string): string {
+    const trimmed = prompt.trim();
+    if (!trimmed || !rootPath || trimmed.startsWith('Reply only with:')) {
+      return prompt;
+    }
+    if (trimmed.includes('[CONTEXTE PROJET & DIRECTIVES NEXUS]')) {
+      return prompt;
+    }
+
+    const ctx = this.buildAgentContext(rootPath);
+    if (!ctx.hasContext) {
+      return prompt;
+    }
+
+    const sections: string[] = ['[CONTEXTE PROJET & DIRECTIVES NEXUS]'];
+    if (ctx.preferences) {
+      sections.push(`Directives et préférences du développeur :\n${ctx.preferences}`);
+    }
+    if (ctx.decisionsSummary) {
+      sections.push(`Décisions architecturales actives validées :\n${ctx.decisionsSummary}`);
+    }
+    sections.push(
+      'Consigne : Applique strictement ces choix et directives dans ta réponse ou ton implémentation.'
+    );
+
+    return `${sections.join('\n\n')}\n\n[DEMANDE UTILISATEUR]\n${trimmed}`;
+  }
+
   getSnapshot(rootPath: string): ProjectMemorySnapshot {
     const filePath = this.getMemoryPath(rootPath);
     const exists = existsSync(filePath);
     const rawContent = this.readMemory(rootPath);
     const decisions = this.listDecisions(rootPath);
+    const preferences = this.readPreferences(rootPath) || undefined;
 
     return {
       rootPath,
@@ -95,6 +203,7 @@ export class ProjectMemory {
       exists,
       rawContent,
       decisions,
+      preferences,
     };
   }
 

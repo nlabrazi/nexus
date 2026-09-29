@@ -1,3 +1,5 @@
+import { RuntimeDashboard, AgentDashboard, QuotaMetric } from './dashboard-types';
+import { homedir } from 'node:os';
 import { basename, resolve } from 'node:path';
 import { AntigravityService } from '../antigravity/service';
 import { WorkspaceAntigravitySessionPersistence } from '../antigravity/persistence';
@@ -9,6 +11,7 @@ import { ModelMenu, ModelSelection } from '../codex/types';
 import { CodexBrainModel } from '../conversational/codex-model';
 import { CodexProjectInspector } from '../conversational/codex-inspector';
 import { ConversationalService } from '../conversational/service';
+import { FileBrainSessionPersistence } from '../conversational/persistence';
 import { BrainModel } from '../conversational/model';
 import { OllamaBrainModel, listOllamaModels } from '../conversational/ollama-model';
 import { RoutedBrainModel } from '../conversational/routed-model';
@@ -30,6 +33,7 @@ import {
 } from './types';
 
 export class NexusRuntime {
+  private readonly startedAt = Date.now();
   private readonly workspaceGuard: WorkspaceGuard;
   private readonly targetPathSupplier?: () => string;
   private readonly codexService: CodexService;
@@ -123,7 +127,14 @@ export class NexusRuntime {
         ? new CodexBrainModel()
         : new RoutedBrainModel());
     this.brainModel = brainModel;
-    this.conversationalService = new ConversationalService(brainModel, codingTools);
+    const brainPersistence =
+      options.brainPersistence ??
+      new FileBrainSessionPersistence(resolve(homedir(), '.nexus', 'brain-sessions'));
+    this.conversationalService = new ConversationalService(
+      brainModel,
+      codingTools,
+      brainPersistence
+    );
   }
 
   private async resolveWorkspaceForInspection(targetPath?: string) {
@@ -182,6 +193,7 @@ export class NexusRuntime {
       targetPath?: string;
       onFilesChanged?: (paths: readonly string[]) => void;
       signal?: AbortSignal;
+      disableContextAugmentation?: boolean;
     }
   ): Promise<TaskExecutionResult> {
     if (backend === 'brain') {
@@ -196,6 +208,9 @@ export class NexusRuntime {
     }
 
     const path = this.resolveTargetPath(options?.targetPath);
+    const effectivePrompt = options?.disableContextAugmentation
+      ? prompt
+      : this.projectMemory.augmentPrompt(prompt, path);
     let files: readonly string[] = [];
 
     const onFiles = (paths: readonly string[]) => {
@@ -207,10 +222,10 @@ export class NexusRuntime {
     let fileSummary: string | undefined;
 
     if (backend === 'codex') {
-      text = await this.codexService.sendPrompt(prompt, path, onFiles);
+      text = await this.codexService.sendPrompt(effectivePrompt, path, onFiles);
       fileSummary = formatFileSummary(files, this.codexService.getStatus().workspacePath ?? path);
     } else {
-      text = await this.antigravityService.sendPrompt(prompt, path, onFiles);
+      text = await this.antigravityService.sendPrompt(effectivePrompt, path, onFiles);
       fileSummary = formatFileSummary(
         files,
         this.antigravityService.getStatus().workspacePath ?? path
@@ -236,10 +251,18 @@ export class NexusRuntime {
     const path = this.resolveTargetPath(options?.targetPath);
     const workspace = await this.workspaceGuard.validate(path).catch(() => undefined);
     const folderName = basename(path);
+    const contextSnapshot = this.projectMemory.buildAgentContext(path);
 
-    const project =
+    const project: ConversationProjectContext | undefined =
       options?.projectContext ??
-      (workspace ? { name: folderName, branch: workspace.git?.branch } : undefined);
+      (workspace || contextSnapshot.hasContext
+        ? {
+          name: folderName,
+          branch: workspace?.git?.branch,
+          preferences: contextSnapshot.preferences || undefined,
+          decisionsSummary: contextSnapshot.decisionsSummary || undefined,
+        }
+        : undefined);
 
     const conversationId = options?.conversationId ?? `brain:${path}`;
 
@@ -253,6 +276,11 @@ export class NexusRuntime {
     );
 
     return reply.text;
+  }
+
+  async clearBrainConversation(targetPath?: string): Promise<void> {
+    const path = this.resolveTargetPath(targetPath);
+    await this.conversationalService.clearConversation(`brain:${path}`);
   }
 
   async handleSessionAction(
@@ -323,7 +351,7 @@ export class NexusRuntime {
       return this.antigravityService.listModels(path);
     }
 
-    if (this.brainModel instanceof RoutedBrainModel) return this.brainModel.listModels();
+    if (this.brainModel instanceof RoutedBrainModel) { return this.brainModel.listModels(); }
 
     let availableModels: string[] = [];
     try {
@@ -382,6 +410,61 @@ export class NexusRuntime {
         (this.brainModel as unknown as { setModel: (m: string) => void }).setModel(selection.model);
       }
     }
+  }
+
+  async getDashboard(): Promise<RuntimeDashboard> {
+    const [brain] = await Promise.all([
+      this.brainModel instanceof RoutedBrainModel
+        ? this.brainModel.getDashboard()
+        : Promise.resolve({
+          selection:
+            this.brainModel instanceof OllamaBrainModel
+              ? `ollama:${this.brainModel.getModel()}`
+              : this.brainModel instanceof CodexBrainModel
+                ? 'codex'
+                : 'custom',
+          providers: [],
+        }),
+      this.codexService.refreshStatus(),
+    ]);
+    const codex = this.codexService.getStatus();
+    const antigravity = this.antigravityService.getStatus();
+    const agents: AgentDashboard[] = (['codex', 'antigravity'] as const).map((id) => {
+      const status = id === 'codex' ? codex : antigravity;
+      const limits: QuotaMetric[] = [];
+      if (id === 'codex') {
+        for (const [index, snapshot] of (codex.rateLimits ?? []).entries()) {
+          for (const key of ['primary', 'secondary'] as const) {
+            const window = snapshot[key];
+            if (!window || !Number.isFinite(window.usedPercent)) { continue; }
+            const used = Math.min(100, Math.max(0, window.usedPercent));
+            const minutes = window.windowDurationMins;
+            limits.push({
+              id: `${index}-${key}`,
+              label: `${snapshot.limitName ?? 'Codex'} · ${minutes ? (minutes >= 60 ? `${minutes / 60} h` : `${minutes} min`) : key === 'primary' ? 'fenêtre principale' : 'fenêtre secondaire'}`,
+              unit: 'percent',
+              limit: 100,
+              used,
+              remaining: 100 - used,
+              resetsAt: window.resetsAt ? window.resetsAt * 1000 : undefined,
+              observedAt: codex.rateLimitsUpdatedAt ?? Date.now(),
+            });
+          }
+        }
+      }
+      return {
+        id,
+        state: status.turn ? 'running' : status.sessionActive ? 'ready' : 'stopped',
+        model:
+          id === 'codex'
+            ? (codex.reroutedModel ?? status.model ?? status.modelSelection?.model)
+            : (status.model ?? status.modelSelection?.model),
+        totalTokens: status.tokenUsage?.total.totalTokens,
+        limits,
+        observedAt: status.tokenUsageUpdatedAt,
+      };
+    });
+    return { generatedAt: Date.now(), startedAt: this.startedAt, brain, agents };
   }
 
   async getStatus(targetPath?: string): Promise<NexusStatusSnapshot> {

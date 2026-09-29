@@ -15,7 +15,7 @@
 
 <script setup lang="ts">
 const paths = {
-  nexus: "M5 19V5l14 14V5M5 12h14",
+  nexus: "M20.5 8A9 9 0 0 0 4 16M3.5 16A9 9 0 0 0 20 8M4 17C0 12 17-1 21 7S7 26 3 17M7 20a9 9 0 0 0 14-8",
   chat: "M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-2 2V11.5a9.5 9.5 0 0 1 19 0Z M7 9h9M7 13h6",
   activity: "M3 12h4l3-8 4 16 3-8h4",
   folder:

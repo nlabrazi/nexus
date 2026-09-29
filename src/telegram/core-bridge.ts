@@ -206,8 +206,8 @@ export class TelegramCoreBridge {
 
     const activeProject = this.currentProjectId
       ? status.projects.find(
-          (p) => p.id === this.currentProjectId || p.name === this.currentProjectId
-        )
+        (p) => p.id === this.currentProjectId || p.name === this.currentProjectId
+      )
       : (primaryNode?.activeProject ?? status.projects[0]);
 
     const sessionBranch = activeProject?.currentBranch;
@@ -219,22 +219,22 @@ export class TelegramCoreBridge {
       codex:
         this.activeBackend === 'codex'
           ? {
-              processRunning: onlineNodes.length > 0,
-              sessionActive: onlineNodes.length > 0,
-              sessionBranch,
-              workspacePath: activeProject?.path,
-              pendingApprovals: status.pendingApprovals ?? 0,
-            }
+            processRunning: onlineNodes.length > 0,
+            sessionActive: onlineNodes.length > 0,
+            sessionBranch,
+            workspacePath: activeProject?.path,
+            pendingApprovals: status.pendingApprovals ?? 0,
+          }
           : undefined,
       antigravity:
         this.activeBackend === 'antigravity'
           ? {
-              processRunning: onlineNodes.length > 0,
-              sessionActive: onlineNodes.length > 0,
-              sessionBranch,
-              workspacePath: activeProject?.path,
-              pendingApprovals: status.pendingApprovals ?? 0,
-            }
+            processRunning: onlineNodes.length > 0,
+            sessionActive: onlineNodes.length > 0,
+            sessionBranch,
+            workspacePath: activeProject?.path,
+            pendingApprovals: status.pendingApprovals ?? 0,
+          }
           : undefined,
       core: {
         uptimeSeconds: status.uptimeSeconds,
@@ -254,12 +254,12 @@ export class TelegramCoreBridge {
   private async handleBranchAction(
     action:
       | {
-          type: 'list';
-        }
+        type: 'list';
+      }
       | {
-          type: 'switch';
-          name: string;
-        }
+        type: 'switch';
+        name: string;
+      }
   ): Promise<string> {
     const status = this.core.getStatus();
     const onlineNodes = status.nodes.filter((n) => n.online);
@@ -340,12 +340,19 @@ export class TelegramCoreBridge {
     const mem = this.core.getProjectMemory();
     if (action.type === 'show') {
       const snapshot = mem.getSnapshot(activeProject.path);
-      if (!snapshot.exists || snapshot.decisions.length === 0) {
-        return `🧠 **Mémoire de décisions : ${activeProject.name}**\nAucune décision consignée (fichier \`.nexus/memory.md\` vierge).`;
+      const lines: string[] = [];
+      if (snapshot.preferences) {
+        lines.push(`📋 **Préférences & directives :**\n${snapshot.preferences}`);
       }
-      const lines = [
-        `🧠 **Mémoire de décisions : ${activeProject.name}** (${snapshot.decisions.length} décision${snapshot.decisions.length > 1 ? 's' : ''}) :`,
-      ];
+      if (!snapshot.exists || snapshot.decisions.length === 0) {
+        lines.unshift(
+          `🧠 **Mémoire de décisions : ${activeProject.name}**\nAucune décision technique consignée.`
+        );
+        return lines.join('\n\n');
+      }
+      lines.unshift(
+        `🧠 **Mémoire de décisions : ${activeProject.name}** (${snapshot.decisions.length} décision${snapshot.decisions.length > 1 ? 's' : ''}) :`
+      );
       for (const d of snapshot.decisions) {
         lines.push(
           `• **[${d.date}] ${d.title}** (\`${d.status}\`)\n  ID: \`${d.id}\`\n  ${d.decision}${d.context ? `\n  _Contexte : ${d.context}_` : ''}`
@@ -373,12 +380,12 @@ export class TelegramCoreBridge {
   private async handleSessionAction(
     action:
       | {
-          type: 'new';
-        }
+        type: 'new';
+      }
       | {
-          type: 'resume';
-          sessionId: string;
-        }
+        type: 'resume';
+        sessionId: string;
+      }
   ): Promise<string> {
     if (action.type === 'new') {
       return `session-${Date.now().toString(36)}`;

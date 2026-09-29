@@ -1,3 +1,4 @@
+import { BrainSessionPersistence } from './persistence';
 import { DecisionRecordInput } from '../memory/types';
 import { BrainMessage, BrainModel } from './model';
 import { CodingAgentTools } from './tools';
@@ -10,13 +11,32 @@ export class ConversationalService implements ConversationalAgent {
 
   constructor(
     private readonly model: BrainModel,
-    private readonly tools: CodingAgentTools
-  ) {}
+    private readonly tools: CodingAgentTools,
+    private readonly persistence?: BrainSessionPersistence
+  ) { }
+
+  async clearConversation(conversationId: string): Promise<void> {
+    this.conversations.delete(conversationId);
+    if (this.persistence) {
+      await this.persistence.clear(conversationId);
+    }
+  }
+
+  getConversationMessages(conversationId: string): readonly BrainMessage[] | undefined {
+    return this.conversations.get(conversationId)?.messages;
+  }
 
   async respond(input: ConversationInput, signal: AbortSignal): Promise<ConversationReply> {
     signal.throwIfAborted();
     if (!input.conversationId.trim() || !input.message.trim() || input.message.length > 16000) {
       throw new Error('Le message ou l’identifiant de conversation est invalide.');
+    }
+    const trimmedMessage = input.message.trim();
+    if (trimmedMessage.toLowerCase() === '/reset' || trimmedMessage.toLowerCase() === 'reset') {
+      await this.clearConversation(input.conversationId);
+      return {
+        text: '🧠 Conversation Nexus Brain réinitialisée. Nouveau fil de discussion démarré.',
+      };
     }
     if (this.running) {
       throw new Error('Une conversation Nexus est déjà en cours.');
@@ -24,10 +44,17 @@ export class ConversationalService implements ConversationalAgent {
     this.running = true;
     try {
       const context = JSON.stringify(input.project ?? null);
-      const previous = this.conversations.get(input.conversationId);
+      let previous = this.conversations.get(input.conversationId);
+      if (!previous && this.persistence) {
+        const persisted = await this.persistence.load(input.conversationId);
+        if (persisted && persisted.context === context) {
+          previous = { context: persisted.context, messages: [...persisted.messages] };
+          this.conversations.set(input.conversationId, previous);
+        }
+      }
       const messages: BrainMessage[] = [
         ...(previous?.context === context ? previous.messages : []),
-        { role: 'user', text: input.message.trim() },
+        { role: 'user', text: trimmedMessage },
       ];
       let inspected = false;
       for (let step = 0; step < 3; step++) {
@@ -38,10 +65,20 @@ export class ConversationalService implements ConversationalAgent {
             throw new Error('Nexus a renvoyé une réponse vide.');
           }
           messages.push({ role: 'assistant', text: decision.text });
+          const boundedMessages = messages.slice(-20);
           this.conversations.delete(input.conversationId);
-          this.conversations.set(input.conversationId, { context, messages: messages.slice(-12) });
-          if (this.conversations.size > 10) {
+          this.conversations.set(input.conversationId, { context, messages: boundedMessages });
+          if (this.conversations.size > 20) {
             this.conversations.delete(this.conversations.keys().next().value!);
+          }
+          if (this.persistence) {
+            await this.persistence.save({
+              version: 1,
+              conversationId: input.conversationId,
+              context,
+              messages: boundedMessages,
+              updatedAt: Date.now(),
+            });
           }
           return { text: decision.text };
         }

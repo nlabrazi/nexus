@@ -131,3 +131,18 @@ Les tests cloud utilisent des réponses HTTP simulées. L’accès réel aux com
 sera vérifiable après saisie des clés. Le test Android simulé et la compilation
 ne vérifient pas le son physique : installer l’APK puis essayer « Écouter un
 exemple » et une demande dictée sur le téléphone cible.
+
+## Dashboard, voix française et transitions — 29 septembre 2026
+
+559 tests backend, 23 tests web et 2 tests VS Code réussis. Les tests `provider-usage.unit.ts` et
+`dashboard.unit.ts` vérifient les relevés, les quotas épuisés, les horodatages,
+le cache OpenRouter, l’absence de secrets et le transport réel Core/Desktop
+avec authentification, refus des réponses d’un autre nœud et délais bornés.
+
+`web/test/speech-voice.test.mjs` vérifie la priorité `fr-FR` et le regroupement des
+phrases. Le contrôleur natif vérifie aussi le repli d’une voix en ligne vers une
+voix locale française. `usage-dashboard.test.mjs` distingue quota nul, absent
+et expiré. Le script `test-android-voice.cjs` couvre désormais aussi le dashboard,
+les onglets clavier, le viewport mobile et les animations réduites. La variable
+optionnelle `NEXUS_SCREENSHOT` permet d’enregistrer une capture avec des données
+simulées. Voir [le périmètre des métriques](usage-dashboard.md).

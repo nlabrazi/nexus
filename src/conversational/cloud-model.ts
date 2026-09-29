@@ -1,3 +1,11 @@
+import { ProviderUsage } from '../runtime/dashboard-types';
+import {
+  emptyProviderUsage,
+  mergeQuotaMetrics,
+  readQuotaHeaders,
+  readOpenRouterQuota,
+  recordTokenUsage,
+} from './provider-usage';
 import { DiagnosticError, registerLogSecret } from '../logging/logger';
 import { brainSystemPrompt, parseBrainDecision } from './brain-decision';
 import { BrainDecision, BrainMessage, BrainModel } from './model';
@@ -45,9 +53,13 @@ export interface CloudBrainOptions {
 export class CloudBrainModel implements BrainModel {
   readonly provider: CloudProvider;
   readonly model: string;
+  private readonly usage: ProviderUsage;
+  private quotaRefresh?: Promise<void>;
+  private quotaCheckedAt?: number;
   constructor(private readonly options: CloudBrainOptions) {
     this.provider = options.provider;
     this.model = options.model;
+    this.usage = emptyProviderUsage(this.provider, this.model, true);
     registerLogSecret(options.apiKey);
     if (
       !options.apiKey.trim() ||
@@ -60,6 +72,41 @@ export class CloudBrainModel implements BrainModel {
     }
   }
 
+  getUsage(): ProviderUsage {
+    return structuredClone(this.usage);
+  }
+
+  async refreshQuota(): Promise<void> {
+    if (this.provider !== 'openrouter') return;
+    if (this.quotaRefresh) return this.quotaRefresh;
+    if (this.quotaCheckedAt !== undefined && Date.now() - this.quotaCheckedAt < 60_000) return;
+    this.quotaCheckedAt = Date.now();
+    this.quotaRefresh = (async () => {
+      try {
+        const response = await fetch('https://openrouter.ai/api/v1/key', {
+          headers: { Authorization: `Bearer ${this.options.apiKey}` },
+          signal: AbortSignal.timeout(4000),
+          redirect: 'error',
+        });
+        if (!response.ok) {
+          void response.body?.cancel().catch(() => {});
+          throw new Error('quota unavailable');
+        }
+        const body = (await response.json()) as { data?: Record<string, unknown> };
+        const metrics = body?.data ? readOpenRouterQuota(body.data) : [];
+        this.usage.limits = mergeQuotaMetrics(this.usage.limits, metrics);
+        this.usage.quotaStatus = metrics.length ? 'available' : 'unavailable';
+      } catch {
+        this.usage.quotaStatus = 'unavailable';
+      }
+    })();
+    try {
+      await this.quotaRefresh;
+    } finally {
+      this.quotaRefresh = undefined;
+    }
+  }
+
   async decide(
     messages: readonly BrainMessage[],
     project: ConversationProjectContext | undefined,
@@ -67,6 +114,10 @@ export class CloudBrainModel implements BrainModel {
     signal: AbortSignal
   ): Promise<BrainDecision> {
     signal.throwIfAborted();
+    const startedAt = Date.now();
+    this.usage.requests++;
+    this.usage.lastRequestAt = startedAt;
+    this.usage.lastStatus = 'running';
     const deadline = AbortSignal.timeout(this.options.timeoutMs ?? 15_000);
     const combined = AbortSignal.any([signal, deadline]);
     const system = brainSystemPrompt(project, toolsAllowed);
@@ -110,6 +161,10 @@ export class CloudBrainModel implements BrainModel {
         },
         body: JSON.stringify(body),
       });
+      this.usage.limits = mergeQuotaMetrics(
+        this.usage.limits,
+        readQuotaHeaders(this.provider, response.headers)
+      );
       if (!response.ok) {
         // Never include the raw response: it can echo credentials or conversation text.
         const code: ProviderFailure =
@@ -138,6 +193,12 @@ export class CloudBrainModel implements BrainModel {
         }>;
         promptFeedback?: { blockReason?: string };
       };
+      if (!data || typeof data !== 'object')
+        throw new BrainProviderError(this.provider, 'invalid_response');
+      recordTokenUsage(this.usage, data);
+      const actualModel = (data as { model?: unknown }).model;
+      if (typeof actualModel === 'string' && /^[a-zA-Z0-9_./:@-]{1,200}$/.test(actualModel))
+        this.usage.actualModel = actualModel;
       let raw: unknown;
       if (gemini) {
         const candidate = data.candidates?.[0];
@@ -163,11 +224,20 @@ export class CloudBrainModel implements BrainModel {
       if (typeof raw !== 'string' || !raw.trim())
         throw new BrainProviderError(this.provider, 'invalid_response');
       try {
-        return parseBrainDecision(raw, toolsAllowed);
+        const result = parseBrainDecision(raw, toolsAllowed);
+        this.usage.lastStatus = 'success';
+        return result;
       } catch {
         throw new BrainProviderError(this.provider, 'invalid_response');
       }
     } catch (error) {
+      this.usage.lastStatus = signal.aborted
+        ? 'cancelled'
+        : deadline.aborted
+          ? 'timeout'
+          : error instanceof BrainProviderError
+            ? error.code
+            : 'failed';
       signal.throwIfAborted();
       if (deadline.aborted) throw new BrainProviderError(this.provider, 'timeout');
       if (error instanceof BrainProviderError) throw error;
@@ -175,6 +245,8 @@ export class CloudBrainModel implements BrainModel {
         this.provider,
         error instanceof SyntaxError ? 'invalid_response' : 'network'
       );
+    } finally {
+      this.usage.lastDurationMs = Date.now() - startedAt;
     }
   }
 }

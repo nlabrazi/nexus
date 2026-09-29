@@ -98,6 +98,46 @@ suite('NexusRuntime isolated agent runtime', () => {
     runtime.stop();
   });
 
+  test('injects project memory and preferences into brain context and supports clearBrainConversation', async () => {
+    const workspaceGuard = createStandaloneWorkspaceGuard(testDir);
+    let capturedProject:
+      | import('../../conversational/types').ConversationProjectContext
+      | undefined;
+
+    const mockBrainModel: BrainModel = {
+      decide: async (_messages, project) => {
+        capturedProject = project;
+        return {
+          action: 'reply',
+          text: 'Brain response with memory context',
+        };
+      },
+    };
+
+    const runtime = new NexusRuntime({
+      workspaceGuard,
+      targetPath: () => testDir,
+      brainModel: mockBrainModel,
+    });
+
+    const mem = runtime.getProjectMemory();
+    mem.recordDecision(testDir, {
+      title: 'Validation Zod',
+      decision: 'Valider tous les schémas avec Zod.',
+      status: 'accepted',
+    });
+    mem.setPreferences(testDir, 'Style : TypeScript strict');
+
+    const reply = await runtime.executeBrain('Quelle architecture ?', new AbortController().signal);
+    assert.equal(reply, 'Brain response with memory context');
+    assert.ok(capturedProject);
+    assert.match(capturedProject.decisionsSummary ?? '', /Validation Zod/);
+    assert.match(capturedProject.preferences ?? '', /TypeScript strict/);
+
+    await runtime.clearBrainConversation(testDir);
+    runtime.stop();
+  });
+
   test('reports status snapshot without requiring VS Code window', async () => {
     const workspaceGuard = createStandaloneWorkspaceGuard(mockPath);
 
@@ -291,7 +331,7 @@ suite('NexusRuntime isolated agent runtime', () => {
 suite('NexusRuntime cloud Brain integration', () => {
   test('exposes provider selections and executes Brain through the selected cloud adapter', async (t) => {
     t.mock.method(globalThis, 'fetch', async (url: string) => {
-      if (url.endsWith('/api/tags')) return new Response(JSON.stringify({ models: [] }));
+      if (url.endsWith('/api/tags')) { return new Response(JSON.stringify({ models: [] })); }
       assert.equal(url, 'https://api.groq.com/openai/v1/chat/completions');
       return new Response(
         JSON.stringify({
