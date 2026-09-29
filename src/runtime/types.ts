@@ -36,11 +36,11 @@ export type TurnTimeoutHandler = (
 export type RuntimeApprovalRequest =
   | CodexApprovalRequest
   | {
-      readonly kind: 'inspection';
-      readonly agentName: string;
-      readonly details: string;
-      readonly expiresAt: number;
-    };
+    readonly kind: 'inspection';
+    readonly agentName: string;
+    readonly details: string;
+    readonly expiresAt: number;
+  };
 
 export type RuntimeApprovalHandler = (
   request: RuntimeApprovalRequest,

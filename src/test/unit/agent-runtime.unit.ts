@@ -331,7 +331,7 @@ suite('NexusRuntime isolated agent runtime', () => {
 suite('NexusRuntime cloud Brain integration', () => {
   test('exposes provider selections and executes Brain through the selected cloud adapter', async (t) => {
     t.mock.method(globalThis, 'fetch', async (url: string) => {
-      if (url.endsWith('/api/tags')) return new Response(JSON.stringify({ models: [] }));
+      if (url.endsWith('/api/tags')) { return new Response(JSON.stringify({ models: [] })); }
       assert.equal(url, 'https://api.groq.com/openai/v1/chat/completions');
       return new Response(
         JSON.stringify({

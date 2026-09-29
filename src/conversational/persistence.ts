@@ -41,7 +41,7 @@ export class FileBrainSessionPersistence implements BrainSessionPersistence {
   constructor(
     private readonly directory: string,
     private readonly maxMessages = 20
-  ) {}
+  ) { }
 
   private resolveFilePath(conversationId: string): string {
     const hash = createHash('sha256').update(conversationId).digest('hex').slice(0, 16);

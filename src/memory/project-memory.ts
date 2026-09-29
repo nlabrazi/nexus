@@ -103,7 +103,7 @@ export class ProjectMemory {
       const globalPath = this.getGlobalPreferencesPath();
       if (existsSync(globalPath)) {
         const globalContent = readFileSync(globalPath, 'utf-8').trim();
-        if (globalContent) parts.push(globalContent);
+        if (globalContent) { parts.push(globalContent); }
       }
     } catch {
       // Ignore filesystem errors
@@ -112,7 +112,7 @@ export class ProjectMemory {
       const localPath = this.getPreferencesPath(rootPath);
       if (existsSync(localPath)) {
         const localContent = readFileSync(localPath, 'utf-8').trim();
-        if (localContent) parts.push(localContent);
+        if (localContent) { parts.push(localContent); }
       }
     } catch {
       // Ignore filesystem errors

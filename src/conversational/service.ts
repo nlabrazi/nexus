@@ -13,7 +13,7 @@ export class ConversationalService implements ConversationalAgent {
     private readonly model: BrainModel,
     private readonly tools: CodingAgentTools,
     private readonly persistence?: BrainSessionPersistence
-  ) {}
+  ) { }
 
   async clearConversation(conversationId: string): Promise<void> {
     this.conversations.delete(conversationId);

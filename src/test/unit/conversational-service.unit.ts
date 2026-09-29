@@ -64,8 +64,7 @@ suite('Nexus Brain conversation loop', () => {
     const service = new ConversationalService(
       {
         decide: async (messages) => {
-          if (calls++ === 0)
-            return { action: 'inspect_project', text: 'Comment sont persistées les sessions ?' };
+          if (calls++ === 0) { return { action: 'inspect_project', text: 'Comment sont persistées les sessions ?' }; }
           steps.push('synthesis');
           assert.match(messages.at(-1)!.text, /Persistence is backend-specific/);
           return {
@@ -93,7 +92,7 @@ suite('Nexus Brain conversation loop', () => {
     const service = new ConversationalService(
       {
         decide: async (messages) => {
-          if (calls++ === 0) return { action: 'inspect_project', text: 'Inspect' };
+          if (calls++ === 0) { return { action: 'inspect_project', text: 'Inspect' }; }
           assert.match(messages.at(-1)!.text, /non autorisée/);
           return { action: 'reply', text: 'Je reste sur une discussion générale.' };
         },
@@ -128,7 +127,7 @@ suite('Nexus Brain conversation loop', () => {
     const service = new ConversationalService(
       {
         decide: async (messages) => {
-          if (calls++ === 0) return pending.promise;
+          if (calls++ === 0) { return pending.promise; }
           assert.equal(messages.length, 1);
           return { action: 'reply', text: 'Nouveau tour' };
         },
