@@ -257,11 +257,11 @@ export class NexusRuntime {
       options?.projectContext ??
       (workspace || contextSnapshot.hasContext
         ? {
-          name: folderName,
-          branch: workspace?.git?.branch,
-          preferences: contextSnapshot.preferences || undefined,
-          decisionsSummary: contextSnapshot.decisionsSummary || undefined,
-        }
+            name: folderName,
+            branch: workspace?.git?.branch,
+            preferences: contextSnapshot.preferences || undefined,
+            decisionsSummary: contextSnapshot.decisionsSummary || undefined,
+          }
         : undefined);
 
     const conversationId = options?.conversationId ?? `brain:${path}`;
@@ -351,7 +351,9 @@ export class NexusRuntime {
       return this.antigravityService.listModels(path);
     }
 
-    if (this.brainModel instanceof RoutedBrainModel) { return this.brainModel.listModels(); }
+    if (this.brainModel instanceof RoutedBrainModel) {
+      return this.brainModel.listModels();
+    }
 
     let availableModels: string[] = [];
     try {
@@ -417,14 +419,14 @@ export class NexusRuntime {
       this.brainModel instanceof RoutedBrainModel
         ? this.brainModel.getDashboard()
         : Promise.resolve({
-          selection:
-            this.brainModel instanceof OllamaBrainModel
-              ? `ollama:${this.brainModel.getModel()}`
-              : this.brainModel instanceof CodexBrainModel
-                ? 'codex'
-                : 'custom',
-          providers: [],
-        }),
+            selection:
+              this.brainModel instanceof OllamaBrainModel
+                ? `ollama:${this.brainModel.getModel()}`
+                : this.brainModel instanceof CodexBrainModel
+                  ? 'codex'
+                  : 'custom',
+            providers: [],
+          }),
       this.codexService.refreshStatus(),
     ]);
     const codex = this.codexService.getStatus();
@@ -436,7 +438,9 @@ export class NexusRuntime {
         for (const [index, snapshot] of (codex.rateLimits ?? []).entries()) {
           for (const key of ['primary', 'secondary'] as const) {
             const window = snapshot[key];
-            if (!window || !Number.isFinite(window.usedPercent)) { continue; }
+            if (!window || !Number.isFinite(window.usedPercent)) {
+              continue;
+            }
             const used = Math.min(100, Math.max(0, window.usedPercent));
             const minutes = window.windowDurationMins;
             limits.push({

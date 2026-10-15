@@ -63,16 +63,24 @@ export function parseBrainDecision(
   try {
     parsed = JSON.parse(cleaned);
   } catch {
-    if (strict) { throw new Error('Invalid decision JSON'); }
+    if (strict) {
+      throw new Error('Invalid decision JSON');
+    }
     return { action: 'reply', text: raw || 'Je n’ai pas pu générer de réponse intelligible.' };
   }
-  if (!parsed || typeof parsed !== 'object') { throw new Error('Invalid decision'); }
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('Invalid decision');
+  }
   const value = parsed as Record<string, unknown>;
   const action = value.action as BrainDecision['action'];
   if (!VALID_ACTIONS.has(action) || typeof value.text !== 'string' || !value.text.trim()) {
-    if (strict) { throw new Error('Invalid decision shape'); }
+    if (strict) {
+      throw new Error('Invalid decision shape');
+    }
     return { action: 'reply', text: typeof value.text === 'string' ? value.text : raw };
   }
-  if (!toolsAllowed && action !== 'reply') { throw new Error('Tools are disabled'); }
+  if (!toolsAllowed && action !== 'reply') {
+    throw new Error('Tools are disabled');
+  }
   return { action, text: value.text };
 }

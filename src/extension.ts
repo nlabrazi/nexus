@@ -149,7 +149,8 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.window.showInformationMessage(`Nexus connected to @${data.result?.username}`);
     } catch (error) {
       vscode.window.showErrorMessage(
-        `Nexus: Unable to connect to Telegram: ${error instanceof Error ? error.message : String(error)
+        `Nexus: Unable to connect to Telegram: ${
+          error instanceof Error ? error.message : String(error)
         }`
       );
     }
@@ -198,7 +199,8 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage(`Nexus: Codex session started — ${sessionId}`);
       } catch (error) {
         vscode.window.showErrorMessage(
-          `Nexus: Unable to start Codex session: ${error instanceof Error ? error.message : String(error)
+          `Nexus: Unable to start Codex session: ${
+            error instanceof Error ? error.message : String(error)
           }`
         );
       }
@@ -447,7 +449,9 @@ function startTelegramService(context: vscode.ExtensionContext, token: string): 
         throw new Error('Workspace is not trusted');
       }
       const config = vscode.workspace.getConfiguration('nexus.speech.tts');
-      if (!config.get<boolean>('enabled', true)) { return undefined; }
+      if (!config.get<boolean>('enabled', true)) {
+        return undefined;
+      }
       return synthesizeAcknowledgement(signal, {
         pythonPath: config.get<string>('pythonPath', ''),
         modelPath: config.get<string>('modelPath', ''),
@@ -588,7 +592,9 @@ export function deactivate() {
 
 function getTtsDiagnostic(): string {
   const config = vscode.workspace.getConfiguration('nexus.speech.tts');
-  if (!config.get<boolean>('enabled', true)) { return 'désactivé'; }
+  if (!config.get<boolean>('enabled', true)) {
+    return 'désactivé';
+  }
   const python = config.get<string>('pythonPath', '');
   const model = config.get<string>('modelPath', '');
   return python && model && existsSync(python) && existsSync(model) && existsSync(`${model}.json`)
