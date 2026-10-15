@@ -22,4 +22,3 @@ export function formatFileSummary(paths: readonly string[], workspace: string): 
   }
   return [`📄 **Fichiers signalés par l'agent (${files.length})**`, ...lines].join('\n');
 }
-
