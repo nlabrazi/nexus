@@ -119,6 +119,61 @@ suite('NexusDaemonServer unified secure daemon', () => {
     assert.equal(err.code, 'SECURITY_VIOLATION');
   });
 
+  test('GET /api/filesystem returns DirectoryListing schema for valid directory', async () => {
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/filesystem?path=${encodeURIComponent(projectDir)}`,
+      {
+        headers: { Authorization: 'Bearer valid-token-123' },
+      }
+    );
+    assert.equal(res.status, 200);
+    const data = (await res.json()) as {
+      path: string;
+      parent: string | null;
+      home: string;
+      roots: Array<{ name: string; path: string }>;
+      directories: Array<{ name: string; path: string; hidden: boolean }>;
+      entries: Array<{ name: string; path: string; isDirectory: boolean }>;
+    };
+    assert.equal(data.path, projectDir);
+    assert.ok(Array.isArray(data.roots));
+    assert.ok(Array.isArray(data.directories));
+    assert.ok(Array.isArray(data.entries));
+  });
+
+  test('POST /api/filesystem/open switches project and returns project metadata', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/filesystem/open`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer valid-token-123',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ path: projectDir }),
+    });
+    assert.equal(res.status, 200);
+    const data = (await res.json()) as { id: string; name: string; path: string };
+    assert.equal(data.path, projectDir);
+    assert.equal(data.id, 'test-project');
+  });
+
+  test('GET /api/tasks returns the task list', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/tasks`, {
+      headers: { Authorization: 'Bearer valid-token-123' },
+    });
+    assert.equal(res.status, 200);
+    const list = await res.json();
+    assert.ok(Array.isArray(list));
+  });
+
+  test('GET /api/approvals returns list with pending status', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/approvals`, {
+      headers: { Authorization: 'Bearer valid-token-123' },
+    });
+    assert.equal(res.status, 200);
+    const list = await res.json();
+    assert.ok(Array.isArray(list));
+  });
+
   test('stops daemon server and cleans up', async () => {
     await daemon.stop();
     rmSync(sandbox, { recursive: true, force: true });

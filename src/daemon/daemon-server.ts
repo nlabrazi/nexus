@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { createServer, IncomingMessage, Server as HttpServer, ServerResponse } from 'node:http';
-import { basename, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { hostname } from 'node:os';
 import type { Duplex } from 'node:stream';
 import { WebSocketServerConnection } from '../core/ws-connection';
@@ -23,6 +23,22 @@ export interface PendingApprovalItem {
   readonly expiresAt: number;
   readonly requestedAt: number;
   readonly settle: (decision: ApprovalDecision) => void;
+}
+
+export interface DaemonTaskRecord {
+  readonly taskId: string;
+  readonly backend: TaskBackendType;
+  readonly prompt: string;
+  readonly projectPath: string;
+  readonly projectName: string;
+  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  readonly startedAt: number;
+  completedAt?: number;
+  replyText?: string;
+  text?: string;
+  fileSummary?: string;
+  filesChanged?: readonly string[];
+  error?: string;
 }
 
 export interface DaemonProjectInfo {
@@ -56,6 +72,7 @@ export class NexusDaemonServer extends EventEmitter {
   private currentTaskId?: string;
   private currentTaskAbortController?: AbortController;
 
+  private readonly tasks = new Map<string, DaemonTaskRecord>();
   private readonly pendingApprovals = new Map<string, PendingApprovalItem>();
 
   constructor(options: DaemonServerOptions) {
@@ -192,6 +209,26 @@ export class NexusDaemonServer extends EventEmitter {
     });
   }
 
+  private getNodeInfo() {
+    return {
+      nodeId: 'local-daemon',
+      nodeName: hostname(),
+      version: '1.0.0',
+      connectedAt: this.startedAt,
+      lastHeartbeatAt: Date.now(),
+      state: this.currentTaskId ? 'busy' : 'idle',
+      online: true,
+      capabilities: {
+        filesystem: true,
+        backends: ['codex', 'antigravity', 'brain'],
+        workspaceGuard: true,
+      },
+      projects: this.scanProjects(),
+      activeProject: this.activeProject,
+      activeTaskId: this.currentTaskId,
+    };
+  }
+
   private broadcastWs(event: string, payload: unknown): void {
     const message = JSON.stringify({ event, payload, timestamp: Date.now() });
     for (const client of this.wsClients) {
@@ -293,37 +330,29 @@ export class NexusDaemonServer extends EventEmitter {
       // 1. Status & Nodes
       if (pathname === '/status' && method === 'GET') {
         const snapshot = await this.runtime.getStatus();
+        const nodeInfo = this.getNodeInfo();
+        const projects = this.scanProjects();
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(
           JSON.stringify({
             ...snapshot,
+            uptimeSeconds: Math.floor((Date.now() - this.startedAt) / 1000),
+            totalNodes: 1,
+            onlineNodes: 1,
+            nodes: [nodeInfo],
+            projects,
             activeProject: this.activeProject,
             activeBackend: this.activeBackend,
+            activeTasks: this.currentTaskId ? 1 : 0,
+            pendingApprovals: this.pendingApprovals.size,
           })
         );
         return;
       }
 
       if (pathname === '/api/nodes' && method === 'GET') {
-        const nodeInfo = {
-          nodeId: 'local-daemon',
-          nodeName: hostname(),
-          version: '1.0.0',
-          connectedAt: this.startedAt,
-          lastHeartbeatAt: Date.now(),
-          state: this.currentTaskId ? 'busy' : 'idle',
-          online: true,
-          capabilities: {
-            filesystem: true,
-            backends: ['codex', 'antigravity', 'brain'],
-            workspaceGuard: true,
-          },
-          projects: this.scanProjects(),
-          activeProject: this.activeProject,
-          activeTaskId: this.currentTaskId,
-        };
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify([nodeInfo]));
+        res.end(JSON.stringify([this.getNodeInfo()]));
         return;
       }
 
@@ -341,7 +370,10 @@ export class NexusDaemonServer extends EventEmitter {
         return;
       }
 
-      if (pathname === '/api/projects/switch' && method === 'POST') {
+      if (
+        (pathname === '/api/projects/switch' || pathname === '/api/filesystem/open') &&
+        method === 'POST'
+      ) {
         const body = JSON.parse(await this.readRequestBody(req));
         const target = body.id || body.path;
         if (!target) {
@@ -374,7 +406,16 @@ export class NexusDaemonServer extends EventEmitter {
           return;
         }
 
-        const entries = readdirSync(safePath, { withFileTypes: true })
+        const dirEntries = readdirSync(safePath, { withFileTypes: true });
+        const directories = dirEntries
+          .filter((e) => e.isDirectory() && e.name !== 'node_modules')
+          .map((e) => ({
+            name: e.name,
+            path: resolve(safePath, e.name),
+            hidden: e.name.startsWith('.'),
+          }));
+
+        const entries = dirEntries
           .filter((e) => !e.name.startsWith('.') && e.name !== 'node_modules')
           .map((e) => ({
             name: e.name,
@@ -382,8 +423,25 @@ export class NexusDaemonServer extends EventEmitter {
             isDirectory: e.isDirectory(),
           }));
 
+        const parentPath = dirname(safePath);
+        const parent = this.jail.isPathAllowed(parentPath) ? parentPath : null;
+        const roots = this.jail.getAllowedRoots().map((r) => ({
+          name: basename(r) || r,
+          path: r,
+        }));
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ currentPath: safePath, entries }));
+        res.end(
+          JSON.stringify({
+            path: safePath,
+            parent,
+            home: this.jail.getAllowedRoots()[0] ?? safePath,
+            roots,
+            directories,
+            currentPath: safePath,
+            entries,
+          })
+        );
         return;
       }
 
@@ -410,7 +468,27 @@ export class NexusDaemonServer extends EventEmitter {
         return;
       }
 
-      // 5. Tasks Execution & Cancellation
+      // 5. Tasks Execution & Retrieval & Cancellation
+      if (pathname === '/api/tasks' && method === 'GET') {
+        const list = [...this.tasks.values()].reverse();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(list));
+        return;
+      }
+
+      if (pathname.startsWith('/api/tasks/') && method === 'GET' && !pathname.endsWith('/cancel')) {
+        const taskId = pathname.slice('/api/tasks/'.length);
+        const task = this.tasks.get(taskId);
+        if (!task) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: `Tâche non trouvée : ${taskId}` }));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(task));
+        return;
+      }
+
       if (pathname === '/api/tasks' && method === 'POST') {
         const body = JSON.parse(await this.readRequestBody(req));
         if (!body.prompt) {
@@ -429,44 +507,81 @@ export class NexusDaemonServer extends EventEmitter {
         const abortController = new AbortController();
         this.currentTaskAbortController = abortController;
 
-        this.broadcastWs('task:started', { taskId, backend, prompt: body.prompt });
+        const taskRecord: DaemonTaskRecord = {
+          taskId,
+          backend,
+          prompt: body.prompt,
+          projectPath: targetPath,
+          projectName: basename(targetPath),
+          status: 'running',
+          startedAt: Date.now(),
+        };
+        this.tasks.set(taskId, taskRecord);
 
-        try {
-          const result = await this.runtime.executeTask(backend, body.prompt, {
-            targetPath,
-            signal: abortController.signal,
-            onFilesChanged: (files) => {
-              this.broadcastWs('task:progress', { taskId, filesChanged: files });
-            },
-          });
+        this.broadcastWs('task:started', { ...taskRecord });
 
-          this.broadcastWs('task:completed', {
-            taskId,
-            status: 'completed',
-            replyText: result.text,
-            ...result,
-          });
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(
-            JSON.stringify({
-              taskId,
-              status: 'completed',
-              replyText: result.text,
-              ...result,
-            })
-          );
-        } finally {
-          this.currentTaskId = undefined;
-          this.currentTaskAbortController = undefined;
+        const runTask = async (): Promise<DaemonTaskRecord> => {
+          try {
+            const result = await this.runtime.executeTask(backend, body.prompt, {
+              targetPath,
+              signal: abortController.signal,
+              onFilesChanged: (files) => {
+                taskRecord.filesChanged = files;
+                this.broadcastWs('task:progress', { taskId, filesChanged: files });
+              },
+            });
+
+            taskRecord.status = 'completed';
+            taskRecord.completedAt = Date.now();
+            taskRecord.replyText = result.text;
+            taskRecord.text = result.text;
+            taskRecord.fileSummary = result.fileSummary;
+            taskRecord.filesChanged = result.filesChanged;
+
+            this.broadcastWs('task:completed', { ...taskRecord });
+            return taskRecord;
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            taskRecord.status = abortController.signal.aborted ? 'cancelled' : 'failed';
+            taskRecord.completedAt = Date.now();
+            taskRecord.error = message;
+            this.broadcastWs('task:failed', { taskId, error: message });
+            return taskRecord;
+          } finally {
+            if (this.currentTaskId === taskId) {
+              this.currentTaskId = undefined;
+              this.currentTaskAbortController = undefined;
+            }
+          }
+        };
+
+        if (body.wait === false) {
+          void runTask();
+          res.writeHead(202, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(taskRecord));
+          return;
         }
+
+        const completedRecord = await runTask();
+        const statusCode = completedRecord.status === 'failed' ? 500 : 200;
+        res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(completedRecord));
         return;
       }
 
       if (pathname.startsWith('/api/tasks/') && pathname.endsWith('/cancel') && method === 'POST') {
+        const parts = pathname.slice('/api/tasks/'.length).split('/');
+        const taskId = parts[0];
+        const task = this.tasks.get(taskId);
+        if (task && task.status === 'running') {
+          task.status = 'cancelled';
+          task.completedAt = Date.now();
+        }
         this.currentTaskAbortController?.abort();
         this.runtime.cancelCurrentWork();
+        this.broadcastWs('task:cancelled', { taskId });
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ cancelled: true }));
+        res.end(JSON.stringify({ cancelled: true, taskId }));
         return;
       }
 
@@ -480,6 +595,7 @@ export class NexusDaemonServer extends EventEmitter {
           details: item.details,
           expiresAt: item.expiresAt,
           requestedAt: item.requestedAt,
+          status: 'pending',
         }));
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(items));
