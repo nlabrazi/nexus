@@ -1,2 +1,2 @@
 @echo off
-start "" wscript.exe "%~dp0Nexus.vbs"
+start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0NexusTray.ps1"

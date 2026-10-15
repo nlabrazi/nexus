@@ -1,11 +1,26 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readdirSync, statSync } from 'node:fs';
 import { createServer, IncomingMessage, Server as HttpServer, ServerResponse } from 'node:http';
-import { basename, dirname, resolve } from 'node:path';
+import { basename, dirname, extname, join, resolve } from 'node:path';
 import { hostname } from 'node:os';
 import type { Duplex } from 'node:stream';
 import { WebSocketServerConnection } from '../core/ws-connection';
+
+const MIME_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.webmanifest': 'application/manifest+json',
+};
 import { logger } from '../logging/logger';
 import { NexusRuntime } from '../runtime/nexus-runtime';
 import { createPersistentStorage } from '../runtime/storage';
@@ -383,6 +398,54 @@ export class NexusDaemonServer extends EventEmitter {
         })
       );
       return;
+    }
+
+    // Static Web PWA Serving (Nuxt web client)
+    const publicRoot = resolve(process.cwd(), 'web/.output/public');
+    if (
+      method === 'GET' &&
+      !pathname.startsWith('/api') &&
+      pathname !== '/status' &&
+      pathname !== '/health' &&
+      pathname !== '/ws' &&
+      existsSync(publicRoot)
+    ) {
+      const targetPath = resolve(publicRoot, `.${pathname}`);
+      if (targetPath.startsWith(publicRoot) && existsSync(targetPath)) {
+        let stat = statSync(targetPath);
+        let filePath = targetPath;
+        if (stat.isDirectory()) {
+          filePath = join(targetPath, 'index.html');
+          if (existsSync(filePath)) {
+            stat = statSync(filePath);
+          }
+        }
+        if (stat.isFile()) {
+          const ext = extname(filePath).toLowerCase();
+          const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
+          res.writeHead(200, {
+            'Content-Type': contentType,
+            'Content-Length': stat.size,
+            'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000, immutable',
+          });
+          createReadStream(filePath).pipe(res);
+          return;
+        }
+      }
+
+      // SPA fallback to index.html for browser navigation
+      const accept = req.headers.accept ?? '';
+      const indexPath = join(publicRoot, 'index.html');
+      if ((accept.includes('text/html') || pathname === '/') && existsSync(indexPath)) {
+        const stat = statSync(indexPath);
+        res.writeHead(200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Length': stat.size,
+          'Cache-Control': 'no-cache',
+        });
+        createReadStream(indexPath).pipe(res);
+        return;
+      }
     }
 
     // Auth verification for all other endpoints

@@ -29,3 +29,4 @@ echo.
 echo Vous pouvez maintenant double-cliquer sur le raccourci Nexus sur votre Bureau !
 echo.
 pause
+
