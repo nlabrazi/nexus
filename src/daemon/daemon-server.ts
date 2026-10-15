@@ -19,6 +19,7 @@ import { WorkspaceGuard } from '../workspace/guard';
 import { AuthGuard } from '../security/auth';
 import { JailGuard, SecurityError } from '../security/jail';
 import { ApprovalDecision } from '../codex/types';
+import { FcmService } from '../notifications/fcm-service';
 
 export interface PendingApprovalItem {
   readonly approvalId: string;
@@ -82,6 +83,7 @@ export class NexusDaemonServer extends EventEmitter {
 
   private readonly tasks = new Map<string, DaemonTaskRecord>();
   private readonly pendingApprovals = new Map<string, PendingApprovalItem>();
+  private readonly fcmService: FcmService;
 
   constructor(options: DaemonServerOptions) {
     super();
@@ -90,6 +92,7 @@ export class NexusDaemonServer extends EventEmitter {
     this.jail = options.jail;
     this.auth = options.auth;
     this.storage = options.storage ?? createPersistentStorage();
+    this.fcmService = new FcmService({ storage: this.storage });
     this.loadSavedTasks();
 
     // Resolve initial project safely
@@ -240,6 +243,27 @@ export class NexusDaemonServer extends EventEmitter {
         kind: request.kind,
         details: request.details,
         expiresAt,
+      });
+
+      let promptDesc = 'Une action requiert votre validation';
+      let toolName = request.kind;
+      try {
+        const parsed = JSON.parse(request.details);
+        if (parsed?.toolName) toolName = parsed.toolName;
+        if (parsed?.CommandLine) promptDesc = `Commande : ${parsed.CommandLine}`;
+        else if (parsed?.TargetFile) promptDesc = `Fichier : ${parsed.TargetFile}`;
+        else if (parsed?.question) promptDesc = parsed.question;
+      } catch {
+        promptDesc = request.details;
+      }
+
+      void this.fcmService.sendPush({
+        title: `Nexus : Approbation requise (${toolName})`,
+        body: promptDesc,
+        data: {
+          approvalId,
+          type: 'approval_request',
+        },
       });
     });
   }
@@ -552,6 +576,34 @@ export class NexusDaemonServer extends EventEmitter {
         return;
       }
 
+      // 4bis. Push Notifications Registration & Test
+      if (pathname === '/api/push/register' && method === 'POST') {
+        const body = JSON.parse(await this.readRequestBody(req));
+        if (body.token && typeof body.token === 'string') {
+          await this.fcmService.registerToken(body.token);
+          console.log(
+            `[DAEMON] 📱 Appareil enregistré pour push FCM : ${body.token.slice(0, 15)}...`
+          );
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ok', registered: true }));
+          return;
+        }
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Token manquant' }));
+        return;
+      }
+
+      if (pathname === '/api/push/test' && method === 'POST') {
+        const result = await this.fcmService.sendPush({
+          title: 'Nexus : Test Push Firebase ✅',
+          body: 'Ceci est une vraie notification push Google FCM sur votre smartphone !',
+          data: { test: 'true' },
+        });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', result }));
+        return;
+      }
+
       // 5. Tasks Execution & Retrieval & Cancellation
       if (pathname === '/api/tasks' && method === 'GET') {
         const list = [...this.tasks.values()].reverse();
@@ -668,6 +720,11 @@ export class NexusDaemonServer extends EventEmitter {
             this.persistTasks();
 
             this.broadcastWs('task:completed', { ...taskRecord });
+            void this.fcmService.sendPush({
+              title: 'Nexus : Tâche terminée ✅',
+              body: taskRecord.fileSummary || 'La tâche demandée a été exécutée avec succès.',
+              data: { taskId, type: 'task_completed' },
+            });
             return taskRecord;
           } catch (err: unknown) {
             const message = err instanceof Error ? err.message : String(err);
@@ -676,6 +733,11 @@ export class NexusDaemonServer extends EventEmitter {
             taskRecord.error = message;
             this.persistTasks();
             this.broadcastWs('task:failed', { taskId, error: message });
+            void this.fcmService.sendPush({
+              title: 'Nexus : Tâche échouée ❌',
+              body: message || 'Une erreur est survenue lors de l’exécution.',
+              data: { taskId, type: 'task_failed' },
+            });
             return taskRecord;
           } finally {
             if (this.currentTaskId === taskId) {

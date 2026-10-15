@@ -403,6 +403,9 @@
         <button v-if="notificationsEnabled" type="button" class="text-button" style="text-align: left; margin: 4px 0 8px;" @click="testUrgentNotification">
           🔔 Tester l'alerte sonore et pop-up (style SMS)
         </button>
+        <button v-if="notificationsEnabled" type="button" class="text-button" style="text-align: left; margin: 0 0 8px; color: #4f98a3;" @click="testFcmPush">
+          🚀 Tester la vraie notification Push Google FCM (même appli fermée)
+        </button>
         <details class="settings-details">
           <summary>Voix</summary>
           <p v-if="!ttsAvailable">La lecture vocale n’est pas disponible sur cet appareil.</p>
@@ -595,6 +598,7 @@ import { getAssistantState, assistantStateLabels, getInteractionMessage } from "
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
 import { LocalNotifications } from "@capacitor/local-notifications";
+import { PushNotifications } from "@capacitor/push-notifications";
 import { ForegroundService } from "@capawesome-team/capacitor-android-foreground-service";
 import { StatusBar, Style } from "@capacitor/status-bar";
 import { VoiceRecorder } from "capacitor-voice-recorder";
@@ -886,6 +890,51 @@ async function testUrgentNotification() {
     "Nexus : Test d'alerte SMS",
     "Ceci est une alerte sonore et pop-up Heads-Up comme un SMS !"
   );
+}
+
+const fcmToken = ref<string>("");
+
+async function sendTokenToDaemon(token: string) {
+  if (!coreUrl.value || !token) return;
+  try {
+    const rawUrl = coreUrl.value.replace(/\/+$/, "");
+    await fetch(`${rawUrl}/api/push/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(authToken.value ? { Authorization: `Bearer ${authToken.value}` } : {}),
+      },
+      body: JSON.stringify({ token }),
+    });
+    console.log("[FCM] Token enregistré avec succès sur le daemon");
+  } catch (err) {
+    console.warn("[FCM] Échec enregistrement token sur le daemon:", err);
+  }
+}
+
+async function testFcmPush() {
+  if (!coreUrl.value) {
+    errorMessage.value = "Connectez-vous d'abord au daemon.";
+    return;
+  }
+  try {
+    const rawUrl = coreUrl.value.replace(/\/+$/, "");
+    const res = await fetch(`${rawUrl}/api/push/test`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(authToken.value ? { Authorization: `Bearer ${authToken.value}` } : {}),
+      },
+    });
+    const data = await res.json();
+    if (res.ok) {
+      alert("✅ Requête push envoyée à Google ! Votre téléphone va sonner.");
+    } else {
+      alert(`Erreur push : ${data.error || "Échec"}`);
+    }
+  } catch (err: any) {
+    alert(`Erreur de connexion au daemon : ${err.message}`);
+  }
 }
 
 // Agent & Models state
@@ -1329,6 +1378,9 @@ function connectWebSocket() {
 
     wsInstance.onopen = () => {
       isWsConnected.value = true;
+      if (fcmToken.value) {
+        void sendTokenToDaemon(fcmToken.value);
+      }
     };
 
     wsInstance.onmessage = (event) => {
@@ -1395,8 +1447,13 @@ onMounted(async () => {
       | "dashboard"
       | null;
 
+    fcmToken.value = localStorage.getItem("nexus_fcm_token") || "";
+
     if (savedUrl) {
       coreUrl.value = savedUrl;
+      if (fcmToken.value) {
+        void sendTokenToDaemon(fcmToken.value);
+      }
     } else if (Capacitor.isNativePlatform()) {
       coreUrl.value = "";
       openConnectionSettings();
@@ -1438,6 +1495,42 @@ onMounted(async () => {
         });
       } catch (err) {
         console.warn("LocalNotifications init error:", err);
+      }
+      try {
+        await PushNotifications.addListener("registration", async (token) => {
+          console.log("[FCM] Registered token:", token.value);
+          fcmToken.value = token.value;
+          localStorage.setItem("nexus_fcm_token", token.value);
+          await sendTokenToDaemon(token.value);
+        });
+
+        await PushNotifications.addListener("registrationError", (err) => {
+          console.warn("[FCM] Registration error:", err);
+        });
+
+        await PushNotifications.addListener("pushNotificationReceived", (notification) => {
+          console.log("[FCM] Push received foreground:", notification);
+        });
+
+        await PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
+          console.log("[FCM] Push action clicked:", action);
+          const approvalId = action.notification.data?.approvalId;
+          if (approvalId) {
+            showApprovalModal.value = true;
+            const idx = approvals.value.findIndex((a) => a.approvalId === approvalId);
+            if (idx >= 0) activeApprovalIndex.value = idx;
+          }
+        });
+
+        let pushPerm = await PushNotifications.checkPermissions();
+        if (pushPerm.receive !== "granted") {
+          pushPerm = await PushNotifications.requestPermissions();
+        }
+        if (pushPerm.receive === "granted") {
+          await PushNotifications.register();
+        }
+      } catch (err) {
+        console.warn("PushNotifications init error:", err);
       }
       try {
         await ForegroundService.startForegroundService({
@@ -2771,6 +2864,9 @@ function saveSettings() {
   showSettings.value = false;
   handleManualRefresh();
   fetchVoiceStatus();
+  if (fcmToken.value) {
+    void sendTokenToDaemon(fcmToken.value);
+  }
 }
 
 function resetSettings() {
