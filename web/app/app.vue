@@ -658,7 +658,7 @@ interface PendingApprovalItem {
 
 // Navigation & Tab state
 const activeTab = ref<"chat" | "agent" | "activity" | "dashboard" | "system">("chat");
-const selectedBackend = ref<"brain" | "codex" | "antigravity">("brain");
+const selectedBackend = ref<"codex" | "antigravity" | "brain">("codex");
 
 // Quick Dropdowns & HUD Modals state
 const showQuickMenu = ref<boolean>(false);
@@ -667,19 +667,19 @@ const showAgentPickerSheet = ref<boolean>(false);
 
 const agentOptions = [
   {
-    id: "brain" as const,
-    name: "Nexus Brain",
-    description: "Orchestration & conversation globale",
-  },
-  {
     id: "codex" as const,
     name: "Codex",
-    description: "Modèle de code rapide & précis",
+    description: "Modèle de code rapide & précis (OpenAI)",
   },
   {
     id: "antigravity" as const,
     name: "Antigravity",
-    description: "Agent autonome multi-outils",
+    description: "Agent autonome multi-outils (DeepMind)",
+  },
+  {
+    id: "brain" as const,
+    name: "Nexus Brain",
+    description: "Orchestration & conversation globale",
   },
 ];
 
@@ -1014,6 +1014,202 @@ let clickToggleActive = false;
 let nativeSpeechActive = false;
 let nativeRecorderActive = false;
 
+// WebSocket Real-Time Stream State
+let wsInstance: WebSocket | null = null;
+let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+const isWsConnected = ref(false);
+
+function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: number }) {
+  if (!data || !data.event) return;
+
+  switch (data.event) {
+    case "task:started": {
+      const payload = data.payload;
+      if (payload?.taskId) {
+        currentInFlightTaskId.value = payload.taskId;
+        inFlightStartedAt.value = payload.startedAt || Date.now();
+        inFlightBackend.value = payload.backend || selectedBackend.value;
+        isSending.value = true;
+      }
+      void fetchTasks(true);
+      break;
+    }
+
+    case "task:progress": {
+      const payload = data.payload;
+      if (payload?.taskId) {
+        const existing = tasks.value.find((t) => t.taskId === payload.taskId);
+        if (existing && payload.filesChanged) {
+          existing.filesChanged = payload.filesChanged;
+        }
+      }
+      break;
+    }
+
+    case "task:completed": {
+      const payload = data.payload;
+      if (payload?.taskId) {
+        const text = payload.replyText || payload.text;
+        const alreadyInChat = messages.value.some(
+          (m) => m.id === `asst-${payload.taskId}` || (m.role === "assistant" && m.text === text)
+        );
+        if (!alreadyInChat && text) {
+          const assistantMsg: ChatMessage = {
+            id: `asst-${payload.taskId}`,
+            role: "assistant",
+            backend: payload.backend || selectedBackend.value,
+            text,
+            timestamp: payload.completedAt || Date.now(),
+            fileSummary: payload.fileSummary,
+          };
+          messages.value.push(assistantMsg);
+          saveMessages();
+          scrollToBottom();
+          if (
+            shouldSpeakReply({
+              enabled: ttsEnabled.value,
+              autoSpeak: autoSpeak.value,
+              fromVoice: draftFromVoice.value,
+              error: false,
+            })
+          ) {
+            speakMessage(assistantMsg.text, assistantMsg.id);
+          }
+        }
+        if (currentInFlightTaskId.value === payload.taskId) {
+          isSending.value = false;
+          inFlightStartedAt.value = null;
+          inFlightBackend.value = null;
+          currentInFlightTaskId.value = null;
+        }
+      }
+      void fetchTasks(true);
+      void fetchStatus(true);
+      break;
+    }
+
+    case "task:failed": {
+      const payload = data.payload;
+      if (payload?.taskId) {
+        lastTaskFailed.value = true;
+        const errorMsg: ChatMessage = {
+          id: `err-${payload.taskId}`,
+          role: "assistant",
+          backend: selectedBackend.value,
+          text: `Erreur : ${payload.error || "Échec de la tâche"}`,
+          timestamp: Date.now(),
+          error: true,
+        };
+        messages.value.push(errorMsg);
+        saveMessages();
+        scrollToBottom();
+        if (currentInFlightTaskId.value === payload.taskId) {
+          isSending.value = false;
+          inFlightStartedAt.value = null;
+          inFlightBackend.value = null;
+          currentInFlightTaskId.value = null;
+        }
+      }
+      void fetchTasks(true);
+      void fetchStatus(true);
+      break;
+    }
+
+    case "task:cancelled": {
+      const payload = data.payload;
+      if (currentInFlightTaskId.value === payload?.taskId) {
+        isSending.value = false;
+        inFlightStartedAt.value = null;
+        inFlightBackend.value = null;
+        currentInFlightTaskId.value = null;
+      }
+      void fetchTasks(true);
+      break;
+    }
+
+    case "approval:requested": {
+      const item = data.payload;
+      if (item?.approvalId) {
+        if (!approvals.value.some((a) => a.approvalId === item.approvalId)) {
+          approvals.value.push({
+            ...item,
+            status: "pending",
+          });
+        }
+        showApprovalModal.value = true;
+        activeApprovalIndex.value = 0;
+        triggerHaptic("heavy");
+        if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+          navigator.vibrate([120, 60, 120]);
+        }
+      }
+      break;
+    }
+
+    case "approval:decided": {
+      const payload = data.payload;
+      if (payload?.approvalId) {
+        const found = approvals.value.find((a) => a.approvalId === payload.approvalId);
+        if (found) {
+          found.status = payload.decision === "accept" ? "accepted" : "declined";
+          found.decision = payload.decision;
+        }
+      }
+      break;
+    }
+
+    case "project:switched": {
+      void fetchStatus(true);
+      break;
+    }
+  }
+}
+
+function connectWebSocket() {
+  if (typeof window === "undefined" || !coreUrl.value) return;
+  if (wsInstance && (wsInstance.readyState === WebSocket.OPEN || wsInstance.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
+  try {
+    const rawUrl = coreUrl.value.replace(/\/+$/, "");
+    const wsBase = rawUrl.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
+    const wsTarget = `${wsBase}/ws?token=${encodeURIComponent(authToken.value || "")}`;
+
+    wsInstance = new WebSocket(wsTarget);
+
+    wsInstance.onopen = () => {
+      isWsConnected.value = true;
+    };
+
+    wsInstance.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        handleDaemonWsMessage(data);
+      } catch (e) {
+        console.warn("Erreur parsing message WS:", e);
+      }
+    };
+
+    wsInstance.onerror = () => {
+      isWsConnected.value = false;
+    };
+
+    wsInstance.onclose = () => {
+      isWsConnected.value = false;
+      wsInstance = null;
+      if (!wsReconnectTimer) {
+        wsReconnectTimer = setTimeout(() => {
+          wsReconnectTimer = null;
+          connectWebSocket();
+        }, 3000);
+      }
+    };
+  } catch (err) {
+    console.warn("Échec connexion WebSocket:", err);
+  }
+}
+
 // Lifecycle
 onMounted(async () => {
   const speechCallbacks = {
@@ -1136,6 +1332,7 @@ onMounted(async () => {
   fetchApprovals(true);
   fetchVoiceStatus();
   fetchModelsForBackend(selectedBackend.value);
+  connectWebSocket();
 
   pollTimer = setInterval(() => {
     if ((showSettings.value || activeTab.value === 'agent' || isSending.value) && Date.now() - dashboardFetchedAt > 5000) void fetchDashboard();
@@ -1156,9 +1353,23 @@ onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer);
   if (clockTimer) clearInterval(clockTimer);
   if (fastApprovalTimer) clearInterval(fastApprovalTimer);
+  if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+  if (wsInstance) {
+    wsInstance.close();
+    wsInstance = null;
+  }
   cancelVoiceRecording();
   stopSpeaking();
   if (!Capacitor.isNativePlatform() && ttsAvailable.value) window.speechSynthesis.removeEventListener("voiceschanged", refreshSpeechVoices);
+});
+
+watch([coreUrl, authToken], () => {
+  if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+  if (wsInstance) {
+    wsInstance.close();
+    wsInstance = null;
+  }
+  connectWebSocket();
 });
 
 let fastApprovalTimer: ReturnType<typeof setInterval> | null = null;
@@ -1652,33 +1863,41 @@ async function sendPrompt(promptText: string, fromVoice = false) {
       throw new Error(data.error || `Erreur HTTP ${res.status}`);
     }
 
-    // Add Assistant response
-    const assistantMsg: ChatMessage = {
-      id: `asst-${Date.now()}`,
-      role: "assistant",
-      backend,
-      text: data.text || "Tâche terminée sans sortie textuelle.",
-      timestamp: Date.now(),
-      fileSummary: data.fileSummary,
-    };
+    const replyContent = data.replyText || data.text;
+    const alreadyDisplayed = messages.value.some(
+      (m) => m.id === `asst-${generatedTaskId}` || (m.role === 'assistant' && m.text === replyContent)
+    );
+    if (!alreadyDisplayed && replyContent) {
+      const assistantMsg: ChatMessage = {
+        id: `asst-${generatedTaskId}`,
+        role: "assistant",
+        backend,
+        text: replyContent,
+        timestamp: Date.now(),
+        fileSummary: data.fileSummary,
+      };
 
-    messages.value.push(assistantMsg);
-    saveMessages();
-    if (shouldSpeakReply({ enabled: ttsEnabled.value, autoSpeak: autoSpeak.value, fromVoice, error: assistantMsg.error })) {
-      speakMessage(assistantMsg.text, assistantMsg.id);
+      messages.value.push(assistantMsg);
+      saveMessages();
+      if (shouldSpeakReply({ enabled: ttsEnabled.value, autoSpeak: autoSpeak.value, fromVoice, error: assistantMsg.error })) {
+        speakMessage(assistantMsg.text, assistantMsg.id);
+      }
     }
   } catch (err: any) {
-    lastTaskFailed.value = true;
-    const errorMsg: ChatMessage = {
-      id: `err-${Date.now()}`,
-      role: "assistant",
-      backend,
-      text: `Erreur : ${err?.message || "Échec de la tâche"}`,
-      timestamp: Date.now(),
-      error: true,
-    };
-    messages.value.push(errorMsg);
-    saveMessages();
+    const wasCompletedViaWs = messages.value.some((m) => m.id === `asst-${generatedTaskId}`);
+    if (!wasCompletedViaWs) {
+      lastTaskFailed.value = true;
+      const errorMsg: ChatMessage = {
+        id: `err-${Date.now()}`,
+        role: "assistant",
+        backend,
+        text: `Erreur : ${err?.message || "Échec de la tâche"}`,
+        timestamp: Date.now(),
+        error: true,
+      };
+      messages.value.push(errorMsg);
+      saveMessages();
+    }
   } finally {
     isSending.value = false;
     inFlightStartedAt.value = null;
