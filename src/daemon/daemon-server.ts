@@ -88,7 +88,7 @@ export class NexusDaemonServer extends EventEmitter {
       : this.jail.getAllowedRoots()[0];
 
     this.activeProject = {
-      id: basename(initialRoot),
+      id: initialRoot,
       name: basename(initialRoot),
       path: initialRoot,
     };
@@ -245,12 +245,16 @@ export class NexusDaemonServer extends EventEmitter {
 
     const authRes = this.auth.verifyToken(token, clientIp);
     if (!authRes.ok) {
+      console.warn(
+        `[DAEMON-WS] ⚠️ Connexion WebSocket refusée pour ${clientIp} (Jeton manquant ou invalide)`
+      );
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
     }
 
     if (url.pathname === '/ws') {
+      console.log(`[DAEMON-WS] 🔌 Connexion WebSocket établie depuis ${clientIp}`);
       const conn = new WebSocketServerConnection(socket, req);
       this.wsClients.add(conn);
 
@@ -296,6 +300,17 @@ export class NexusDaemonServer extends EventEmitter {
       return;
     }
 
+    const isBackgroundPoll =
+      method === 'GET' &&
+      (pathname === '/health' ||
+        pathname === '/status' ||
+        pathname === '/api/tasks' ||
+        pathname === '/api/approvals');
+
+    if (!isBackgroundPoll) {
+      console.log(`[DAEMON] <-- ${method} ${pathname} (IP: ${clientIp})`);
+    }
+
     // Public health check route
     if (pathname === '/health' && method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -315,6 +330,9 @@ export class NexusDaemonServer extends EventEmitter {
     const authResult = this.auth.verifyToken(authHeader, clientIp);
 
     if (!authResult.ok) {
+      console.warn(
+        `[DAEMON] ⚠️ Auth refusée pour ${clientIp} sur ${pathname} (${authResult.blocked ? 'IP BLOQUÉE' : 'Jeton invalide ou absent'})`
+      );
       const status = authResult.blocked ? 429 : 401;
       const message = authResult.blocked
         ? 'Trop de tentatives échouées. Adresse IP temporairement bloquée.'
@@ -384,7 +402,7 @@ export class NexusDaemonServer extends EventEmitter {
 
         const safePath = this.jail.resolveSafePath(target);
         this.activeProject = {
-          id: basename(safePath),
+          id: safePath,
           name: basename(safePath),
           path: safePath,
         };
@@ -499,9 +517,43 @@ export class NexusDaemonServer extends EventEmitter {
 
         const taskId = body.taskId || `task-${Date.now()}`;
         const backend = (body.backend as TaskBackendType) || this.activeBackend;
-        const targetPath = body.projectId
-          ? this.jail.resolveSafePath(body.projectId)
-          : this.activeProject.path;
+        let targetPath = this.activeProject.path;
+        if (body.projectId) {
+          const rawId = String(body.projectId).trim();
+          if (
+            rawId === this.activeProject.id ||
+            rawId === this.activeProject.name ||
+            rawId === this.activeProject.path
+          ) {
+            targetPath = this.activeProject.path;
+          } else {
+            const matchingProject = this.scanProjects().find(
+              (p) => p.id === rawId || p.name === rawId || p.path === rawId
+            );
+            if (matchingProject) {
+              targetPath = matchingProject.path;
+            } else {
+              try {
+                targetPath = this.jail.resolveSafePath(rawId);
+              } catch {
+                targetPath = this.activeProject.path;
+              }
+            }
+          }
+        }
+
+        if (targetPath !== this.activeProject.path) {
+          this.activeProject = {
+            id: targetPath,
+            name: basename(targetPath),
+            path: targetPath,
+          };
+          this.broadcastWs('project:switched', this.activeProject);
+        }
+
+        console.log(
+          `[DAEMON] 🚀 Tâche lancée sur [${basename(targetPath)}] (${backend}) : "${String(body.prompt).slice(0, 60)}..."`
+        );
 
         this.currentTaskId = taskId;
         const abortController = new AbortController();
@@ -663,10 +715,31 @@ export class NexusDaemonServer extends EventEmitter {
 
           if (isProject) {
             projects.push({
-              id: entry.name,
+              id: candidatePath,
               name: entry.name,
               path: candidatePath,
             });
+          } else {
+            // Check 1 level deeper for categorized projects (e.g. ~/code/bricolage/nexus)
+            try {
+              const subEntries = readdirSync(candidatePath, { withFileTypes: true });
+              for (const sub of subEntries) {
+                if (!sub.isDirectory() || sub.name.startsWith('.') || sub.name === 'node_modules') {
+                  continue;
+                }
+                const subPath = resolve(candidatePath, sub.name);
+                const isSubProject =
+                  existsSync(resolve(subPath, '.git')) ||
+                  existsSync(resolve(subPath, 'package.json'));
+                if (isSubProject) {
+                  projects.push({
+                    id: subPath,
+                    name: `${entry.name}/${sub.name}`,
+                    path: subPath,
+                  });
+                }
+              }
+            } catch {}
           }
         }
       } catch {}

@@ -153,7 +153,7 @@ suite('NexusDaemonServer unified secure daemon', () => {
     assert.equal(res.status, 200);
     const data = (await res.json()) as { id: string; name: string; path: string };
     assert.equal(data.path, projectDir);
-    assert.equal(data.id, 'test-project');
+    assert.equal(data.id, projectDir);
   });
 
   test('GET /api/tasks returns the task list', async () => {

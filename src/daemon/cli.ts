@@ -81,7 +81,12 @@ OPTIONS:
   const token = getOrCreateDaemonToken(parsed.values.token ?? process.env.NEXUS_TOKEN);
   const auth = new AuthGuard([token]);
 
-  const initialProject = parsed.values.project ? resolve(parsed.values.project) : undefined;
+  const cwd = process.cwd();
+  const initialProject = parsed.values.project
+    ? resolve(parsed.values.project)
+    : jail.isPathAllowed(cwd)
+      ? cwd
+      : allowedRoot;
 
   const daemon = new NexusDaemonServer({
     port,
