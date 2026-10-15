@@ -592,6 +592,7 @@ import { getAssistantState, assistantStateLabels, getInteractionMessage } from "
 import { Capacitor } from "@capacitor/core";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
 import { LocalNotifications } from "@capacitor/local-notifications";
+import { ForegroundService } from "@capawesome-team/capacitor-android-foreground-service";
 import { StatusBar, Style } from "@capacitor/status-bar";
 import { VoiceRecorder } from "capacitor-voice-recorder";
 import { SpeechRecognition } from "@capacitor-community/speech-recognition";
@@ -850,6 +851,7 @@ async function sendSystemNotification(title: string, body: string, extra?: Recor
             id: Math.floor(Math.random() * 1000000) + 1,
             title,
             body,
+            channelId: "nexus-alerts",
             extra,
           },
         ],
@@ -1395,6 +1397,16 @@ onMounted(async () => {
         if (perm.display !== "granted") {
           await LocalNotifications.requestPermissions();
         }
+        await LocalNotifications.createChannel({
+          id: "nexus-alerts",
+          name: "Nexus Approbations & Alertes",
+          description: "Alertes instantanées pour les approbations requises et fins de tâches",
+          importance: 5,
+          visibility: 1,
+          vibration: true,
+          lights: true,
+          lightColor: "#4f98a3",
+        });
         await LocalNotifications.addListener("localNotificationActionPerformed", (action) => {
           if (action.notification.extra?.approvalId) {
             showApprovalModal.value = true;
@@ -1402,7 +1414,19 @@ onMounted(async () => {
             if (idx >= 0) activeApprovalIndex.value = idx;
           }
         });
-      } catch { }
+      } catch (err) {
+        console.warn("LocalNotifications init error:", err);
+      }
+      try {
+        await ForegroundService.startForegroundService({
+          id: 1001,
+          title: "Nexus",
+          body: "Connecté à votre PC — En écoute des tâches",
+          silent: true,
+        });
+      } catch (err) {
+        console.warn("ForegroundService start error:", err);
+      }
     } else if (typeof Notification !== "undefined" && Notification.permission === "default") {
       try {
         void Notification.requestPermission();
