@@ -49,12 +49,11 @@ export class NexusRuntime {
     this.activeBackend = options.defaultBackend ?? 'codex';
     this.projectMemory = options.projectMemory ?? new ProjectMemory();
 
-    const memoryStorage = new MemoryStorage();
+    const storage = options.storage ?? new MemoryStorage();
 
-    const codexPersistence =
-      options.codexPersistence ?? new WorkspaceSessionPersistence(memoryStorage);
+    const codexPersistence = options.codexPersistence ?? new WorkspaceSessionPersistence(storage);
     const codexModelPreferences =
-      options.codexModelPreferences ?? new WorkspaceModelPreferences(memoryStorage);
+      options.codexModelPreferences ?? new WorkspaceModelPreferences(storage);
 
     this.codexService = new CodexService(
       async (request, signal) => {
@@ -75,10 +74,9 @@ export class NexusRuntime {
     );
 
     const agyPersistence =
-      options.antigravityPersistence ?? new WorkspaceAntigravitySessionPersistence(memoryStorage);
+      options.antigravityPersistence ?? new WorkspaceAntigravitySessionPersistence(storage);
     const agyModelPreferences =
-      options.antigravityModelPreferences ??
-      new WorkspaceAntigravityModelPreferences(memoryStorage);
+      options.antigravityModelPreferences ?? new WorkspaceAntigravityModelPreferences(storage);
 
     this.antigravityService = new AntigravityService(
       async (request, signal) => {

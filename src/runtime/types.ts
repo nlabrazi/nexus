@@ -57,6 +57,7 @@ import { CodingAgentProjectSummary } from '../conversational/tools';
 
 export interface NexusRuntimeOptions {
   readonly workspaceGuard: WorkspaceGuard;
+  readonly storage?: KeyValueStorage;
   readonly targetPath?: () => string;
   readonly requestApproval?: RuntimeApprovalHandler;
   readonly requestTurnTimeoutContinuation?: TurnTimeoutHandler;

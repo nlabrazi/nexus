@@ -174,6 +174,15 @@ suite('NexusDaemonServer unified secure daemon', () => {
     assert.ok(Array.isArray(list));
   });
 
+  test('GET /api/sessions returns persistent sessions list', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/sessions`, {
+      headers: { Authorization: 'Bearer valid-token-123' },
+    });
+    assert.equal(res.status, 200);
+    const list = await res.json();
+    assert.ok(Array.isArray(list));
+  });
+
   test('stops daemon server and cleans up', async () => {
     await daemon.stop();
     rmSync(sandbox, { recursive: true, force: true });

@@ -8,7 +8,13 @@ import type { Duplex } from 'node:stream';
 import { WebSocketServerConnection } from '../core/ws-connection';
 import { logger } from '../logging/logger';
 import { NexusRuntime } from '../runtime/nexus-runtime';
-import { AgentBackendType, RuntimeApprovalRequest, TaskBackendType } from '../runtime/types';
+import { createPersistentStorage } from '../runtime/storage';
+import {
+  AgentBackendType,
+  KeyValueStorage,
+  RuntimeApprovalRequest,
+  TaskBackendType,
+} from '../runtime/types';
 import { WorkspaceGuard } from '../workspace/guard';
 import { AuthGuard } from '../security/auth';
 import { JailGuard, SecurityError } from '../security/jail';
@@ -54,6 +60,7 @@ export interface DaemonServerOptions {
   readonly jail: JailGuard;
   readonly auth: AuthGuard;
   readonly runtime?: NexusRuntime;
+  readonly storage?: KeyValueStorage;
   readonly initialProject?: string;
 }
 
@@ -62,6 +69,7 @@ export class NexusDaemonServer extends EventEmitter {
   private readonly host: string;
   private readonly jail: JailGuard;
   private readonly auth: AuthGuard;
+  private readonly storage: KeyValueStorage;
   private server?: HttpServer;
   private readonly wsClients = new Set<WebSocketServerConnection>();
   private readonly startedAt = Date.now();
@@ -81,6 +89,8 @@ export class NexusDaemonServer extends EventEmitter {
     this.host = options.host ?? '127.0.0.1';
     this.jail = options.jail;
     this.auth = options.auth;
+    this.storage = options.storage ?? createPersistentStorage();
+    this.loadSavedTasks();
 
     // Resolve initial project safely
     const initialRoot = options.initialProject
@@ -107,8 +117,33 @@ export class NexusDaemonServer extends EventEmitter {
         workspaceGuard,
         targetPath: () => this.activeProject.path,
         defaultBackend: 'codex',
+        storage: this.storage,
         requestApproval: (req, sig) => this.handleApprovalRequest(req, sig),
       });
+    }
+  }
+
+  private loadSavedTasks(): void {
+    try {
+      const saved = this.storage.get('nexus.daemon.tasks');
+      if (Array.isArray(saved)) {
+        for (const item of saved) {
+          if (item && typeof item === 'object' && item.taskId) {
+            this.tasks.set(item.taskId, item as DaemonTaskRecord);
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn('Daemon', 'load_saved_tasks_failed', { status: 'failed' }, err);
+    }
+  }
+
+  private persistTasks(): void {
+    try {
+      const recent = [...this.tasks.values()].slice(-100);
+      void this.storage.update('nexus.daemon.tasks', recent);
+    } catch (err) {
+      logger.warn('Daemon', 'persist_tasks_failed', { status: 'failed' }, err);
     }
   }
 
@@ -305,7 +340,8 @@ export class NexusDaemonServer extends EventEmitter {
       (pathname === '/health' ||
         pathname === '/status' ||
         pathname === '/api/tasks' ||
-        pathname === '/api/approvals');
+        pathname === '/api/approvals' ||
+        pathname === '/api/sessions');
 
     if (!isBackgroundPoll) {
       console.log(`[DAEMON] <-- ${method} ${pathname} (IP: ${clientIp})`);
@@ -486,6 +522,36 @@ export class NexusDaemonServer extends EventEmitter {
         return;
       }
 
+      // 4b. Persistent Sessions & History
+      if (pathname === '/api/sessions' && method === 'GET') {
+        const queryProject = url.searchParams.get('project') || url.searchParams.get('projectId');
+        let list = [...this.tasks.values()].reverse();
+        if (queryProject) {
+          list = list.filter(
+            (t) =>
+              t.projectPath === queryProject ||
+              t.projectName === queryProject ||
+              t.projectPath.endsWith(queryProject)
+          );
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(list));
+        return;
+      }
+
+      if (pathname.startsWith('/api/sessions/') && method === 'GET') {
+        const sessionId = pathname.slice('/api/sessions/'.length);
+        const task = this.tasks.get(sessionId);
+        if (!task) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: `Session non trouvée : ${sessionId}` }));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(task));
+        return;
+      }
+
       // 5. Tasks Execution & Retrieval & Cancellation
       if (pathname === '/api/tasks' && method === 'GET') {
         const list = [...this.tasks.values()].reverse();
@@ -569,6 +635,7 @@ export class NexusDaemonServer extends EventEmitter {
           startedAt: Date.now(),
         };
         this.tasks.set(taskId, taskRecord);
+        this.persistTasks();
 
         this.broadcastWs('task:started', { ...taskRecord });
 
@@ -589,6 +656,7 @@ export class NexusDaemonServer extends EventEmitter {
             taskRecord.text = result.text;
             taskRecord.fileSummary = result.fileSummary;
             taskRecord.filesChanged = result.filesChanged;
+            this.persistTasks();
 
             this.broadcastWs('task:completed', { ...taskRecord });
             return taskRecord;
@@ -597,6 +665,7 @@ export class NexusDaemonServer extends EventEmitter {
             taskRecord.status = abortController.signal.aborted ? 'cancelled' : 'failed';
             taskRecord.completedAt = Date.now();
             taskRecord.error = message;
+            this.persistTasks();
             this.broadcastWs('task:failed', { taskId, error: message });
             return taskRecord;
           } finally {

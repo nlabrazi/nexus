@@ -1,5 +1,4 @@
-#!/usr/bin/env node
-
+import { existsSync } from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -22,6 +21,18 @@ function getTailscaleIp(): string | undefined {
 }
 
 export async function runDaemonCli(argv: string[] = process.argv.slice(2)): Promise<number> {
+  const envCandidates = [
+    resolve(process.cwd(), '.env'),
+    resolve(process.env.HOME ?? '', 'code/bricolage/nexus/.env'),
+  ];
+  for (const p of envCandidates) {
+    if (existsSync(p)) {
+      try {
+        process.loadEnvFile?.(p);
+        break;
+      } catch {}
+    }
+  }
   const optionsConfig = {
     port: { type: 'string' as const, short: 'p' },
     host: { type: 'string' as const, short: 'H' },
@@ -121,15 +132,6 @@ OPTIONS:
   process.on('SIGTERM', shutdown);
 
   return 0;
-}
-
-function existsSync(path: string): boolean {
-  try {
-    const { existsSync: fsExists } = require('node:fs');
-    return fsExists(path);
-  } catch {
-    return false;
-  }
 }
 
 if (require.main === module) {
