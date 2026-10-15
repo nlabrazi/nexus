@@ -29,6 +29,7 @@ async function main() {
       extension: 'src/extension.ts',
       desktop: 'src/desktop/cli.ts',
       core: 'src/core/cli.ts',
+      daemon: 'src/daemon/cli.ts',
     },
     bundle: true,
     format: 'cjs',

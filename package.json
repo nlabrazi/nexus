@@ -23,6 +23,7 @@
   ],
   "main": "./dist/extension.js",
   "bin": {
+    "nexus-daemon": "./dist/daemon.js",
     "nexus-desktop": "./dist/desktop.js",
     "nexus-core": "./dist/core.js"
   },
@@ -180,6 +181,7 @@
     ]
   },
   "scripts": {
+    "daemon": "node dist/daemon.js",
     "desktop": "node dist/desktop.js",
     "core": "node dist/core.js",
     "web:dev": "npm --prefix web run dev",
