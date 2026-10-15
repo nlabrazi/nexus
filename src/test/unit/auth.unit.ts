@@ -54,4 +54,3 @@ suite('AuthGuard token verification and rate limiting', () => {
     assert.ok(generated.length >= 32);
   });
 });
-

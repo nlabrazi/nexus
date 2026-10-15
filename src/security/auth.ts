@@ -175,4 +175,3 @@ export function getOrCreateDaemonToken(explicitToken?: string): string {
 
   return generated;
 }
-

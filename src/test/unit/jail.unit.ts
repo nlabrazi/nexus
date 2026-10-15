@@ -66,7 +66,7 @@ suite('JailGuard filesystem confinement', () => {
     const symlinkPath = join(allowedProject, 'evil-symlink');
     try {
       symlinkSync(outsideSecret, symlinkPath);
-    } catch {}
+    } catch { }
 
     assert.throws(
       () => guard.resolveSafePath(symlinkPath),
@@ -79,4 +79,3 @@ suite('JailGuard filesystem confinement', () => {
     rmSync(sandbox, { recursive: true, force: true });
   });
 });
-

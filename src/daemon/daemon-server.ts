@@ -294,7 +294,13 @@ export class NexusDaemonServer extends EventEmitter {
       if (pathname === '/status' && method === 'GET') {
         const snapshot = await this.runtime.getStatus();
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(snapshot));
+        res.end(
+          JSON.stringify({
+            ...snapshot,
+            activeProject: this.activeProject,
+            activeBackend: this.activeBackend,
+          })
+        );
         return;
       }
 
@@ -434,9 +440,21 @@ export class NexusDaemonServer extends EventEmitter {
             },
           });
 
-          this.broadcastWs('task:completed', { taskId, result });
+          this.broadcastWs('task:completed', {
+            taskId,
+            status: 'completed',
+            replyText: result.text,
+            ...result,
+          });
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ taskId, ...result }));
+          res.end(
+            JSON.stringify({
+              taskId,
+              status: 'completed',
+              replyText: result.text,
+              ...result,
+            })
+          );
         } finally {
           this.currentTaskId = undefined;
           this.currentTaskAbortController = undefined;
