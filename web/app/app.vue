@@ -96,6 +96,12 @@
           <p v-if="msg.fileSummary" class="file-summary">
             <NexusIcon name="folder" />{{ msg.fileSummary }}
           </p>
+          <div v-if="msg.role === 'assistant' && msg.backend === 'brain' && !msg.error" class="handoff-bar" style="margin-top: 10px; display: flex; gap: 8px;">
+            <button type="button" class="chip-button" style="display: inline-flex; align-items: center; gap: 6px; font-size: 11px; padding: 5px 10px; border-radius: 8px; background: rgba(79, 152, 163, 0.12); color: #4f98a3; border: 1px solid rgba(79, 152, 163, 0.25); cursor: pointer;" @click="handoffToCodingAgent(msg.text)">
+              <NexusIcon name="cpu" />
+              <span>Transmettre au code</span>
+            </button>
+          </div>
         </article>
         </TransitionGroup>
 
@@ -642,7 +648,7 @@ interface CoreStatusData {
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
-  backend: "brain" | "codex" | "antigravity";
+  backend: "brain" | "codex" | "antigravity" | "claude";
   text: string;
   timestamp: number;
   fileSummary?: string;
@@ -651,7 +657,7 @@ interface ChatMessage {
 
 interface RemoteTaskItem {
   taskId: string;
-  backend: "codex" | "antigravity" | "brain";
+  backend: "codex" | "antigravity" | "claude" | "brain";
   prompt: string;
   projectId?: string;
   nodeId: string;
@@ -691,7 +697,7 @@ interface PendingApprovalItem {
 
 // Navigation & Tab state
 const activeTab = ref<"chat" | "agent" | "activity" | "dashboard" | "system">("chat");
-const selectedBackend = ref<"codex" | "antigravity" | "brain">("codex");
+const selectedBackend = ref<"codex" | "antigravity" | "claude" | "brain">("codex");
 
 // Quick Dropdowns & HUD Modals state
 const showQuickMenu = ref<boolean>(false);
@@ -710,9 +716,14 @@ const agentOptions = [
     description: "Agent autonome multi-outils (DeepMind)",
   },
   {
+    id: "claude" as const,
+    name: "Claude Code",
+    description: "Agent de code autonome (Anthropic)",
+  },
+  {
     id: "brain" as const,
     name: "Nexus Brain",
-    description: "Orchestration & conversation globale",
+    description: "Orchestration & brainstorming conceptuel",
   },
 ];
 
@@ -720,6 +731,7 @@ function selectedBackendShortLabel(b?: string): string {
   if (b === "brain") return "Brain";
   if (b === "codex") return "Codex";
   if (b === "antigravity") return "AGY";
+  if (b === "claude") return "Claude";
   return "Agent";
 }
 
@@ -949,6 +961,7 @@ const agentModels = ref<Record<string, { models: ModelItem[]; selected?: string 
   brain: { models: [], selected: "" },
   codex: { models: [], selected: "" },
   antigravity: { models: [], selected: "" },
+  claude: { models: [], selected: "" },
 });
 const isLoadingModels = ref<boolean>(false);
 
@@ -1007,7 +1020,7 @@ async function fetchDashboard() {
   }
 }
 
-async function fetchModelsForBackend(backend: "brain" | "codex" | "antigravity") {
+async function fetchModelsForBackend(backend: "brain" | "codex" | "antigravity" | "claude") {
   if (!coreUrl.value) return;
   isLoadingModels.value = true;
   try {
@@ -1032,7 +1045,7 @@ async function fetchModelsForBackend(backend: "brain" | "codex" | "antigravity")
   }
 }
 
-async function handleSelectBackend(backend: "brain" | "codex" | "antigravity") {
+async function handleSelectBackend(backend: "brain" | "codex" | "antigravity" | "claude") {
   selectedBackend.value = backend;
   triggerHaptic("light");
   await fetchModelsForBackend(backend);
@@ -2238,7 +2251,17 @@ function selectedBackendLabel(b?: string): string {
   if (b === "brain") return "Nexus Brain";
   if (b === "codex") return "Codex";
   if (b === "antigravity") return "Antigravity";
+  if (b === "claude") return "Claude Code";
   return "Agent";
+}
+
+function handoffToCodingAgent(text: string) {
+  draftMessage.value = text;
+  if (selectedBackend.value === "brain") {
+    selectedBackend.value = "codex";
+  }
+  triggerHaptic("medium");
+  activeTab.value = "chat";
 }
 
 function renderMarkdown(raw: string): string {

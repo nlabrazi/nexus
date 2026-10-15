@@ -7,6 +7,7 @@ import { WorkspaceAntigravityModelPreferences } from '../antigravity/model-prefe
 import { CodexService } from '../codex/service';
 import { WorkspaceSessionPersistence } from '../codex/persistence';
 import { WorkspaceModelPreferences } from '../codex/model-preferences';
+import { ClaudeCodeService } from '../claude/service';
 import { ModelMenu, ModelSelection } from '../codex/types';
 import { CodexBrainModel } from '../conversational/codex-model';
 import { CodexProjectInspector } from '../conversational/codex-inspector';
@@ -38,6 +39,7 @@ export class NexusRuntime {
   private readonly targetPathSupplier?: () => string;
   private readonly codexService: CodexService;
   private readonly antigravityService: AntigravityService;
+  private readonly claudeService: ClaudeCodeService;
   private readonly conversationalService: ConversationalService;
   private readonly brainModel: BrainModel;
   private readonly projectMemory: ProjectMemory;
@@ -48,6 +50,7 @@ export class NexusRuntime {
     this.targetPathSupplier = options.targetPath;
     this.activeBackend = options.defaultBackend ?? 'codex';
     this.projectMemory = options.projectMemory ?? new ProjectMemory();
+    this.claudeService = new ClaudeCodeService();
 
     const storage = options.storage ?? new MemoryStorage();
 
@@ -223,6 +226,9 @@ export class NexusRuntime {
     if (backend === 'codex') {
       text = await this.codexService.sendPrompt(effectivePrompt, path, onFiles, options?.onChunk);
       fileSummary = formatFileSummary(files, this.codexService.getStatus().workspacePath ?? path);
+    } else if (backend === 'claude') {
+      text = await this.claudeService.sendPrompt(effectivePrompt, path, onFiles, options?.onChunk);
+      fileSummary = formatFileSummary(files, path);
     } else {
       text = await this.antigravityService.sendPrompt(
         effectivePrompt,
@@ -343,16 +349,30 @@ export class NexusRuntime {
     ].join('\n');
   }
 
-  async listModels(
-    backend: 'codex' | 'antigravity' | 'brain',
-    targetPath?: string
-  ): Promise<ModelMenu> {
+  async listModels(backend: TaskBackendType, targetPath?: string): Promise<ModelMenu> {
     const path = this.resolveTargetPath(targetPath);
     if (backend === 'codex') {
       return this.codexService.listModels(path);
     }
     if (backend === 'antigravity') {
       return this.antigravityService.listModels(path);
+    }
+    if (backend === 'claude') {
+      const claudeModels = await this.claudeService.listModels();
+      const models = claudeModels.map((m) => ({
+        id: m.id,
+        model: m.model,
+        displayName: m.displayName,
+        description: m.description,
+        isDefault: m.isDefault,
+        defaultReasoningEffort: m.defaultReasoningEffort ?? '',
+        supportedReasoningEfforts: m.supportedReasoningEfforts ?? [],
+      }));
+      return {
+        models,
+        selected: { model: 'claude-3-7-sonnet', effort: 'medium' },
+        context: `claude:${Date.now()}`,
+      };
     }
 
     if (this.brainModel instanceof RoutedBrainModel) {
@@ -398,7 +418,7 @@ export class NexusRuntime {
   }
 
   async selectModel(
-    backend: 'codex' | 'antigravity' | 'brain',
+    backend: TaskBackendType,
     selection: ModelSelection,
     context?: string,
     targetPath?: string
@@ -524,11 +544,13 @@ export class NexusRuntime {
   cancelCurrentWork(): boolean {
     const codexCancelled = this.codexService.cancelCurrentWork();
     const agyCancelled = this.antigravityService.cancelCurrentWork();
-    return codexCancelled || agyCancelled;
+    const claudeCancelled = this.claudeService.cancelCurrentWork();
+    return codexCancelled || agyCancelled || claudeCancelled;
   }
 
   stop(): void {
     this.codexService.stop();
     this.antigravityService.stop();
+    this.claudeService.stop();
   }
 }

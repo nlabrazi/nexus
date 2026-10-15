@@ -7,12 +7,12 @@ import { ModelPreferences } from '../codex/model-preferences';
 import { ApprovalDecision } from '../codex/types';
 import { BrainModel } from '../conversational/model';
 import { BrainSessionPersistence } from '../conversational/persistence';
-export type AgentBackendType = 'codex' | 'antigravity';
+export type AgentBackendType = 'codex' | 'antigravity' | 'claude';
 export type { NexusStatusSnapshot } from './status';
 import { WorkspaceGuard } from '../workspace/guard';
 import { ProjectMemory } from '../memory/project-memory';
 
-export type TaskBackendType = 'codex' | 'antigravity' | 'brain';
+export type TaskBackendType = 'codex' | 'antigravity' | 'claude' | 'brain';
 
 export type RemoteSessionAction = { type: 'new' } | { type: 'resume'; sessionId: string };
 
