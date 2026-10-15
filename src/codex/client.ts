@@ -452,7 +452,8 @@ export class CodexClient {
     prompt: string,
     onFilesChanged?: (paths: readonly string[]) => void,
     selection?: ModelSelection,
-    outputSchema?: Record<string, unknown>
+    outputSchema?: Record<string, unknown>,
+    onChunk?: (delta: string) => void
   ): Promise<string> {
     if (!this.process) {
       throw processError(new Error('Codex is not running'));
@@ -619,6 +620,7 @@ export class CodexClient {
           const message = messages.get(params.itemId) ?? { streamed: '' };
           message.streamed += params.delta;
           messages.set(params.itemId, message);
+          onChunk?.(params.delta);
         } else {
           rememberItem(params.item, notification.method === 'item/completed');
         }
@@ -681,7 +683,9 @@ export class CodexClient {
         }, turnTimeoutMs);
       };
 
-      scheduleTimeout();
+      if (turnTimeoutMs > 0) {
+        scheduleTimeout();
+      }
       this.turnFailure = fail;
       this.notificationListeners.add(onNotification);
       void this.request('turn/start', {

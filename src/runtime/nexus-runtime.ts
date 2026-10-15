@@ -190,6 +190,7 @@ export class NexusRuntime {
     options?: {
       targetPath?: string;
       onFilesChanged?: (paths: readonly string[]) => void;
+      onChunk?: (delta: string) => void;
       signal?: AbortSignal;
       disableContextAugmentation?: boolean;
     }
@@ -220,10 +221,15 @@ export class NexusRuntime {
     let fileSummary: string | undefined;
 
     if (backend === 'codex') {
-      text = await this.codexService.sendPrompt(effectivePrompt, path, onFiles);
+      text = await this.codexService.sendPrompt(effectivePrompt, path, onFiles, options?.onChunk);
       fileSummary = formatFileSummary(files, this.codexService.getStatus().workspacePath ?? path);
     } else {
-      text = await this.antigravityService.sendPrompt(effectivePrompt, path, onFiles);
+      text = await this.antigravityService.sendPrompt(
+        effectivePrompt,
+        path,
+        onFiles,
+        options?.onChunk
+      );
       fileSummary = formatFileSummary(
         files,
         this.antigravityService.getStatus().workspacePath ?? path

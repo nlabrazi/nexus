@@ -13,7 +13,12 @@ const FILE_CHANGE_TOOLS = new Set([
   'delete_file',
 ]);
 
-const PERMISSION_TOOLS = new Set(['ask_permission', 'ask_custom_permission', 'request_approval']);
+const PERMISSION_TOOLS = new Set([
+  'ask_permission',
+  'ask_custom_permission',
+  'request_approval',
+  'ask_question',
+]);
 
 export function getGuardRailKind(toolName: string): 'command' | 'fileChange' | undefined {
   if (COMMAND_TOOLS.has(toolName)) {

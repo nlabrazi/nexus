@@ -303,7 +303,8 @@ export class AntigravityClient {
   async runTurn(
     conversationId: string,
     prompt: string,
-    onFilesChanged?: (paths: readonly string[]) => void
+    onFilesChanged?: (paths: readonly string[]) => void,
+    onChunk?: (delta: string) => void
   ): Promise<string> {
     if (!this.process) {
       throw processError(new Error('Antigravity is not running'));
@@ -393,6 +394,7 @@ export class AntigravityClient {
 
           if (step.step_type === 'agent_response' && step.text_delta) {
             collectedResponse += step.text_delta;
+            onChunk?.(step.text_delta);
           }
 
           if (step.step_type === 'tool') {
@@ -592,7 +594,9 @@ export class AntigravityClient {
         }, turnTimeoutMs);
       };
 
-      scheduleTimeout();
+      if (turnTimeoutMs > 0) {
+        scheduleTimeout();
+      }
 
       // Write prompt to stdin
       const inputMessage: UserStreamInput = {

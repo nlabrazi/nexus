@@ -644,6 +644,15 @@ export class NexusDaemonServer extends EventEmitter {
             const result = await this.runtime.executeTask(backend, body.prompt, {
               targetPath,
               signal: abortController.signal,
+              onChunk: (delta) => {
+                taskRecord.text = (taskRecord.text || '') + delta;
+                taskRecord.replyText = taskRecord.text;
+                this.broadcastWs('task:chunk', {
+                  taskId,
+                  delta,
+                  text: taskRecord.text,
+                });
+              },
               onFilesChanged: (files) => {
                 taskRecord.filesChanged = files;
                 this.broadcastWs('task:progress', { taskId, filesChanged: files });

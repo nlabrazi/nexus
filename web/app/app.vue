@@ -399,6 +399,7 @@
         </div>
         <label class="switch-field"><span>Envoyer après la dictée<small>Désactivez pour relire avant
               l’envoi.</small></span><input v-model="autoSendVoice" type="checkbox" role="switch" /></label>
+        <label class="switch-field"><span>Notifications système<small>Alertes lors des demandes d’approbation et fins de tâches.</small></span><input v-model="notificationsEnabled" type="checkbox" role="switch" /></label>
         <details class="settings-details">
           <summary>Voix</summary>
           <p v-if="!ttsAvailable">La lecture vocale n’est pas disponible sur cet appareil.</p>
@@ -445,7 +446,30 @@
           <NexusIcon name="shield" /><span>{{ activeApproval.agentName
             }}<small>{{ formatApprovalKind(activeApproval.kind) }}</small></span>
         </div>
-        <pre class="approval-code"><code>{{ activeApproval.details }}</code></pre>
+        <div v-if="activeApprovalParsed" class="approval-parsed-body">
+          <div v-if="activeApprovalParsed.CommandLine" class="approval-parsed-item">
+            <span class="approval-parsed-label">Commande shell :</span>
+            <pre class="approval-code"><code>{{ activeApprovalParsed.CommandLine }}</code></pre>
+          </div>
+          <div v-else-if="activeApprovalParsed.TargetFile" class="approval-parsed-item">
+            <span class="approval-parsed-label">Fichier :</span>
+            <pre class="approval-code"><code>{{ activeApprovalParsed.TargetFile }}</code></pre>
+            <p v-if="activeApprovalParsed.Description" class="approval-parsed-desc">{{ activeApprovalParsed.Description }}</p>
+          </div>
+          <div v-else-if="activeApprovalParsed.questions && activeApprovalParsed.questions.length" class="approval-questions">
+            <div v-for="(q, qIdx) in activeApprovalParsed.questions" :key="qIdx" class="question-block">
+              <p class="question-title"><strong>{{ q.question }}</strong></p>
+              <div class="question-options">
+                <button v-for="(opt, optIdx) in q.options" :key="optIdx" type="button" class="button secondary compact-btn"
+                  @click="decideApproval(activeApproval.approvalId, 'accept', opt)">
+                  {{ opt }}
+                </button>
+              </div>
+            </div>
+          </div>
+          <pre v-else class="approval-code"><code>{{ activeApproval.details }}</code></pre>
+        </div>
+        <pre v-else class="approval-code"><code>{{ activeApproval.details }}</code></pre>
         <p class="approval-expiry" :class="{
           danger: getApprovalRemainingSeconds(activeApproval.expiresAt) <= 15,
         }">
@@ -567,6 +591,7 @@ import { cleanTextForSpeech } from "./utils/speech-text.mjs";
 import { getAssistantState, assistantStateLabels, getInteractionMessage } from "./utils/assistant-state.mjs";
 import { Capacitor } from "@capacitor/core";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
+import { LocalNotifications } from "@capacitor/local-notifications";
 import { StatusBar, Style } from "@capacitor/status-bar";
 import { VoiceRecorder } from "capacitor-voice-recorder";
 import { SpeechRecognition } from "@capacitor-community/speech-recognition";
@@ -799,6 +824,46 @@ function toggleTts() {
   triggerHaptic("light");
 }
 
+// System Notifications
+const notificationsEnabled = ref<boolean>(true);
+if (typeof window !== "undefined") {
+  try {
+    const savedNotifs = localStorage.getItem("nexus_notifications_enabled");
+    if (savedNotifs !== null) notificationsEnabled.value = savedNotifs === "true";
+  } catch {}
+}
+
+watch(notificationsEnabled, (val) => {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem("nexus_notifications_enabled", String(val));
+  } catch {}
+});
+
+async function sendSystemNotification(title: string, body: string, extra?: Record<string, any>) {
+  if (!notificationsEnabled.value) return;
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id: Math.floor(Math.random() * 1000000) + 1,
+            title,
+            body,
+            extra,
+          },
+        ],
+      });
+    } catch (e) {
+      console.warn("LocalNotifications.schedule error:", e);
+    }
+  } else if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+    try {
+      new Notification(title, { body, icon: "/icon.png" });
+    } catch {}
+  }
+}
+
 // Agent & Models state
 interface ModelItem {
   id: string;
@@ -992,6 +1057,17 @@ const activeApproval = computed(() => {
   return pendingApprovals.value[idx] || pendingApprovals.value[0] || null;
 });
 
+const activeApprovalParsed = computed<any>(() => {
+  if (!activeApproval.value?.details) return null;
+  try {
+    const raw = activeApproval.value.details;
+    if (typeof raw === "string" && (raw.trim().startsWith("{") || raw.trim().startsWith("["))) {
+      return JSON.parse(raw);
+    }
+  } catch {}
+  return null;
+});
+
 // Voice / Push-to-Talk State
 const isListening = ref<boolean>(false);
 const isProcessingAudio = ref<boolean>(false);
@@ -1046,14 +1122,48 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
       break;
     }
 
+    case "task:chunk": {
+      const payload = data.payload;
+      if (payload?.taskId) {
+        let msg = messages.value.find((m) => m.id === `asst-${payload.taskId}`);
+        if (!msg) {
+          msg = {
+            id: `asst-${payload.taskId}`,
+            role: "assistant",
+            backend: inFlightBackend.value || selectedBackend.value,
+            text: payload.delta || "",
+            timestamp: Date.now(),
+          };
+          messages.value.push(msg);
+        } else {
+          msg.text = payload.text !== undefined ? payload.text : (msg.text + (payload.delta || ""));
+        }
+        scrollToBottom();
+      }
+      break;
+    }
+
     case "task:completed": {
       const payload = data.payload;
       if (payload?.taskId) {
         const text = payload.replyText || payload.text;
-        const alreadyInChat = messages.value.some(
-          (m) => m.id === `asst-${payload.taskId}` || (m.role === "assistant" && m.text === text)
-        );
-        if (!alreadyInChat && text) {
+        const existingMsg = messages.value.find((m) => m.id === `asst-${payload.taskId}`);
+        if (existingMsg) {
+          if (text) existingMsg.text = text;
+          existingMsg.fileSummary = payload.fileSummary;
+          saveMessages();
+          scrollToBottom();
+          if (
+            shouldSpeakReply({
+              enabled: ttsEnabled.value,
+              autoSpeak: autoSpeak.value,
+              fromVoice: draftFromVoice.value,
+              error: false,
+            })
+          ) {
+            speakMessage(existingMsg.text, existingMsg.id);
+          }
+        } else if (text) {
           const assistantMsg: ChatMessage = {
             id: `asst-${payload.taskId}`,
             role: "assistant",
@@ -1076,6 +1186,10 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
             speakMessage(assistantMsg.text, assistantMsg.id);
           }
         }
+        void sendSystemNotification(
+          "Nexus : Tâche terminée ✅",
+          payload?.summary || "La tâche demandée a été exécutée avec succès."
+        );
         if (currentInFlightTaskId.value === payload.taskId) {
           isSending.value = false;
           inFlightStartedAt.value = null;
@@ -1103,6 +1217,10 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
         messages.value.push(errorMsg);
         saveMessages();
         scrollToBottom();
+        void sendSystemNotification(
+          "Nexus : Tâche échouée ❌",
+          payload.error || "Une erreur est survenue lors de l'exécution."
+        );
         if (currentInFlightTaskId.value === payload.taskId) {
           isSending.value = false;
           inFlightStartedAt.value = null;
@@ -1142,6 +1260,13 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
         if (typeof navigator !== "undefined" && "vibrate" in navigator) {
           navigator.vibrate([120, 60, 120]);
         }
+        void sendSystemNotification(
+          `Nexus : Approbation requise (${item.toolName || "Action"})`,
+          item.toolName === "ask_question"
+            ? "L'agent vous pose une question."
+            : `L'agent demande à exécuter : ${item.toolName || "action sensible"}`,
+          { approvalId: item.approvalId }
+        );
       }
       break;
     }
@@ -1264,6 +1389,23 @@ onMounted(async () => {
       try {
         await StatusBar.setStyle({ style: Style.Light });
         await StatusBar.setBackgroundColor({ color: "#0c1721" });
+      } catch { }
+      try {
+        const perm = await LocalNotifications.checkPermissions();
+        if (perm.display !== "granted") {
+          await LocalNotifications.requestPermissions();
+        }
+        await LocalNotifications.addListener("localNotificationActionPerformed", (action) => {
+          if (action.notification.extra?.approvalId) {
+            showApprovalModal.value = true;
+            const idx = approvals.value.findIndex((a) => a.approvalId === action.notification.extra?.approvalId);
+            if (idx >= 0) activeApprovalIndex.value = idx;
+          }
+        });
+      } catch { }
+    } else if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      try {
+        void Notification.requestPermission();
       } catch { }
     }
 
@@ -1738,6 +1880,7 @@ async function fetchApprovals(background = false) {
 async function decideApproval(
   approvalId: string,
   decision: "accept" | "decline",
+  response?: string,
 ) {
   if (!approvalId || isDecidingApproval.value) return;
 
@@ -1754,6 +1897,7 @@ async function decideApproval(
       headers,
       body: JSON.stringify({
         decision,
+        response,
         decidedBy: "mobile-web",
       }),
     });

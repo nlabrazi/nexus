@@ -317,7 +317,8 @@ export class CodexService {
   async sendPrompt(
     prompt: string,
     cwd = this.workspacePath,
-    onFilesChanged?: (paths: readonly string[]) => void
+    onFilesChanged?: (paths: readonly string[]) => void,
+    onChunk?: (delta: string) => void
   ): Promise<string> {
     if (!prompt.trim()) {
       throw new Error('Codex prompt cannot be empty');
@@ -344,7 +345,14 @@ export class CodexService {
         assertSameWorkspace(this.workspaceIdentity, await this.validateWorkspace(path));
         this.assertCurrent(generation);
       }
-      return await this.client.runTurn(id, prompt, onFilesChanged, this.modelSelection);
+      return await this.client.runTurn(
+        id,
+        prompt,
+        onFilesChanged,
+        this.modelSelection,
+        undefined,
+        onChunk
+      );
     } catch (error) {
       if (
         this.generation === generation &&
