@@ -20,5 +20,6 @@ export function formatFileSummary(paths: readonly string[], workspace: string): 
   if (files.length > 10) {
     lines.push(`… et ${files.length - 10} autre(s) fichier(s).`);
   }
-  return [`📄 **Fichiers signalés par Codex (${files.length})**`, ...lines].join('\n');
+  return [`📄 **Fichiers signalés par l'agent (${files.length})**`, ...lines].join('\n');
 }
+

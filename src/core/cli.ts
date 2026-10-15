@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { initializeLogging } from '../logging/persistence';
 import { logger, registerLogSecret } from '../logging/logger';
 import { parseArgs } from 'node:util';
-import { createCoreTelegramService } from '../telegram/core-bridge';
 import { NexusCore } from './nexus-core';
 
 export * from './types';
@@ -27,14 +26,12 @@ OPTIONS:
   -p, --port <port>        Port d'écoute HTTP (défaut: 4040 ou NEXUS_CORE_PORT)
   -H, --host <host>        Adresse d'écoute (défaut: 127.0.0.1 ou NEXUS_CORE_HOST)
   -t, --token <token>      Jeton(s) d'authentification admis (ou NEXUS_CORE_AUTH_TOKENS)
-  -T, --telegram-token <t> Jeton Telegram Bot pour démarrer le bot relié à Core (ou TELEGRAM_BOT_TOKEN)
   --public-dir <dir>       Répertoire des fichiers statiques Web PWA (ou NEXUS_PUBLIC_DIR)
   -h, --help               Afficher cette aide
   -v, --version            Afficher la version
 
 EXEMPLES:
   nexus-core --port 4040 --token secret-token-123
-  nexus-core --port 4040 --token secret-token-123 --telegram-token 123456:ABC-DEF
   NEXUS_CORE_PORT=4040 NEXUS_CORE_AUTH_TOKENS=mon-token nexus-core
 `;
 
@@ -47,7 +44,6 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
     port: { type: 'string' as const, short: 'p' },
     host: { type: 'string' as const, short: 'H' },
     token: { type: 'string' as const, short: 't' },
-    'telegram-token': { type: 'string' as const, short: 'T' },
     'public-dir': { type: 'string' as const },
     help: { type: 'boolean' as const, short: 'h', default: false },
     version: { type: 'boolean' as const, short: 'v', default: false },
@@ -58,7 +54,6 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
       port?: string;
       host?: string;
       token?: string;
-      'telegram-token'?: string;
       'public-dir'?: string;
       help?: boolean;
       version?: boolean;
@@ -133,32 +128,6 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
 
     await core.start();
 
-    const telegramToken =
-      values['telegram-token'] ??
-      process.env.TELEGRAM_BOT_TOKEN ??
-      process.env.NEXUS_TELEGRAM_TOKEN;
-    let telegram: ReturnType<typeof createCoreTelegramService> | undefined;
-    let telegramPolling: Promise<void> | undefined;
-
-    if (telegramToken) {
-      telegram = createCoreTelegramService(core, telegramToken);
-      const envUserId = process.env.TELEGRAM_ALLOWED_USER_ID;
-      const envChatId = process.env.TELEGRAM_ALLOWED_CHAT_ID ?? envUserId;
-      if (envUserId) {
-        await telegram.context.globalState.update(
-          'nexus.telegram.allowedUserId',
-          parseInt(envUserId, 10)
-        );
-        if (envChatId) {
-          await telegram.context.globalState.update(
-            'nexus.telegram.allowedChatId',
-            parseInt(envChatId, 10)
-          );
-        }
-      }
-      telegramPolling = telegram.service.start();
-    }
-
     console.log('================================================================');
     console.log(`  🌐 NEXUS CORE SERVER v${VERSION}`);
     console.log('================================================================');
@@ -168,29 +137,11 @@ export async function runCoreCli(argv: string[] = process.argv.slice(2)): Promis
     if (publicDir) {
       console.log(`  • Web PWA Client : Actif (http://${host}:${port}/)`);
     }
-    if (telegramToken && telegram) {
-      const allowedUser = telegram.context.globalState.get<number>('nexus.telegram.allowedUserId');
-      if (allowedUser !== undefined) {
-        console.log(`  • Telegram Bot   : Actif et appairé (utilisateur ID ${allowedUser})`);
-      } else {
-        const pairingCode = telegram.service.createPairingCode();
-        console.log('  • Telegram Bot   : Actif (routage agents via Core)');
-        console.log(`  👉 Appairage     : Envoyez "/pair ${pairingCode}" à votre bot sur Telegram`);
-      }
-    }
     console.log('================================================================');
     console.log('Nexus Core actif. En attente de connexions (Ctrl+C pour quitter)...');
 
     const shutdown = async () => {
       console.log('\nInterruption reçue, arrêt de Nexus Core...');
-      if (telegram) {
-        await telegram.service.stop();
-        if (telegramPolling) {
-          try {
-            await telegramPolling;
-          } catch {}
-        }
-      }
       await core.stop();
       console.log('Nexus Core arrêté avec succès.');
       process.exit(0);

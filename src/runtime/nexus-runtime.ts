@@ -17,8 +17,8 @@ import { OllamaBrainModel, listOllamaModels } from '../conversational/ollama-mod
 import { RoutedBrainModel } from '../conversational/routed-model';
 import { CodingAgentTools } from '../conversational/tools';
 import { ConversationProjectContext } from '../conversational/types';
-import { formatFileSummary } from '../telegram/file-summary';
-import { AgentBackendType, NexusStatusSnapshot } from '../telegram/status';
+import { formatFileSummary } from './file-summary';
+import { AgentBackendType, NexusStatusSnapshot } from './types';
 import { WorkspaceBranch, WorkspaceGuard } from '../workspace/guard';
 import { DecisionRecordInput, ProjectDecision, ProjectMemorySnapshot } from '../memory/types';
 import { ProjectMemory } from '../memory/project-memory';

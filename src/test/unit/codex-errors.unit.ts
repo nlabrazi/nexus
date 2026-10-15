@@ -3,9 +3,8 @@ import { suite, test, TestContext } from 'node:test';
 import childProcess = require('node:child_process');
 import { CodexService } from '../../codex/service';
 import { CodexError } from '../../codex/errors';
-import { TelegramService } from '../../telegram/service';
 import { FakeProcess } from './codex-process';
-import { context, FakeTelegram, flush } from './helpers';
+import { flush } from './helpers';
 
 function setup(t: TestContext) {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
@@ -377,42 +376,5 @@ suite('Codex response and session errors', () => {
     assert.equal(calls('thread/start').length, 1);
     assert.equal(calls('turn/start').length, 1);
     assert.notEqual(await service.newSession('/project'), 'thread');
-  });
-
-  test('Telegram reports a missing Codex and accepts a new instruction after the error', async (t) => {
-    const { child, service, spawn } = setup(t);
-    child.blockedMethods.add('initialize');
-    const telegram = new FakeTelegram();
-    const bridge = new TelegramService(context(), telegram, (prompt) =>
-      service.sendPrompt(prompt, '/project')
-    );
-    const polling = bridge.start();
-    t.after(async () => {
-      bridge.stop();
-      await polling;
-    });
-    const send = (id: number) =>
-      telegram.push({
-        update_id: id,
-        message: {
-          text: '/codex hello',
-          from: { id: 10 },
-          chat: { id: 20, type: 'private' },
-        },
-      });
-    send(1);
-    await flush();
-    child.emit('error', Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
-    await flush();
-    assert.match(telegram.messages.at(-1)!, /^❌ Codex est introuvable/);
-    assert.equal(spawn.mock.callCount(), 1);
-    const next = new FakeProcess();
-    spawn.mock.mockImplementation(() => next);
-    send(2);
-    await flush();
-    next.complete();
-    await flush();
-    assert.equal(telegram.messages.at(-1), 'Done');
-    assert.equal(spawn.mock.callCount(), 2);
   });
 });

@@ -7,7 +7,8 @@ import { ModelPreferences } from '../codex/model-preferences';
 import { ApprovalDecision } from '../codex/types';
 import { BrainModel } from '../conversational/model';
 import { BrainSessionPersistence } from '../conversational/persistence';
-import { AgentBackendType } from '../telegram/status';
+export type AgentBackendType = 'codex' | 'antigravity';
+export type { NexusStatusSnapshot } from './status';
 import { WorkspaceGuard } from '../workspace/guard';
 import { ProjectMemory } from '../memory/project-memory';
 

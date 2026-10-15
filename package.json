@@ -138,18 +138,6 @@
         "title": "Nexus: Select Active Backend"
       },
       {
-        "command": "nexus.configureTelegram",
-        "title": "Nexus: Configure Telegram"
-      },
-      {
-        "command": "nexus.testTelegram",
-        "title": "Nexus: Test Telegram Connection"
-      },
-      {
-        "command": "nexus.pairTelegram",
-        "title": "Nexus: Pair Telegram"
-      },
-      {
         "command": "nexus.testCodex",
         "title": "Nexus: Test Codex Connection"
       },
