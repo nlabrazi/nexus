@@ -399,7 +399,10 @@
         </div>
         <label class="switch-field"><span>Envoyer après la dictée<small>Désactivez pour relire avant
               l’envoi.</small></span><input v-model="autoSendVoice" type="checkbox" role="switch" /></label>
-        <label class="switch-field"><span>Notifications système<small>Alertes lors des demandes d’approbation et fins de tâches.</small></span><input v-model="notificationsEnabled" type="checkbox" role="switch" /></label>
+        <label class="switch-field"><span>Notifications système<small>Alertes sonores et pop-up type SMS lors des approbations.</small></span><input v-model="notificationsEnabled" type="checkbox" role="switch" /></label>
+        <button v-if="notificationsEnabled" type="button" class="text-button" style="text-align: left; margin: 4px 0 8px;" @click="testUrgentNotification">
+          🔔 Tester l'alerte sonore et pop-up (style SMS)
+        </button>
         <details class="settings-details">
           <summary>Voix</summary>
           <p v-if="!ttsAvailable">La lecture vocale n’est pas disponible sur cet appareil.</p>
@@ -589,7 +592,7 @@ import { shouldSpeakReply } from "./utils/voice-reply.mjs";
 import { createSpeechPlayback } from "./utils/speech-playback.mjs";
 import { cleanTextForSpeech } from "./utils/speech-text.mjs";
 import { getAssistantState, assistantStateLabels, getInteractionMessage } from "./utils/assistant-state.mjs";
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
 import { LocalNotifications } from "@capacitor/local-notifications";
 import { ForegroundService } from "@capawesome-team/capacitor-android-foreground-service";
@@ -841,29 +844,48 @@ watch(notificationsEnabled, (val) => {
   } catch {}
 });
 
+interface NexusNativeAlertPluginInterface {
+  sendUrgentNotification(options: { title: string; body: string; approvalId?: string }): Promise<void>;
+}
+const NexusNativeAlert = registerPlugin<NexusNativeAlertPluginInterface>("NexusNativeAlert");
+
 async function sendSystemNotification(title: string, body: string, extra?: Record<string, any>) {
   if (!notificationsEnabled.value) return;
   if (Capacitor.isNativePlatform()) {
     try {
-      await LocalNotifications.schedule({
-        notifications: [
-          {
-            id: Math.floor(Math.random() * 1000000) + 1,
-            title,
-            body,
-            channelId: "nexus-alerts",
-            extra,
-          },
-        ],
+      await NexusNativeAlert.sendUrgentNotification({
+        title,
+        body,
+        approvalId: extra?.approvalId || "",
       });
     } catch (e) {
-      console.warn("LocalNotifications.schedule error:", e);
+      console.warn("NexusNativeAlert error, fallback local-notif:", e);
+      try {
+        await LocalNotifications.schedule({
+          notifications: [
+            {
+              id: Math.floor(Math.random() * 1000000) + 1,
+              title,
+              body,
+              channelId: "nexus_urgent_sms_channel",
+              extra,
+            },
+          ],
+        });
+      } catch {}
     }
   } else if (typeof Notification !== "undefined" && Notification.permission === "granted") {
     try {
       new Notification(title, { body, icon: "/icon.png" });
     } catch {}
   }
+}
+
+async function testUrgentNotification() {
+  await sendSystemNotification(
+    "Nexus : Test d'alerte SMS",
+    "Ceci est une alerte sonore et pop-up Heads-Up comme un SMS !"
+  );
 }
 
 // Agent & Models state
