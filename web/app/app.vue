@@ -1597,8 +1597,9 @@ onMounted(async () => {
 
     if (Capacitor.isNativePlatform()) {
       try {
-        await StatusBar.setStyle({ style: Style.Light });
-        await StatusBar.setBackgroundColor({ color: "#0c1721" });
+        await StatusBar.setOverlaysWebView({ overlay: false });
+        await StatusBar.setStyle({ style: Style.Dark });
+        await StatusBar.setBackgroundColor({ color: "#07090e" });
       } catch { }
       try {
         const perm = await LocalNotifications.checkPermissions();

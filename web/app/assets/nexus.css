@@ -2452,13 +2452,22 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
+  padding-top: max(38px, calc(12px + var(--safe-top, 0px)));
+  padding-bottom: 12px;
+  padding-inline: 16px;
   border-bottom: 1px solid var(--line);
   background: var(--surface-glass);
   backdrop-filter: blur(12px);
   z-index: 20;
-  min-height: 56px;
+  min-height: calc(56px + max(28px, var(--safe-top, 0px)));
   gap: 10px;
+}
+
+@media (min-width: 900px) {
+  .cyber-header {
+    padding-top: 10px !important;
+    min-height: 56px !important;
+  }
 }
 
 .cyber-terminal-tag {
