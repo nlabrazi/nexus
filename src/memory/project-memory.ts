@@ -9,6 +9,8 @@ import {
   ProjectMemorySnapshot,
 } from './types';
 
+import { KeyValueStorage } from '../runtime/types';
+
 const INITIAL_HEADER = `# Mémoire de Décisions Nexus
 
 Ce fichier consigne les décisions architecturales et choix techniques structurants du projet.
@@ -17,24 +19,76 @@ Nexus Brain et les agents s'y réfèrent pour conserver le contexte technique d'
 ## Décisions
 `;
 
+export const DEFAULT_GLOBAL_PERSONA = `# Persona & Directives Globales Nexus
+
+- **Développeur** : Kaox (Architecte / Développeur Principal)
+- **Langue** : Toujours répondre en Français clair, concis et technique.
+- **Philosophie** : Privilégier des architectures simples, modulaires, typées strictement (TypeScript), sans code mort ni sur-ingénierie.
+- **Mode Brainstorm** : Agir comme un partenaire d'architecture proactif, challenger les idées, retenir les décisions via record_decision et préparer des passes propres pour Codex / Antigravity / Claude.
+- **Mode Code** : Aller droit au but, vérifier les effets de bord et maintenir les tests unitaires au vert.`;
+
 export class ProjectMemory {
+  constructor(private readonly storage?: KeyValueStorage) {}
+
+  private memoryKey(rootPath: string): string {
+    return `nexus.memory:${resolve(rootPath)}`;
+  }
+
+  private preferencesKey(rootPath: string): string {
+    return `nexus.preferences:${resolve(rootPath)}`;
+  }
+
+  private personaKey(): string {
+    return 'nexus.persona.global';
+  }
+
   getMemoryPath(rootPath: string): string {
     return resolve(rootPath, '.nexus', 'memory.md');
   }
 
   hasMemory(rootPath: string): boolean {
+    const stored = this.storage?.get(this.memoryKey(rootPath));
+    if (typeof stored === 'string' && stored.trim().length > 0) {
+      return true;
+    }
     return existsSync(this.getMemoryPath(rootPath));
   }
 
   readMemory(rootPath: string): string {
+    const key = this.memoryKey(rootPath);
+    const stored = this.storage?.get(key);
+    if (typeof stored === 'string' && stored.trim().length > 0) {
+      return stored;
+    }
     const filePath = this.getMemoryPath(rootPath);
     if (!existsSync(filePath)) {
       return '';
     }
     try {
-      return readFileSync(filePath, 'utf-8');
+      const diskContent = readFileSync(filePath, 'utf-8');
+      if (diskContent.trim() && this.storage) {
+        void this.storage.update(key, diskContent);
+      }
+      return diskContent;
     } catch {
       return '';
+    }
+  }
+
+  setRawMemory(rootPath: string, content: string): void {
+    const normalized = content.trim() ? `${content.trim()}\n` : INITIAL_HEADER;
+    if (this.storage) {
+      void this.storage.update(this.memoryKey(rootPath), normalized);
+    }
+    try {
+      const filePath = this.getMemoryPath(rootPath);
+      const dir = dirname(filePath);
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+      writeFileSync(filePath, normalized, 'utf-8');
+    } catch {
+      // Upstash storage retains memory if disk write fails
     }
   }
 
@@ -56,12 +110,6 @@ export class ProjectMemory {
       throw new Error('Le corps de la décision ne peut pas être vide.');
     }
 
-    const filePath = this.getMemoryPath(rootPath);
-    const dir = dirname(filePath);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
-
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
     const id = `dec-${now.getTime().toString(36)}-${randomUUID().slice(0, 4)}`;
@@ -77,14 +125,14 @@ export class ProjectMemory {
       status,
     };
 
-    let existingContent = existsSync(filePath) ? readFileSync(filePath, 'utf-8') : '';
+    let existingContent = this.readMemory(rootPath);
     if (!existingContent.trim()) {
       existingContent = INITIAL_HEADER;
     }
 
     const entryMarkdown = formatDecisionMarkdown(decision);
     const newContent = `${existingContent.trimEnd()}\n\n${entryMarkdown}\n`;
-    writeFileSync(filePath, newContent, 'utf-8');
+    this.setRawMemory(rootPath, newContent);
 
     return decision;
   }
@@ -97,40 +145,88 @@ export class ProjectMemory {
     return resolve(homedir(), '.nexus', 'preferences.md');
   }
 
-  readPreferences(rootPath: string): string {
-    const parts: string[] = [];
+  readGlobalPersona(): string {
+    if (this.storage) {
+      const stored = this.storage.get(this.personaKey());
+      if (typeof stored === 'string') {
+        return stored.trim();
+      }
+    }
     try {
       const globalPath = this.getGlobalPreferencesPath();
       if (existsSync(globalPath)) {
-        const globalContent = readFileSync(globalPath, 'utf-8').trim();
-        if (globalContent) {
-          parts.push(globalContent);
+        const disk = readFileSync(globalPath, 'utf-8').trim();
+        if (disk && this.storage) {
+          void this.storage.update(this.personaKey(), disk);
         }
+        return disk;
       }
     } catch {
       // Ignore filesystem errors
+    }
+    if (this.storage) {
+      void this.storage.update(this.personaKey(), DEFAULT_GLOBAL_PERSONA);
+      return DEFAULT_GLOBAL_PERSONA;
+    }
+    return '';
+  }
+
+  setGlobalPersona(content: string): void {
+    const trimmed = content.trim();
+    if (this.storage) {
+      void this.storage.update(this.personaKey(), trimmed);
+    }
+  }
+
+  readProjectPreferencesOnly(rootPath: string): string {
+    const key = this.preferencesKey(rootPath);
+    const stored = this.storage?.get(key);
+    if (typeof stored === 'string') {
+      return stored.trim();
     }
     try {
       const localPath = this.getPreferencesPath(rootPath);
       if (existsSync(localPath)) {
         const localContent = readFileSync(localPath, 'utf-8').trim();
-        if (localContent) {
-          parts.push(localContent);
+        if (localContent && this.storage) {
+          void this.storage.update(key, localContent);
         }
+        return localContent;
       }
     } catch {
       // Ignore filesystem errors
+    }
+    return '';
+  }
+
+  readPreferences(rootPath: string): string {
+    const parts: string[] = [];
+    const globalContent = this.readGlobalPersona();
+    if (globalContent) {
+      parts.push(globalContent);
+    }
+    const localContent = this.readProjectPreferencesOnly(rootPath);
+    if (localContent) {
+      parts.push(localContent);
     }
     return parts.join('\n\n');
   }
 
   setPreferences(rootPath: string, content: string): void {
-    const filePath = this.getPreferencesPath(rootPath);
-    const dir = dirname(filePath);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
+    const trimmed = content.trim();
+    if (this.storage) {
+      void this.storage.update(this.preferencesKey(rootPath), trimmed);
     }
-    writeFileSync(filePath, content.trim(), 'utf-8');
+    try {
+      const filePath = this.getPreferencesPath(rootPath);
+      const dir = dirname(filePath);
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+      writeFileSync(filePath, trimmed, 'utf-8');
+    } catch {
+      // Upstash storage retains preferences if disk write fails
+    }
   }
 
   formatActiveDecisions(rootPath: string, maxDecisions = 8, maxChars = 2000): string {
@@ -196,7 +292,7 @@ export class ProjectMemory {
 
   getSnapshot(rootPath: string): ProjectMemorySnapshot {
     const filePath = this.getMemoryPath(rootPath);
-    const exists = existsSync(filePath);
+    const exists = this.hasMemory(rootPath);
     const rawContent = this.readMemory(rootPath);
     const decisions = this.listDecisions(rootPath);
     const preferences = this.readPreferences(rootPath) || undefined;
@@ -212,12 +308,7 @@ export class ProjectMemory {
   }
 
   clearMemory(rootPath: string): void {
-    const filePath = this.getMemoryPath(rootPath);
-    const dir = dirname(filePath);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
-    writeFileSync(filePath, INITIAL_HEADER, 'utf-8');
+    this.setRawMemory(rootPath, INITIAL_HEADER);
   }
 
   parseDecisions(markdown: string): readonly ProjectDecision[] {
