@@ -21,9 +21,9 @@
           <span class="mode-indicator" :class="workspaceMode">
             {{ workspaceMode === 'code' ? 'CODE' : 'BRAINSTORM' }}
           </span>
-          <button type="button" class="context-pill" @click="openAgentPicker" aria-label="Changer d'agent">
+          <button type="button" class="context-pill" @click="openAgentPicker" aria-label="Changer d'agent ou de modèle">
             <NexusIcon :name="workspaceMode === 'brain' ? 'sparkles' : 'cpu'" />
-            <span>{{ selectedBackendShortLabel(selectedBackend) }}</span>
+            <span class="truncate">{{ selectedBackendShortLabel(selectedBackend) }}{{ currentSelectedModel ? ` · ${shortModelName(currentSelectedModel)}` : '' }}</span>
           </button>
           <button type="button" class="context-pill project-pill" @click="showProjectMenu = true" aria-label="Changer de projet">
             <NexusIcon name="folder" />
@@ -279,6 +279,14 @@
               </span>
             </div>
 
+            <!-- Quick Slash Commands Bar -->
+            <div class="cyber-slash-bar" aria-label="Commandes rapides">
+              <button type="button" class="slash-chip" :disabled="isSending || !isNodeReady" @click="sendQuickCommand('/new')">/new</button>
+              <button type="button" class="slash-chip" :disabled="isSending || !isNodeReady" @click="sendQuickCommand('/status')">/status</button>
+              <button type="button" class="slash-chip" :disabled="isSending || !isNodeReady" @click="sendQuickCommand('/usage')">/usage</button>
+              <button type="button" class="slash-chip" :disabled="isSending || !isNodeReady" @click="openPersonaSettings">/persona</button>
+            </div>
+
             <!-- Sleek Cyber Input Form -->
             <form class="cyber-composer-form" @submit.prevent="submitMessage">
               <div class="composer-input-row">
@@ -292,7 +300,7 @@
                 <label for="message" class="sr-only">Votre message</label>
                 <textarea id="message" ref="chatTextareaRef" v-model="inputPrompt" rows="1"
                   :placeholder="isNodeReady
-                    ? (workspaceMode === 'code' ? 'Consigne de code, correction, tâche…' : 'Idée, architecture, cadrage…')
+                    ? (workspaceMode === 'code' ? 'Consigne de code, /new, /usage…' : 'Idée, architecture, /new…')
                     : 'Écrivez un brouillon…'"
                   :disabled="isSending"
                   @keydown="handleComposerKeydown"
@@ -323,6 +331,11 @@
             @click="settingsSection = 'agent'">
             <NexusIcon name="cpu" />
             <span>Agent & Modèle</span>
+          </button>
+          <button type="button" class="settings-nav-tab" :class="{ active: settingsSection === 'persona' }"
+            @click="settingsSection = 'persona'">
+            <NexusIcon name="sparkles" />
+            <span>Persona & Mémoire</span>
           </button>
           <button type="button" class="settings-nav-tab" :class="{ active: settingsSection === 'voice' }"
             @click="settingsSection = 'voice'">
@@ -418,6 +431,59 @@
           </div>
           <div v-else-if="!isLoadingModels" class="models-empty-note">
             <span>Modèle par défaut actif ({{ currentSelectedModel || 'automatique' }}).</span>
+          </div>
+
+          <div v-if="currentModelEfforts.length > 1" style="margin-top: 14px;">
+            <div class="sheet-section-title">EFFORT DE RAISONNEMENT</div>
+            <div class="effort-pills-row">
+              <button v-for="eff in currentModelEfforts" :key="eff.reasoningEffort" type="button"
+                class="effort-pill-btn" :class="{ active: currentSelectedEffort === eff.reasoningEffort }"
+                @click="handleSelectModel(currentSelectedModel, eff.reasoningEffort)">
+                <strong>{{ eff.reasoningEffort.toUpperCase() }}</strong>
+                <small v-if="eff.description">{{ eff.description }}</small>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2b. Persona & Mémoire (Upstash) -->
+        <div v-show="settingsSection === 'persona'" class="settings-section-body">
+          <div class="sheet-section-title">PERSONA & INSTRUCTIONS GLOBALES (UPSTASH)</div>
+          <p style="font-size: 12px; color: var(--muted-light); margin-bottom: 8px;">
+            Ces instructions sont stockées dans <strong>Upstash Redis</strong> et injectées automatiquement dans tous vos agents (Brain, Codex, Antigravity, Claude Code).
+          </p>
+          <div class="field">
+            <textarea v-model="personaInput" rows="7" class="cyber-code-textarea"
+              placeholder="Décrivez qui vous êtes, votre stack favorite, vos conventions de code et le comportement attendu des agents…" />
+          </div>
+
+          <div class="sheet-section-title" style="margin-top: 14px;">
+            DIRECTIVES DU PROJET ({{ activeProjectName || 'Projet actif' }})
+          </div>
+          <div class="field">
+            <textarea v-model="projectPreferencesInput" rows="4" class="cyber-code-textarea"
+              placeholder="Conventions ou consignes propres à ce dépôt uniquement…" />
+          </div>
+
+          <div class="sheet-section-title" style="margin-top: 14px;">
+            MÉMOIRE ARCHITECTURALE DU PROJET (UPSTASH)
+          </div>
+          <div class="field">
+            <textarea v-model="projectMemoryInput" rows="6" class="cyber-code-textarea"
+              placeholder="Décisions techniques validées par Brain ou par vous…" />
+          </div>
+
+          <p v-if="personaStatusMsg" style="font-size: 12px; color: #00f0ff; margin: 6px 0;">
+            {{ personaStatusMsg }}
+          </p>
+
+          <div style="display: flex; gap: 8px; margin-top: 10px;">
+            <button type="button" class="button primary full-width" :disabled="isSavingPersona" @click="savePersonaAndMemory">
+              <span>{{ isSavingPersona ? 'Synchronisation Upstash…' : '💾 Sauvegarder dans Upstash' }}</span>
+            </button>
+            <button type="button" class="button secondary" :disabled="isLoadingPersona" @click="fetchPersonaAndMemory">
+              <span>Actualiser</span>
+            </button>
           </div>
         </div>
 
@@ -610,11 +676,11 @@
       </div>
       <div v-else class="empty-state compact">
         <p>Aucun projet détecté sur le poste connecté.</p>
-        <button type="button" class="button secondary" @click="showProjectMenu = false; activeTab = 'dashboard'">
+        <button type="button" class="button secondary" @click="showProjectMenu = false; settingsSection = 'projects'; showSettings = true">
           Parcourir les dossiers du PC
         </button>
       </div>
-      <button v-if="projectsList.length" type="button" class="button secondary" @click="showProjectMenu = false; activeTab = 'dashboard'">Parcourir les dossiers du PC</button>
+      <button v-if="projectsList.length" type="button" class="button secondary" @click="showProjectMenu = false; settingsSection = 'projects'; showSettings = true">Parcourir les dossiers du PC</button>
     </NexusSheet>
 
     <!-- AGENT & MODEL SELECTOR SHEET -->
@@ -625,7 +691,7 @@
           <button v-for="agent in agentOptions" :key="agent.id" type="button" class="agent-card-row"
             :class="{ selected: selectedBackend === agent.id }" @click="handleSelectBackend(agent.id)">
             <div class="agent-card-icon">
-              <NexusIcon :name="agent.id === 'brain' ? 'sparkles' : agent.id === 'codex' ? 'zap' : 'branch'" />
+              <NexusIcon :name="agent.id === 'brain' ? 'sparkles' : agent.id === 'codex' ? 'zap' : agent.id === 'claude' ? 'cpu' : 'branch'" />
             </div>
             <div class="agent-card-info">
               <div class="agent-card-name">{{ agent.name }}</div>
@@ -656,6 +722,18 @@
         </div>
         <div v-else-if="!isLoadingModels" class="models-empty-note">
           <span>Modèle par défaut actif ({{ currentSelectedModel || 'automatique' }}).</span>
+        </div>
+
+        <div v-if="currentModelEfforts.length > 1" style="margin-top: 14px;">
+          <div class="sheet-section-title">EFFORT DE RAISONNEMENT</div>
+          <div class="effort-pills-row">
+            <button v-for="eff in currentModelEfforts" :key="eff.reasoningEffort" type="button"
+              class="effort-pill-btn" :class="{ active: currentSelectedEffort === eff.reasoningEffort }"
+              @click="handleSelectModel(currentSelectedModel, eff.reasoningEffort)">
+              <strong>{{ eff.reasoningEffort.toUpperCase() }}</strong>
+              <small v-if="eff.description">{{ eff.description }}</small>
+            </button>
+          </div>
         </div>
       </div>
     </NexusSheet>
@@ -772,9 +850,14 @@ const currentView = ref<"home" | "workspace">("home");
 const workspaceMode = ref<"code" | "brain">("code");
 const lastCodingBackend = ref<"codex" | "antigravity" | "claude">("codex");
 const slideDirection = ref<"forward" | "backward">("forward");
-const settingsSection = ref<"connection" | "agent" | "voice" | "notifications" | "projects" | "quotas">("connection");
+const settingsSection = ref<"connection" | "agent" | "persona" | "voice" | "notifications" | "projects" | "quotas">("connection");
 const activeTab = ref<"chat" | "agent" | "activity" | "dashboard" | "system">("chat");
 const selectedBackend = ref<"codex" | "antigravity" | "claude" | "brain">("codex");
+
+function shortModelName(model: string): string {
+  if (!model) return "";
+  return model.replace(/^claude-/, "").replace(/^gemini-/, "").replace(/^(groq|gemini|mistral|openrouter|cerebras|ollama):/, "$1:");
+}
 
 function enterMode(mode: "code" | "brain") {
   workspaceMode.value = mode;
@@ -789,6 +872,7 @@ function enterMode(mode: "code" | "brain") {
   currentView.value = "workspace";
   activeTab.value = "chat";
   triggerHaptic("light");
+  void fetchModelsForBackend(selectedBackend.value);
   nextTick(() => {
     scrollToBottom();
     resizeComposer();
@@ -855,6 +939,11 @@ const settingsTab = ref('overview');
 function openConnectionSettings() {
   settingsSection.value = 'connection';
   showSettings.value = true;
+}
+function openPersonaSettings() {
+  settingsSection.value = 'persona';
+  showSettings.value = true;
+  void fetchPersonaAndMemory();
 }
 const usageDashboard = ref<RuntimeDashboard | null>(null);
 const dashboardLoading = ref(false);
@@ -1106,6 +1195,79 @@ const selectedModelLabel = computed(() => {
   const actual = usageDashboard.value?.agents.find(agent => agent.id === selectedBackend.value)?.model;
   return actual || currentBackendModels.value.find(model => model.model === currentSelectedModel.value)?.displayName || currentSelectedModel.value;
 });
+
+// Persona & Memory State (Upstash synced)
+const personaInput = ref<string>("");
+const projectPreferencesInput = ref<string>("");
+const projectMemoryInput = ref<string>("");
+const isLoadingPersona = ref<boolean>(false);
+const isSavingPersona = ref<boolean>(false);
+const personaStatusMsg = ref<string>("");
+
+async function fetchPersonaAndMemory() {
+  if (!coreUrl.value || !isNodeReady.value) return;
+  isLoadingPersona.value = true;
+  personaStatusMsg.value = "";
+  try {
+    const base = coreUrl.value.replace(/\/+$/, "");
+    const headers = getRequestHeaders();
+    const [personaRes, memRes] = await Promise.all([
+      fetch(`${base}/api/persona`, { headers }),
+      fetch(`${base}/api/projects/memory`, { headers }),
+    ]);
+    if (personaRes.ok) {
+      const pData = await personaRes.json();
+      personaInput.value = pData.persona || "";
+    }
+    if (memRes.ok) {
+      const mData = await memRes.json();
+      projectPreferencesInput.value = mData.projectPreferences || "";
+      projectMemoryInput.value = mData.memory || "";
+    }
+  } catch (err) {
+    console.warn("[Persona] Échec du chargement Persona/Mémoire:", err);
+  } finally {
+    isLoadingPersona.value = false;
+  }
+}
+
+async function savePersonaAndMemory() {
+  if (!coreUrl.value || isSavingPersona.value) return;
+  isSavingPersona.value = true;
+  personaStatusMsg.value = "";
+  try {
+    const base = coreUrl.value.replace(/\/+$/, "");
+    const headers = {
+      ...getRequestHeaders(),
+      "Content-Type": "application/json",
+    };
+    const [pRes, mRes] = await Promise.all([
+      fetch(`${base}/api/persona`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ persona: personaInput.value }),
+      }),
+      fetch(`${base}/api/projects/memory`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          preferences: projectPreferencesInput.value,
+          memory: projectMemoryInput.value,
+        }),
+      }),
+    ]);
+    if (pRes.ok && mRes.ok) {
+      personaStatusMsg.value = "✓ Sauvegardé et synchronisé sur Upstash";
+      triggerHaptic("success");
+    } else {
+      personaStatusMsg.value = "⚠ Erreur lors de la sauvegarde.";
+    }
+  } catch {
+    personaStatusMsg.value = "⚠ Impossible de joindre le serveur Nexus.";
+  } finally {
+    isSavingPersona.value = false;
+  }
+}
 
 async function sendQuickCommand(cmd: string) {
   if (isSending.value) return;
@@ -1958,8 +2120,11 @@ watch([coreUrl, authToken, () => primaryNode.value?.nodeId], () => {
   dashboardError.value = '';
   if ((showSettings.value || activeTab.value === 'agent') && isNodeReady.value) void fetchDashboard();
 });
-watch([showSettings, settingsTab, isNodeReady, activeTab], ([settings, tab, ready, view]) => {
-  if (ready && ((settings && tab === 'overview') || view === 'agent')) void fetchDashboard();
+watch([showSettings, settingsSection, isNodeReady, activeTab], ([settings, section, ready, view]) => {
+  if (!ready) return;
+  if ((settings && section === 'quotas') || view === 'agent') void fetchDashboard();
+  if (settings && section === 'persona') void fetchPersonaAndMemory();
+  if (settings && section === 'agent') void fetchModelsForBackend(selectedBackend.value);
 });
 
 const canSend = computed(() => {
