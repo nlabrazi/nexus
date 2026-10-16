@@ -15,9 +15,10 @@ describe('Claude Code Integration', () => {
     const service = new ClaudeCodeService();
     const models = await service.listModels();
     assert.ok(models.length >= 3);
-    assert.equal(models[0].id, 'claude-3-7-sonnet');
+    assert.equal(models[0].id, 'claude-sonnet-4-6');
     assert.equal(models[0].isDefault, true);
-    assert.ok(models.some((m) => m.id === 'claude-3-5-sonnet'));
+    assert.ok(models.some((m) => m.id === 'claude-opus-4-6'));
+    assert.ok(models.some((m) => m.id === 'claude-haiku-4-5'));
   });
 
   it('handles unauthenticated or missing credentials cleanly without throwing', async () => {

@@ -36,10 +36,31 @@ export class ClaudeCodeClient {
     prompt: string,
     workspacePath: string,
     onFilesChanged?: (paths: readonly string[]) => void,
-    onChunk?: (delta: string) => void
+    onChunk?: (delta: string) => void,
+    options?: {
+      model?: string;
+      effort?: string;
+      sessionId?: string;
+      onMetadata?: (meta: {
+        sessionId?: string;
+        inputTokens?: number;
+        outputTokens?: number;
+        cachedTokens?: number;
+        costUsd?: number;
+      }) => void;
+    }
   ): Promise<string> {
     return new Promise<string>((resolve, reject) => {
       const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose'];
+      if (options?.model) {
+        args.push('--model', options.model);
+      }
+      if (options?.effort) {
+        args.push('--effort', options.effort);
+      }
+      if (options?.sessionId) {
+        args.push('--resume', options.sessionId);
+      }
 
       const proc = spawn(this.binaryPath, args, {
         cwd: workspacePath,
@@ -55,6 +76,7 @@ export class ClaudeCodeClient {
       let resultText = '';
       let buffer = '';
       let isAuthError = false;
+      let capturedSessionId: string | undefined;
 
       proc.stdout.on('data', (chunk: Buffer) => {
         buffer += chunk.toString('utf8');
@@ -66,6 +88,10 @@ export class ClaudeCodeClient {
           if (!trimmed) continue;
           try {
             const event = JSON.parse(trimmed) as ClaudeStreamMessage;
+
+            if (event.session_id && typeof event.session_id === 'string') {
+              capturedSessionId = event.session_id;
+            }
 
             if (event.type === 'assistant' && event.message?.content) {
               for (const part of event.message.content) {
@@ -91,8 +117,19 @@ export class ClaudeCodeClient {
               }
             }
 
-            if (event.type === 'result' && event.result) {
-              resultText = event.result;
+            if (event.type === 'result') {
+              if (event.result) {
+                resultText = event.result;
+              }
+              const usage = event.usage;
+              options?.onMetadata?.({
+                sessionId: capturedSessionId,
+                inputTokens: usage?.input_tokens ?? 0,
+                outputTokens: usage?.output_tokens ?? 0,
+                cachedTokens:
+                  (usage?.cache_read_input_tokens ?? 0) + (usage?.cache_creation_input_tokens ?? 0),
+                costUsd: event.total_cost_usd ?? 0,
+              });
             }
 
             if (event.error === 'authentication_failed' || isAuthError) {
