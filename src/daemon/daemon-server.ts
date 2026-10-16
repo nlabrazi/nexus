@@ -680,6 +680,67 @@ export class NexusDaemonServer extends EventEmitter {
         return;
       }
 
+      // 3d. Voice Status & Server-Side STT Fallback (Groq Whisper)
+      if (pathname === '/api/voice/status' && method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            available: true,
+            provider: process.env.GROQ_API_KEY ? 'groq-whisper' : 'native-android',
+            language: 'fr',
+          })
+        );
+        return;
+      }
+
+      if (pathname === '/api/voice/transcribe' && method === 'POST') {
+        const body = JSON.parse(await this.readRequestBody(req));
+        const audioBase64 = typeof body.audioBase64 === 'string' ? body.audioBase64 : '';
+        const mimeType = typeof body.mimeType === 'string' ? body.mimeType : 'audio/webm';
+        if (!audioBase64) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Audio manquant' }));
+          return;
+        }
+        const groqKey = process.env.GROQ_API_KEY;
+        if (!groqKey) {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              error: 'GROQ_API_KEY non configurée sur le serveur pour la transcription cloud.',
+            })
+          );
+          return;
+        }
+        const rawBytes = Buffer.from(audioBase64, 'base64');
+        const ext = mimeType.includes('mp4')
+          ? 'm4a'
+          : mimeType.includes('ogg')
+            ? 'ogg'
+            : mimeType.includes('wav')
+              ? 'wav'
+              : 'webm';
+        const form = new FormData();
+        form.append('file', new Blob([rawBytes], { type: mimeType }), `speech.${ext}`);
+        form.append('model', 'whisper-large-v3-turbo');
+        form.append('language', typeof body.language === 'string' ? body.language : 'fr');
+        const whisperRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${groqKey}` },
+          body: form,
+        });
+        if (!whisperRes.ok) {
+          const errText = await whisperRes.text().catch(() => '');
+          res.writeHead(502, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: `Erreur transcription Whisper : ${errText}` }));
+          return;
+        }
+        const data = (await whisperRes.json()) as { text?: string };
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ text: (data.text ?? '').trim() }));
+        return;
+      }
+
       // 4. Models
       if (pathname === '/api/models' && method === 'GET') {
         const backendParam =
@@ -693,13 +754,23 @@ export class NexusDaemonServer extends EventEmitter {
       if (pathname === '/api/models/select' && method === 'POST') {
         const body = JSON.parse(await this.readRequestBody(req));
         const backend = (body.backend as TaskBackendType) || this.activeBackend;
-        const result = await this.runtime.selectModel(
+        const model = body.selection?.model || body.model;
+        const effort = body.selection?.effort ?? body.effort ?? '';
+        const context = typeof body.context === 'string' ? body.context : undefined;
+        if (!model || typeof model !== 'string') {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Nom du modèle requis' }));
+          return;
+        }
+        await this.runtime.selectModel(
           backend,
-          { model: body.model, effort: body.effort },
+          { model, effort },
+          context,
           this.activeProject.path
         );
+        const updatedMenu = await this.runtime.listModels(backend, this.activeProject.path);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(result));
+        res.end(JSON.stringify(updatedMenu));
         return;
       }
 
