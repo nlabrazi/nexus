@@ -40,6 +40,9 @@ export function brainSystemPrompt(
   const parts: string[] = [BRAIN_INSTRUCTIONS];
   if (project) {
     parts.push(`Contexte projet : ${project.name} (branche: ${project.branch ?? 'aucune'})`);
+    if (project.preferences) {
+      parts.push(`Persona & Directives du développeur :\n${project.preferences}`);
+    }
     if (project.decisionsSummary) {
       parts.push(`Décisions architecturales actives consignées :\n${project.decisionsSummary}`);
     }
