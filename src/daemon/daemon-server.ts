@@ -178,6 +178,14 @@ export class NexusDaemonServer extends EventEmitter {
   }
 
   async start(): Promise<void> {
+    try {
+      await this.storage.hydrateFromRemote?.();
+      this.loadSavedTasks();
+      this.runtime.getProjectMemory().readGlobalPersona();
+    } catch (err) {
+      logger.warn('Daemon', 'upstash_hydrate_failed', { status: 'failed' }, err);
+    }
+
     const server = createServer(async (req, res) => {
       await this.handleHttpRequest(req, res);
     });
@@ -586,6 +594,17 @@ export class NexusDaemonServer extends EventEmitter {
         return;
       }
 
+      // 3b. Dashboard & Quotas
+      if (pathname === '/api/dashboard' && method === 'GET') {
+        const dashboard = await this.runtime.getDashboard();
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+        });
+        res.end(JSON.stringify(dashboard));
+        return;
+      }
+
       // 3c. Global Persona & Project Memory (Upstash-backed)
       if (pathname === '/api/persona' && method === 'GET') {
         const mem = this.runtime.getProjectMemory();
@@ -775,6 +794,24 @@ export class NexusDaemonServer extends EventEmitter {
       }
 
       // 4b. Persistent Sessions & History
+      if (pathname === '/api/sessions/reset' && method === 'POST') {
+        const rawBody = await this.readRequestBody(req);
+        const body = rawBody ? JSON.parse(rawBody) : {};
+        const backend = (body.backend as TaskBackendType) || this.activeBackend;
+        const sessionId = await this.runtime.handleSessionAction(
+          backend,
+          { type: 'new' },
+          this.activeProject.path
+        );
+        if (body.clearHistory) {
+          this.tasks.clear();
+          this.persistTasks();
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', backend, sessionId }));
+        return;
+      }
+
       if (pathname === '/api/sessions' && method === 'GET') {
         const queryProject = url.searchParams.get('project') || url.searchParams.get('projectId');
         let list = [...this.tasks.values()].reverse();
@@ -863,6 +900,10 @@ export class NexusDaemonServer extends EventEmitter {
 
         const taskId = body.taskId || `task-${Date.now()}`;
         const backend = (body.backend as TaskBackendType) || this.activeBackend;
+        if (backend === 'codex' || backend === 'antigravity' || backend === 'claude') {
+          this.activeBackend = backend;
+          this.runtime.setActiveBackend(backend);
+        }
         let targetPath = this.activeProject.path;
         if (body.projectId) {
           const rawId = String(body.projectId).trim();
@@ -921,23 +962,30 @@ export class NexusDaemonServer extends EventEmitter {
 
         const runTask = async (): Promise<DaemonTaskRecord> => {
           try {
-            const result = await this.runtime.executeTask(backend, body.prompt, {
-              targetPath,
-              signal: abortController.signal,
-              onChunk: (delta) => {
-                taskRecord.text = (taskRecord.text || '') + delta;
-                taskRecord.replyText = taskRecord.text;
-                this.broadcastWs('task:chunk', {
-                  taskId,
-                  delta,
-                  text: taskRecord.text,
+            const slashReply = await this.tryExecuteSlashCommand(
+              String(body.prompt),
+              backend,
+              targetPath
+            );
+            const result = slashReply
+              ? { text: slashReply }
+              : await this.runtime.executeTask(backend, body.prompt, {
+                  targetPath,
+                  signal: abortController.signal,
+                  onChunk: (delta) => {
+                    taskRecord.text = (taskRecord.text || '') + delta;
+                    taskRecord.replyText = taskRecord.text;
+                    this.broadcastWs('task:chunk', {
+                      taskId,
+                      delta,
+                      text: taskRecord.text,
+                    });
+                  },
+                  onFilesChanged: (files) => {
+                    taskRecord.filesChanged = files;
+                    this.broadcastWs('task:progress', { taskId, filesChanged: files });
+                  },
                 });
-              },
-              onFilesChanged: (files) => {
-                taskRecord.filesChanged = files;
-                this.broadcastWs('task:progress', { taskId, filesChanged: files });
-              },
-            });
 
             taskRecord.status = 'completed';
             taskRecord.completedAt = Date.now();
@@ -948,11 +996,13 @@ export class NexusDaemonServer extends EventEmitter {
             this.persistTasks();
 
             this.broadcastWs('task:completed', { ...taskRecord });
-            void this.fcmService.sendPush({
-              title: 'Nexus : Tâche terminée ✅',
-              body: taskRecord.fileSummary || 'La tâche demandée a été exécutée avec succès.',
-              data: { taskId, type: 'task_completed' },
-            });
+            if (!slashReply) {
+              void this.fcmService.sendPush({
+                title: 'Nexus : Tâche terminée ✅',
+                body: taskRecord.fileSummary || 'La tâche demandée a été exécutée avec succès.',
+                data: { taskId, type: 'task_completed' },
+              });
+            }
             return taskRecord;
           } catch (err: unknown) {
             const message = err instanceof Error ? err.message : String(err);
@@ -1118,6 +1168,146 @@ export class NexusDaemonServer extends EventEmitter {
     }
 
     return projects;
+  }
+
+  private async tryExecuteSlashCommand(
+    rawPrompt: string,
+    backend: TaskBackendType,
+    targetPath: string
+  ): Promise<string | undefined> {
+    const trimmed = rawPrompt.trim();
+    if (!trimmed.startsWith('/')) {
+      return undefined;
+    }
+
+    const [cmdRaw, ...rest] = trimmed.split(/\s+/);
+    const cmd = cmdRaw.toLowerCase();
+    const argText = rest.join(' ').trim();
+
+    if (cmd === '/new' || cmd === '/reset' || cmd === '/clear') {
+      const sessionId = await this.runtime.handleSessionAction(
+        backend,
+        { type: 'new' },
+        targetPath
+      );
+      return `✨ **Nouvelle session initialisée** sur \`${basename(targetPath)}\` (${backend.toUpperCase()} · session \`${sessionId}\`).`;
+    }
+
+    if (cmd === '/resume' && argText) {
+      const sessionId = await this.runtime.handleSessionAction(
+        backend,
+        { type: 'resume', sessionId: argText },
+        targetPath
+      );
+      return `🔄 **Session reprise** : \`${sessionId}\` (${backend.toUpperCase()}).`;
+    }
+
+    if (cmd === '/branches') {
+      return await this.runtime.handleBranchAction({ type: 'list' }, targetPath);
+    }
+
+    if (cmd === '/switch' && argText) {
+      return await this.runtime.handleBranchAction({ type: 'switch', name: argText }, targetPath);
+    }
+
+    if (cmd === '/status') {
+      const status = await this.runtime.getStatus(targetPath);
+      const branches = await this.runtime.listBranches(targetPath).catch(() => []);
+      const currentBranch = branches.find((b) => b.current)?.name ?? 'aucune';
+      const codexModel =
+        status.codex?.reroutedModel ??
+        status.codex?.model ??
+        status.codex?.modelSelection?.model ??
+        'gpt-5.4';
+      const agyModel =
+        status.antigravity?.model ??
+        status.antigravity?.modelSelection?.model ??
+        'gemini-3.8-flash-high';
+      const claudeStatus = this.runtime.getClaudeService().getStatus();
+
+      return [
+        `### 📊 Statut Nexus Daemon`,
+        `- **Dossier actif** : \`${targetPath}\` (branche \`${currentBranch}\`)`,
+        `- **Agent sélectionné** : \`${backend.toUpperCase()}\``,
+        `- **Codex** : ${status.codex?.sessionActive ? '🟢 Session active' : '⚪ Prêt'} · Modèle \`${codexModel}\``,
+        `- **Antigravity** : ${status.antigravity?.sessionActive ? '🟢 Session active' : '⚪ Prêt'} · Modèle \`${agyModel}\``,
+        `- **Claude Code** : ${claudeStatus.available ? '🟢 CLI installé' : '🔴 Absent'} · Modèle \`${claudeStatus.model ?? 'claude-sonnet-4-6'}\``,
+        `- **Brain** : Fournisseur \`${status.brain?.provider ?? 'auto'}\` (${status.brain?.model ?? 'routé'})`,
+      ].join('\n');
+    }
+
+    if (cmd === '/usage' || cmd === '/quota' || cmd === '/quotas') {
+      const dash = await this.runtime.getDashboard();
+      const lines: string[] = ['### 📈 Consommation & Quotas Nexus'];
+
+      for (const agent of dash.agents) {
+        const label =
+          agent.id === 'codex'
+            ? 'Codex (OpenAI)'
+            : agent.id === 'antigravity'
+              ? 'Antigravity (Gemini / Claude)'
+              : 'Claude Code (Anthropic)';
+        const tokStr =
+          agent.totalTokens !== undefined
+            ? `${agent.totalTokens.toLocaleString('fr-FR')} tokens`
+            : '0 token mesuré sur cette session';
+        const costStr = agent.costUsd !== undefined ? ` · Coût : $${agent.costUsd.toFixed(4)}` : '';
+        lines.push(`\n**${label}** — Modèle : \`${agent.model ?? 'défaut'}\``);
+        lines.push(`- Consommation : **${tokStr}**${costStr}`);
+        if (agent.limits.length > 0) {
+          for (const lim of agent.limits) {
+            const rem = lim.remaining !== undefined ? `${Math.round(lim.remaining)}% restant` : '';
+            const reset = lim.resetsAt
+              ? ` (reset à ${new Date(lim.resetsAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})`
+              : '';
+            lines.push(`- ${lim.label} : **${rem}**${reset}`);
+          }
+        }
+      }
+
+      if (dash.brain.providers.length > 0) {
+        lines.push(`\n**Nexus Brain** (sélection : \`${dash.brain.selection}\`)`);
+        for (const p of dash.brain.providers.filter((pr) => pr.configured)) {
+          lines.push(
+            `- **${p.provider}** (\`${p.actualModel || p.model}\`) : ${p.requests} req · ${p.totalTokens.toLocaleString('fr-FR')} tokens`
+          );
+        }
+      }
+      return lines.join('\n');
+    }
+
+    if (cmd === '/persona') {
+      const mem = this.runtime.getProjectMemory();
+      if (argText) {
+        mem.setGlobalPersona(argText);
+        return `✅ **Persona global mis à jour dans Upstash** :\n\n${argText}`;
+      }
+      const current = mem.readGlobalPersona();
+      return `### 🧠 Persona Global (Upstash)\n\n${current || '*(Aucun persona défini)*'}\n\n*Astuce : modifiez-le dans Paramètres → Persona & Mémoire ou via \`/persona <directives>\`.*`;
+    }
+
+    if (cmd === '/memory') {
+      const mem = this.runtime.getProjectMemory();
+      const formatted = mem.formatActiveDecisions(targetPath);
+      return formatted
+        ? `### 🗂️ Décisions Architecturales (\`${basename(targetPath)}\`)\n\n${formatted}`
+        : `Aucune décision architecturale enregistrée pour \`${basename(targetPath)}\`.`;
+    }
+
+    if (cmd === '/help') {
+      return [
+        '### 🛠️ Commandes Nexus disponibles',
+        '- `/new` ou `/reset` : Démarrer une nouvelle session propre (Code ou Brain)',
+        '- `/status` : Afficher l’état du projet, de la branche Git et des agents',
+        '- `/usage` ou `/quotas` : Afficher les quotas temps réel et tokens consommés',
+        '- `/branches` : Lister les branches Git du projet',
+        '- `/switch <branche>` : Changer de branche Git',
+        '- `/persona` : Afficher ou modifier le Persona global stocké dans Upstash',
+        '- `/memory` : Afficher la mémoire de décisions du projet actif',
+      ].join('\n');
+    }
+
+    return undefined;
   }
 
   private readRequestBody(req: IncomingMessage): Promise<string> {
