@@ -33,10 +33,14 @@ export interface BrainDashboard {
   providers: ProviderUsage[];
 }
 export interface AgentDashboard {
-  id: 'codex' | 'antigravity';
+  id: 'codex' | 'antigravity' | 'claude';
   state: 'running' | 'ready' | 'stopped';
   model?: string;
   totalTokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+  costUsd?: number;
   limits: QuotaMetric[];
   observedAt?: number;
 }
