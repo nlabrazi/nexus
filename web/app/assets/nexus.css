@@ -3190,3 +3190,60 @@ body {
   transform: rotate(180deg);
 }
 
+/* Active model badge inside header agent pill */
+.pill-model-name {
+  font-size: 10px;
+  color: var(--accent);
+  opacity: 0.85;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Reasoning Effort Pills */
+.effort-pills-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.effort-pill-btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--muted-light);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line-dim);
+  cursor: pointer;
+  min-height: 34px;
+  transition: all 0.18s ease;
+}
+.effort-pill-btn:hover {
+  border-color: var(--accent);
+  color: var(--text-bright);
+}
+.effort-pill-btn.active {
+  color: #040508;
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.35);
+}
+
+.model-effort-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: rgba(0, 240, 255, 0.12);
+  border: 1px solid rgba(0, 240, 255, 0.25);
+}
+

@@ -1066,13 +1066,16 @@ interface ModelItem {
   model: string;
   displayName: string;
   description?: string;
+  context?: string;
+  supportedReasoningEfforts?: Array<{ reasoningEffort: string; description: string }>;
+  defaultReasoningEffort?: string;
 }
 
-const agentModels = ref<Record<string, { models: ModelItem[]; selected?: string }>>({
-  brain: { models: [], selected: "" },
-  codex: { models: [], selected: "" },
-  antigravity: { models: [], selected: "" },
-  claude: { models: [], selected: "" },
+const agentModels = ref<Record<string, { models: ModelItem[]; selected?: string; selectedEffort?: string }>>({
+  brain: { models: [], selected: "", selectedEffort: "" },
+  codex: { models: [], selected: "", selectedEffort: "high" },
+  antigravity: { models: [], selected: "", selectedEffort: "" },
+  claude: { models: [], selected: "claude-sonnet-4-6", selectedEffort: "high" },
 });
 const isLoadingModels = ref<boolean>(false);
 
@@ -1082,6 +1085,17 @@ const currentBackendModels = computed(() => {
 
 const currentSelectedModel = computed(() => {
   return agentModels.value[selectedBackend.value]?.selected || "";
+});
+
+const currentSelectedEffort = computed(() => {
+  return agentModels.value[selectedBackend.value]?.selectedEffort || "high";
+});
+
+const currentModelEfforts = computed(() => {
+  const m = currentBackendModels.value.find(
+    (item) => item.model === currentSelectedModel.value || item.id === currentSelectedModel.value
+  );
+  return m?.supportedReasoningEfforts || [];
 });
 
 const selectedModelLabel = computed(() => {
@@ -1145,7 +1159,9 @@ async function fetchModelsForBackend(backend: "brain" | "codex" | "antigravity" 
         agentModels.value[backend] = {
           models: data.models,
           selected:
-            data.selected?.model || agentModels.value[backend].selected || data.models[0]?.model,
+            data.selected?.model || agentModels.value[backend]?.selected || data.models[0]?.model,
+          selectedEffort:
+            data.selected?.effort || agentModels.value[backend]?.selectedEffort || data.models[0]?.defaultReasoningEffort || "high",
         };
       }
     }
@@ -1164,13 +1180,21 @@ async function handleSelectBackend(backend: "brain" | "codex" | "antigravity" | 
     workspaceMode.value = "code";
     lastCodingBackend.value = backend;
   }
-  triggerHaptic("light");
+  triggerHaptic("release");
   await fetchModelsForBackend(backend);
 }
 
-async function handleSelectModel(modelName: string) {
-  if (!coreUrl.value) return;
+async function handleSelectModel(modelName: string, effort?: string) {
+  if (!coreUrl.value || !modelName) return;
   const backend = selectedBackend.value;
+  const foundModel = (agentModels.value[backend]?.models || []).find(
+    (m) => m.model === modelName || m.id === modelName
+  );
+  const resolvedEffort =
+    effort ||
+    agentModels.value[backend]?.selectedEffort ||
+    foundModel?.defaultReasoningEffort ||
+    undefined;
   try {
     const headers = getRequestHeaders();
     headers["Content-Type"] = "application/json";
@@ -1179,13 +1203,23 @@ async function handleSelectModel(modelName: string) {
       headers,
       body: JSON.stringify({
         backend,
-        selection: { model: modelName },
+        model: modelName,
+        context: foundModel?.context,
+        effort: resolvedEffort,
+        selection: {
+          model: modelName,
+          context: foundModel?.context,
+          effort: resolvedEffort,
+        },
       }),
     });
     if (res.ok) {
       agentModels.value[backend].selected = modelName;
+      if (resolvedEffort) {
+        agentModels.value[backend].selectedEffort = resolvedEffort;
+      }
       void fetchDashboard();
-      triggerHaptic("medium");
+      triggerHaptic("press");
     } else {
       errorMessage.value = "Impossible de sélectionner ce modèle. Vérifiez sa configuration sur le poste Nexus.";
     }
