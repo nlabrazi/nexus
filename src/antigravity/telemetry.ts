@@ -121,12 +121,15 @@ export function parseModelsOutput(raw: string): AntigravityModel[] {
     }
 
     const isDefault = modelId === 'gemini-3.8-flash-high' || models.length === 0;
+    const providerLabel = modelId.startsWith('claude')
+      ? 'Modèle Anthropic via Antigravity'
+      : 'Modèle Gemini Antigravity';
 
     models.push({
       id: modelId,
       model: modelId,
       displayName,
-      description: `Modèle Gemini Antigravity : ${displayName}`,
+      description: `${providerLabel} : ${displayName}`,
       hidden: false,
       isDefault,
       defaultReasoningEffort: defaultEffort,
