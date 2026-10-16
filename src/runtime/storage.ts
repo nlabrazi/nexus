@@ -190,6 +190,26 @@ export class UpstashStorage implements KeyValueStorage {
     return this.store.get(key);
   }
 
+  async listRemoteKeys(): Promise<string[]> {
+    const pattern = encodeURIComponent(`${this.prefix}*`);
+    try {
+      const res = await this.fetchFn(`${this.url}/keys/${pattern}`, {
+        headers: { Authorization: `Bearer ${this.token}` },
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { result?: string[] | null };
+        if (Array.isArray(data.result)) {
+          return data.result
+            .filter((k): k is string => typeof k === 'string')
+            .map((k) => (k.startsWith(this.prefix) ? k.slice(this.prefix.length) : k));
+        }
+      }
+    } catch (err) {
+      logger.warn('Storage', 'upstash_keys_failed', { status: 'failed', provider: 'upstash' }, err);
+    }
+    return [];
+  }
+
   keys(): string[] {
     return Array.from(this.store.keys());
   }
@@ -206,7 +226,7 @@ export class HybridStorage implements KeyValueStorage {
   ) {}
 
   get(key: string): unknown {
-    return this.local.get(key);
+    return this.local.get(key) ?? this.remote.get(key);
   }
 
   async update(key: string, value: unknown): Promise<void> {
@@ -214,8 +234,36 @@ export class HybridStorage implements KeyValueStorage {
     void this.remote.update(key, value).catch(() => {});
   }
 
+  async syncKey(key: string): Promise<unknown> {
+    const remoteVal = await this.remote.syncKey(key);
+    if (remoteVal !== undefined) {
+      await this.local.update(key, remoteVal);
+      return remoteVal;
+    }
+    return this.local.get(key);
+  }
+
+  async hydrateFromRemote(): Promise<void> {
+    const remoteKeys = await this.remote.listRemoteKeys();
+    const remoteSet = new Set(remoteKeys);
+    for (const key of remoteKeys) {
+      const val = await this.remote.syncKey(key);
+      if (val !== undefined) {
+        await this.local.update(key, val);
+      }
+    }
+    for (const localKey of this.local.keys()) {
+      if (!remoteSet.has(localKey)) {
+        const localVal = this.local.get(localKey);
+        if (localVal !== undefined) {
+          await this.remote.update(localKey, localVal);
+        }
+      }
+    }
+  }
+
   keys(): string[] {
-    return this.local.keys();
+    return Array.from(new Set([...this.local.keys(), ...this.remote.keys()]));
   }
 
   getLocal(): FileStorage | MemoryStorage {

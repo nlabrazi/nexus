@@ -51,6 +51,8 @@ export type RuntimeApprovalHandler = (
 export interface KeyValueStorage {
   get(key: string): unknown;
   update(key: string, value: unknown): PromiseLike<void>;
+  syncKey?(key: string): Promise<unknown>;
+  hydrateFromRemote?(): Promise<void>;
 }
 
 import { CodingAgentProjectSummary } from '../conversational/tools';
