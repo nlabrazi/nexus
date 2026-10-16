@@ -586,6 +586,100 @@ export class NexusDaemonServer extends EventEmitter {
         return;
       }
 
+      // 3c. Global Persona & Project Memory (Upstash-backed)
+      if (pathname === '/api/persona' && method === 'GET') {
+        const mem = this.runtime.getProjectMemory();
+        const projectPath = url.searchParams.get('path')
+          ? this.jail.resolveSafePath(url.searchParams.get('path')!)
+          : this.activeProject.path;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            persona: mem.readGlobalPersona(),
+            projectPreferences: mem.readProjectPreferencesOnly(projectPath),
+            projectMemory: mem.readMemory(projectPath),
+            decisions: mem.listDecisions(projectPath),
+            activeProject: this.activeProject,
+          })
+        );
+        return;
+      }
+
+      if (pathname === '/api/persona' && method === 'POST') {
+        const body = JSON.parse(await this.readRequestBody(req));
+        const mem = this.runtime.getProjectMemory();
+        const projectPath = body.projectPath
+          ? this.jail.resolveSafePath(String(body.projectPath))
+          : this.activeProject.path;
+
+        if (typeof body.persona === 'string') {
+          mem.setGlobalPersona(body.persona);
+        }
+        if (typeof body.projectPreferences === 'string') {
+          mem.setPreferences(projectPath, body.projectPreferences);
+        }
+        if (typeof body.projectMemory === 'string') {
+          mem.setRawMemory(projectPath, body.projectMemory);
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            status: 'ok',
+            persona: mem.readGlobalPersona(),
+            projectPreferences: mem.readProjectPreferencesOnly(projectPath),
+            projectMemory: mem.readMemory(projectPath),
+            decisions: mem.listDecisions(projectPath),
+          })
+        );
+        return;
+      }
+
+      if (pathname === '/api/projects/memory' && method === 'GET') {
+        const projectPath = url.searchParams.get('path')
+          ? this.jail.resolveSafePath(url.searchParams.get('path')!)
+          : this.activeProject.path;
+        const snapshot = this.runtime.getProjectMemorySnapshot(projectPath);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(snapshot));
+        return;
+      }
+
+      if (pathname === '/api/projects/memory' && method === 'POST') {
+        const body = JSON.parse(await this.readRequestBody(req));
+        const projectPath = body.projectPath
+          ? this.jail.resolveSafePath(String(body.projectPath))
+          : this.activeProject.path;
+        if (typeof body.rawContent === 'string') {
+          this.runtime.getProjectMemory().setRawMemory(projectPath, body.rawContent);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(this.runtime.getProjectMemorySnapshot(projectPath)));
+          return;
+        }
+        const decision = this.runtime.recordProjectDecision(
+          {
+            title: String(body.title ?? ''),
+            decision: String(body.decision ?? ''),
+            context: typeof body.context === 'string' ? body.context : undefined,
+            status: body.status,
+          },
+          projectPath
+        );
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(decision));
+        return;
+      }
+
+      if (pathname === '/api/projects/memory' && method === 'DELETE') {
+        const projectPath = url.searchParams.get('path')
+          ? this.jail.resolveSafePath(url.searchParams.get('path')!)
+          : this.activeProject.path;
+        this.runtime.clearProjectMemory(projectPath);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', cleared: true }));
+        return;
+      }
+
       // 4. Models
       if (pathname === '/api/models' && method === 'GET') {
         const backendParam =
