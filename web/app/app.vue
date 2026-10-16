@@ -878,6 +878,7 @@ let clockTimer: ReturnType<typeof setInterval> | null = null;
 // Chat State
 const inputPrompt = ref<string>("");
 const draftFromVoice = ref(false);
+const voiceTaskIds = new Set<string>();
 watch(inputPrompt, (text) => { if (!text.trim()) draftFromVoice.value = false; }, { flush: "sync" });
 const isSending = ref<boolean>(false);
 const inFlightStartedAt = ref<number | null>(null);
@@ -1349,6 +1350,8 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
       const payload = data.payload;
       if (payload?.taskId) {
         const text = payload.replyText || payload.text;
+        const wasFromVoice = voiceTaskIds.has(payload.taskId) || draftFromVoice.value;
+        voiceTaskIds.delete(payload.taskId);
         const existingMsg = messages.value.find((m) => m.id === `asst-${payload.taskId}`);
         if (existingMsg) {
           if (text) existingMsg.text = text;
@@ -1359,7 +1362,7 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
             shouldSpeakReply({
               enabled: ttsEnabled.value,
               autoSpeak: autoSpeak.value,
-              fromVoice: draftFromVoice.value,
+              fromVoice: wasFromVoice,
               error: false,
             })
           ) {
@@ -1381,7 +1384,7 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
             shouldSpeakReply({
               enabled: ttsEnabled.value,
               autoSpeak: autoSpeak.value,
-              fromVoice: draftFromVoice.value,
+              fromVoice: wasFromVoice,
               error: false,
             })
           ) {
@@ -2232,6 +2235,9 @@ async function sendPrompt(promptText: string, fromVoice = false) {
   const backend = selectedBackend.value;
   const generatedTaskId = `task-${Date.now()}`;
   currentInFlightTaskId.value = generatedTaskId;
+  if (fromVoice) {
+    voiceTaskIds.add(generatedTaskId);
+  }
 
   const userMsgId = `user-${Date.now()}`;
   const userMsg: ChatMessage = {
@@ -2312,6 +2318,7 @@ async function sendPrompt(promptText: string, fromVoice = false) {
       saveMessages();
     }
   } finally {
+    voiceTaskIds.delete(generatedTaskId);
     isSending.value = false;
     inFlightStartedAt.value = null;
     inFlightBackend.value = null;
