@@ -1107,6 +1107,12 @@ const selectedModelLabel = computed(() => {
   return actual || currentBackendModels.value.find(model => model.model === currentSelectedModel.value)?.displayName || currentSelectedModel.value;
 });
 
+async function sendQuickCommand(cmd: string) {
+  if (isSending.value) return;
+  triggerHaptic("release");
+  await sendPrompt(cmd, false);
+}
+
 function handleSettingsTabKey(event: KeyboardEvent) {
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
   event.preventDefault();
@@ -2366,11 +2372,22 @@ async function sendPrompt(promptText: string, fromVoice = false) {
 }
 
 function clearChat() {
-  if (confirm("Voulez-vous effacer l’historique de conversation ?")) {
+  if (confirm("Voulez-vous effacer l’historique de conversation et réinitialiser la session active ?")) {
     messages.value = [];
     lastTaskFailed.value = false;
     if (typeof window !== "undefined") {
       localStorage.removeItem("nexus_brain_messages");
+    }
+    if (coreUrl.value && isNodeReady.value) {
+      const headers = {
+        ...getRequestHeaders(),
+        "Content-Type": "application/json",
+      };
+      fetch(`${coreUrl.value.replace(/\/+$/, "")}/api/sessions/reset`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ backend: selectedBackend.value }),
+      }).catch(() => {});
     }
   }
 }

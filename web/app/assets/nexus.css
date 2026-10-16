@@ -3247,3 +3247,44 @@ body {
   border: 1px solid rgba(0, 240, 255, 0.25);
 }
 
+/* Quick Slash Commands Bar above Composer */
+.cyber-slash-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  max-width: 680px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+.cyber-slash-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.slash-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted-light);
+  background: rgba(12, 16, 23, 0.85);
+  border: 1px solid var(--line-dim);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.18s ease;
+  min-height: 28px;
+}
+.slash-chip:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: rgba(0, 240, 255, 0.35);
+  background: rgba(0, 240, 255, 0.08);
+}
+.slash-chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
