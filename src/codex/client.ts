@@ -52,7 +52,9 @@ export class CodexClient {
   ) {
     this.approvals = new CodexApprovals(
       (message) => {
-        this.resetTurnTimeout?.();
+        if ((message.result as { decision?: string } | undefined)?.decision === 'accept') {
+          this.resetTurnTimeout?.();
+        }
         this.write(message);
       },
       options?.restrictedProfile ? undefined : approvalHandler
@@ -664,7 +666,7 @@ export class CodexClient {
           if (settled) {
             return;
           }
-          if (this.approvals.getPendingCount() > 0) {
+          if (this.approvals.getPendingCount() > 0 && this.options?.turnTimeoutHandler) {
             scheduleTimeout();
             return;
           }
@@ -869,7 +871,9 @@ export class CodexClient {
 
       // Requête envoyée PAR Codex vers Nexus.
       if (message.method && message.id !== undefined) {
-        this.resetTurnTimeout?.();
+        if (this.options?.turnTimeoutHandler) {
+          this.resetTurnTimeout?.();
+        }
         this.approvals.handleRequest({
           id: message.id,
           method: message.method,

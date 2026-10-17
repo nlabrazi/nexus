@@ -584,6 +584,11 @@
           </div>
           <p v-else style="font-size: 12px; color: var(--muted); padding: 8px 0;">Aucune tâche récente enregistrée.</p>
         </div>
+
+        <footer class="system-footer" style="margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line-dim);">
+          NEXUS MOBILE // v{{ APP_VERSION }}
+          <span>Build #{{ APP_BUILD }} · Release APK versionnée</span>
+        </footer>
       </div>
     </NexusSheet>
 
@@ -789,6 +794,7 @@ import { createSpeechPlayback } from "./utils/speech-playback.mjs";
 import { cleanTextForSpeech } from "./utils/speech-text.mjs";
 import { getAssistantState, assistantStateLabels, getInteractionMessage } from "./utils/assistant-state.mjs";
 import { parseApprovalDetails } from "./utils/approval-parser.mjs";
+import { APP_VERSION, APP_BUILD } from "./utils/app-version.mjs";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
 import { LocalNotifications } from "@capacitor/local-notifications";

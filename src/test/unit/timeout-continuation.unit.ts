@@ -121,6 +121,7 @@ suite('Agent turn timeout continuation integration', () => {
       const approvalDecision = deferred<'accept' | 'decline'>();
       const client = new CodexClient(async () => approvalDecision.promise, {
         turnTimeoutMs: 10_000,
+        turnTimeoutHandler: async () => false,
       });
       t.after(() => client.stop());
       await client.start();
