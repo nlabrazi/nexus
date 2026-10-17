@@ -818,15 +818,20 @@ interface RemoteTaskItem {
   createdAt: number;
   startedAt?: number;
   completedAt?: number;
+  replyText?: string;
+  text?: string;
+  fileSummary?: string;
   result?: {
     text?: string;
     fileSummary?: string;
     filesChanged?: string[];
   };
-  error?: {
-    code?: string;
-    message?: string;
-  };
+  error?:
+    | string
+    | {
+        code?: string;
+        message?: string;
+      };
 }
 
 interface PendingApprovalItem {
@@ -835,6 +840,7 @@ interface PendingApprovalItem {
   nodeId: string;
   agentName: string;
   kind: "command" | "fileChange" | "consent";
+  toolName?: string;
   details: string;
   expiresAt: number;
   createdAt: number;
@@ -1593,10 +1599,13 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
             speakMessage(assistantMsg.text, assistantMsg.id);
           }
         }
-        void sendSystemNotification(
-          "Nexus : Tâche terminée ✅",
-          payload?.summary || "La tâche demandée a été exécutée avec succès."
-        );
+        if (!notifiedTaskIds.has(payload.taskId)) {
+          notifiedTaskIds.add(payload.taskId);
+          void sendSystemNotification(
+            "Nexus : Tâche terminée ✅",
+            payload?.fileSummary || payload?.summary || "La tâche demandée a été exécutée avec succès."
+          );
+        }
         if (currentInFlightTaskId.value === payload.taskId) {
           isSending.value = false;
           inFlightStartedAt.value = null;
@@ -1613,21 +1622,26 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
       const payload = data.payload;
       if (payload?.taskId) {
         lastTaskFailed.value = true;
-        const errorMsg: ChatMessage = {
-          id: `err-${payload.taskId}`,
-          role: "assistant",
-          backend: selectedBackend.value,
-          text: `Erreur : ${payload.error || "Échec de la tâche"}`,
-          timestamp: Date.now(),
-          error: true,
-        };
-        messages.value.push(errorMsg);
-        saveMessages();
-        scrollToBottom();
-        void sendSystemNotification(
-          "Nexus : Tâche échouée ❌",
-          payload.error || "Une erreur est survenue lors de l'exécution."
-        );
+        if (!messages.value.some((m) => m.id === `err-${payload.taskId}`)) {
+          const errorMsg: ChatMessage = {
+            id: `err-${payload.taskId}`,
+            role: "assistant",
+            backend: selectedBackend.value,
+            text: `Erreur : ${payload.error || "Échec de la tâche"}`,
+            timestamp: Date.now(),
+            error: true,
+          };
+          messages.value.push(errorMsg);
+          saveMessages();
+          scrollToBottom();
+        }
+        if (!notifiedTaskIds.has(payload.taskId)) {
+          notifiedTaskIds.add(payload.taskId);
+          void sendSystemNotification(
+            "Nexus : Tâche échouée ❌",
+            payload.error || "Une erreur est survenue lors de l'exécution."
+          );
+        }
         if (currentInFlightTaskId.value === payload.taskId) {
           isSending.value = false;
           inFlightStartedAt.value = null;
@@ -1667,13 +1681,7 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
         if (typeof navigator !== "undefined" && "vibrate" in navigator) {
           navigator.vibrate([120, 60, 120]);
         }
-        void sendSystemNotification(
-          `Nexus : Approbation requise (${item.toolName || "Action"})`,
-          item.toolName === "ask_question"
-            ? "L'agent vous pose une question."
-            : `L'agent demande à exécuter : ${item.toolName || "action sensible"}`,
-          { approvalId: item.approvalId }
-        );
+        notifyApprovalIfNeeded(item);
       }
       break;
     }
@@ -1695,6 +1703,39 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
       break;
     }
   }
+}
+
+const notifiedApprovalIds = new Set<string>();
+const notifiedTaskIds = new Set<string>();
+
+function notifyApprovalIfNeeded(item: Partial<PendingApprovalItem> & { approvalId?: string }) {
+  if (!item?.approvalId || notifiedApprovalIds.has(item.approvalId)) {
+    return;
+  }
+  notifiedApprovalIds.add(item.approvalId);
+
+  let toolLabel = item.toolName || item.kind || "Action";
+  let bodyText =
+    toolLabel === "ask_question"
+      ? "L'agent vous pose une question."
+      : `L'agent demande à exécuter : ${toolLabel}`;
+  if (typeof item.details === "string" && item.details.trim()) {
+    try {
+      const parsed = JSON.parse(item.details);
+      if (parsed?.toolName) toolLabel = parsed.toolName;
+      if (parsed?.CommandLine) bodyText = `Commande : ${parsed.CommandLine}`;
+      else if (parsed?.TargetFile) bodyText = `Fichier : ${parsed.TargetFile}`;
+      else if (parsed?.question) bodyText = String(parsed.question);
+    } catch {
+      bodyText = item.details.slice(0, 140);
+    }
+  }
+
+  void sendSystemNotification(
+    `Nexus : Approbation requise (${toolLabel})`,
+    bodyText,
+    { approvalId: item.approvalId }
+  );
 }
 
 function connectWebSocket() {
@@ -1941,6 +1982,7 @@ onMounted(async () => {
       e.preventDefault();
       deferredPrompt.value = e;
     });
+    document.addEventListener("visibilitychange", handleVisibilityChange);
   }
 
   fetchStatus();
@@ -1962,8 +2004,18 @@ onMounted(async () => {
   }, 1000);
 });
 
+function handleVisibilityChange() {
+  if (typeof document !== "undefined" && document.visibilityState === "visible") {
+    connectWebSocket();
+    void fetchStatus(true);
+    void fetchTasks(true);
+    void fetchApprovals(true);
+  }
+}
+
 onUnmounted(() => {
   window.visualViewport?.removeEventListener("resize", syncViewport);
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
   document.documentElement.style.removeProperty("--app-height");
   dashboardController?.abort();
   if (pollTimer) clearInterval(pollTimer);
@@ -2295,6 +2347,86 @@ async function fetchTasks(background = false) {
       const data = await res.json();
       if (Array.isArray(data)) {
         tasks.value = data;
+        const activeId = currentInFlightTaskId.value;
+        if (activeId) {
+          const tracked = data.find((t: RemoteTaskItem) => t.taskId === activeId);
+          if (tracked && tracked.status === "completed") {
+            const replyContent = tracked.replyText || tracked.text || tracked.result?.text;
+            const fileSummary = tracked.fileSummary || tracked.result?.fileSummary;
+            const wasFromVoice = voiceTaskIds.has(activeId);
+            voiceTaskIds.delete(activeId);
+            const existingMsg = messages.value.find((m) => m.id === `asst-${activeId}`);
+            if (existingMsg) {
+              if (replyContent) existingMsg.text = replyContent;
+              existingMsg.fileSummary = fileSummary;
+              saveMessages();
+            } else if (replyContent) {
+              messages.value.push({
+                id: `asst-${activeId}`,
+                role: "assistant",
+                backend: tracked.backend || selectedBackend.value,
+                text: replyContent,
+                timestamp: tracked.completedAt || Date.now(),
+                fileSummary,
+              });
+              saveMessages();
+              scrollToBottom();
+              if (
+                shouldSpeakReply({
+                  enabled: ttsEnabled.value,
+                  autoSpeak: autoSpeak.value,
+                  fromVoice: wasFromVoice,
+                  error: false,
+                })
+              ) {
+                speakMessage(replyContent, `asst-${activeId}`);
+              }
+            }
+            if (!notifiedTaskIds.has(activeId)) {
+              notifiedTaskIds.add(activeId);
+              void sendSystemNotification(
+                "Nexus : Tâche terminée ✅",
+                fileSummary || "La tâche demandée a été exécutée avec succès."
+              );
+            }
+            isSending.value = false;
+            inFlightStartedAt.value = null;
+            inFlightBackend.value = null;
+            currentInFlightTaskId.value = null;
+          } else if (
+            tracked &&
+            (tracked.status === "failed" || tracked.status === "cancelled")
+          ) {
+            voiceTaskIds.delete(activeId);
+            if (tracked.status === "failed") {
+              lastTaskFailed.value = true;
+              const errText =
+                typeof tracked.error === "string"
+                  ? tracked.error
+                  : tracked.error?.message || "Échec de la tâche";
+              if (!messages.value.some((m) => m.id === `err-${activeId}`)) {
+                messages.value.push({
+                  id: `err-${activeId}`,
+                  role: "assistant",
+                  backend: tracked.backend || selectedBackend.value,
+                  text: `Erreur : ${errText}`,
+                  timestamp: tracked.completedAt || Date.now(),
+                  error: true,
+                });
+                saveMessages();
+                scrollToBottom();
+              }
+              if (!notifiedTaskIds.has(activeId)) {
+                notifiedTaskIds.add(activeId);
+                void sendSystemNotification("Nexus : Tâche échouée ❌", errText);
+              }
+            }
+            isSending.value = false;
+            inFlightStartedAt.value = null;
+            inFlightBackend.value = null;
+            currentInFlightTaskId.value = null;
+          }
+        }
       }
     }
   } catch {
@@ -2338,6 +2470,11 @@ async function fetchApprovals(background = false) {
       const data = await res.json();
       if (Array.isArray(data)) {
         approvals.value = data;
+        for (const item of data) {
+          if (item && (item.status === "pending" || !item.status)) {
+            notifyApprovalIfNeeded(item);
+          }
+        }
         // If index is beyond bounds, reset it
         if (activeApprovalIndex.value >= pendingApprovals.value.length) {
           activeApprovalIndex.value = Math.max(
@@ -2461,6 +2598,7 @@ async function sendPrompt(promptText: string, fromVoice = false) {
   inFlightStartedAt.value = Date.now();
   inFlightBackend.value = backend;
   lastTaskFailed.value = false;
+  let keepTrackingInBackground = false;
 
   try {
     const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/tasks`;
@@ -2508,11 +2646,26 @@ async function sendPrompt(promptText: string, fromVoice = false) {
       }
     }
   } catch (err: any) {
-    const wasCompletedViaWs = messages.value.some((m) => m.id === `asst-${generatedTaskId}`);
-    if (!wasCompletedViaWs) {
+    // Reconcile with daemon state first: if the mobile OS suspended the long-lived HTTP
+    // socket while the app was minimized (e.g. waiting on an approval), the task may still
+    // be running or may have already completed on the daemon.
+    await Promise.all([fetchTasks(true), fetchApprovals(true)]);
+    const stillRunningOnDaemon = tasks.value.some(
+      (t) =>
+        t.taskId === generatedTaskId &&
+        (t.status === "running" || t.status === "pending")
+    );
+    if (stillRunningOnDaemon) {
+      keepTrackingInBackground = true;
+      return;
+    }
+    const alreadyHandled = messages.value.some(
+      (m) => m.id === `asst-${generatedTaskId}` || m.id === `err-${generatedTaskId}`
+    );
+    if (!alreadyHandled) {
       lastTaskFailed.value = true;
       const errorMsg: ChatMessage = {
-        id: `err-${Date.now()}`,
+        id: `err-${generatedTaskId}`,
         role: "assistant",
         backend,
         text: `Erreur : ${err?.message || "Échec de la tâche"}`,
@@ -2523,16 +2676,18 @@ async function sendPrompt(promptText: string, fromVoice = false) {
       saveMessages();
     }
   } finally {
-    voiceTaskIds.delete(generatedTaskId);
-    isSending.value = false;
-    inFlightStartedAt.value = null;
-    inFlightBackend.value = null;
-    currentInFlightTaskId.value = null;
-    scrollToBottom();
-    void fetchDashboard();
-    // Refresh tasks and status
-    fetchTasks(true);
-    fetchStatus(true);
+    if (!keepTrackingInBackground) {
+      voiceTaskIds.delete(generatedTaskId);
+      isSending.value = false;
+      inFlightStartedAt.value = null;
+      inFlightBackend.value = null;
+      currentInFlightTaskId.value = null;
+      scrollToBottom();
+      void fetchDashboard();
+      // Refresh tasks and status
+      fetchTasks(true);
+      fetchStatus(true);
+    }
   }
 }
 

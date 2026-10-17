@@ -369,7 +369,9 @@ export class AntigravityClient {
 
         const rawEvent = event as unknown as Record<string, unknown>;
         if (rawEvent.approval_request || rawEvent.permission_request) {
+          resetTimeout();
           void this.approvals.handleApprovalEvent(rawEvent).then((decision) => {
+            resetTimeout();
             if (decision === 'decline' && !settled) {
               fail(
                 new AntigravityError(
@@ -391,6 +393,7 @@ export class AntigravityClient {
           if (step.conversation_id !== conversationId) {
             return;
           }
+          resetTimeout();
 
           if (step.step_type === 'agent_response' && step.text_delta) {
             collectedResponse += step.text_delta;
@@ -435,6 +438,7 @@ export class AntigravityClient {
             }
 
             if (step.state === 'ACTIVE' && isGuardRailTool(step.tool_name ?? '')) {
+              resetTimeout();
               void this.approvals
                 .requestToolApproval(
                   conversationId,
@@ -443,6 +447,7 @@ export class AntigravityClient {
                   step.tool_info?.parameters
                 )
                 .then((decision) => {
+                  resetTimeout();
                   if (decision === 'decline' && !settled) {
                     fail(
                       new AntigravityError('approval_declined', 'Action refusée par l’utilisateur.')
@@ -561,8 +566,13 @@ export class AntigravityClient {
       };
 
       const scheduleTimeout = () => {
+        clearTimeout(timeout);
         timeout = setTimeout(async () => {
           if (settled) {
+            return;
+          }
+          if (this.approvals.getPendingCount() > 0) {
+            scheduleTimeout();
             return;
           }
           if (this.options.turnTimeoutHandler) {
@@ -592,6 +602,13 @@ export class AntigravityClient {
           }
           triggerInterrupt();
         }, turnTimeoutMs);
+      };
+
+      const resetTimeout = () => {
+        if (settled || currentTurn.interrupting || turnTimeoutMs <= 0) {
+          return;
+        }
+        scheduleTimeout();
       };
 
       if (turnTimeoutMs > 0) {

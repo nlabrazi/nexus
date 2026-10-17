@@ -41,6 +41,7 @@ export interface PendingApprovalItem {
   readonly taskId?: string;
   readonly agentName: string;
   readonly kind: string;
+  readonly toolName?: string;
   readonly details: string;
   readonly expiresAt: number;
   readonly requestedAt: number;
@@ -97,6 +98,7 @@ export class NexusDaemonServer extends EventEmitter {
   private currentTaskAbortController?: AbortController;
 
   private readonly tasks = new Map<string, DaemonTaskRecord>();
+  private readonly runningTaskPromises = new Map<string, Promise<DaemonTaskRecord>>();
   private readonly pendingApprovals = new Map<string, PendingApprovalItem>();
   private readonly fcmService: FcmService;
 
@@ -137,6 +139,10 @@ export class NexusDaemonServer extends EventEmitter {
         defaultBackend: 'codex',
         storage: this.storage,
         requestApproval: (req, sig) => this.handleApprovalRequest(req, sig),
+        requestTurnTimeoutContinuation: async (_req, signal) =>
+          !signal.aborted &&
+          this.currentTaskId !== undefined &&
+          !this.currentTaskAbortController?.signal.aborted,
       });
     }
   }
@@ -247,11 +253,24 @@ export class NexusDaemonServer extends EventEmitter {
 
       signal.addEventListener('abort', () => settle('decline'), { once: true });
 
+      let promptDesc = 'Une action requiert votre validation';
+      let toolName = request.kind;
+      try {
+        const parsed = JSON.parse(request.details);
+        if (parsed?.toolName) toolName = parsed.toolName;
+        if (parsed?.CommandLine) promptDesc = `Commande : ${parsed.CommandLine}`;
+        else if (parsed?.TargetFile) promptDesc = `Fichier : ${parsed.TargetFile}`;
+        else if (parsed?.question) promptDesc = parsed.question;
+      } catch {
+        promptDesc = request.details;
+      }
+
       const item: PendingApprovalItem = {
         approvalId,
         taskId: this.currentTaskId,
         agentName: request.agentName ?? 'Agent',
         kind: request.kind,
+        toolName,
         details: request.details,
         expiresAt,
         requestedAt: Date.now(),
@@ -264,21 +283,10 @@ export class NexusDaemonServer extends EventEmitter {
         taskId: this.currentTaskId,
         agentName: request.agentName ?? 'Agent',
         kind: request.kind,
+        toolName,
         details: request.details,
         expiresAt,
       });
-
-      let promptDesc = 'Une action requiert votre validation';
-      let toolName = request.kind;
-      try {
-        const parsed = JSON.parse(request.details);
-        if (parsed?.toolName) toolName = parsed.toolName;
-        if (parsed?.CommandLine) promptDesc = `Commande : ${parsed.CommandLine}`;
-        else if (parsed?.TargetFile) promptDesc = `Fichier : ${parsed.TargetFile}`;
-        else if (parsed?.question) promptDesc = parsed.question;
-      } catch {
-        promptDesc = request.details;
-      }
 
       void this.fcmService.sendPush({
         title: `Nexus : Approbation requise (${toolName})`,
@@ -899,6 +907,43 @@ export class NexusDaemonServer extends EventEmitter {
         }
 
         const taskId = body.taskId || `task-${Date.now()}`;
+
+        // Idempotency: if the same taskId was retried (e.g. mobile app resumed from background),
+        // join the existing in-flight execution or return the already-recorded result instead
+        // of launching a duplicate turn that collides with Codex/Antigravity.
+        const existingTask = this.tasks.get(taskId);
+        if (existingTask) {
+          const existingPromise = this.runningTaskPromises.get(taskId);
+          if (existingPromise) {
+            if (body.wait === false) {
+              res.writeHead(202, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(existingTask));
+              return;
+            }
+            const completed = await existingPromise;
+            const statusCode = completed.status === 'failed' ? 500 : 200;
+            res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(completed));
+            return;
+          }
+          const statusCode = existingTask.status === 'failed' ? 500 : 200;
+          res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(existingTask));
+          return;
+        }
+
+        // Prevent launching a colliding turn if another task is already actively running
+        if (this.currentTaskId && this.runningTaskPromises.has(this.currentTaskId)) {
+          res.writeHead(409, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              error: 'Une tâche est déjà en cours d’exécution.',
+              activeTaskId: this.currentTaskId,
+            })
+          );
+          return;
+        }
+
         const backend = (body.backend as TaskBackendType) || this.activeBackend;
         if (backend === 'codex' || backend === 'antigravity' || backend === 'claude') {
           this.activeBackend = backend;
@@ -1018,6 +1063,7 @@ export class NexusDaemonServer extends EventEmitter {
             });
             return taskRecord;
           } finally {
+            this.runningTaskPromises.delete(taskId);
             if (this.currentTaskId === taskId) {
               this.currentTaskId = undefined;
               this.currentTaskAbortController = undefined;
@@ -1025,14 +1071,17 @@ export class NexusDaemonServer extends EventEmitter {
           }
         };
 
+        const taskPromise = runTask();
+        this.runningTaskPromises.set(taskId, taskPromise);
+
         if (body.wait === false) {
-          void runTask();
+          void taskPromise;
           res.writeHead(202, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(taskRecord));
           return;
         }
 
-        const completedRecord = await runTask();
+        const completedRecord = await taskPromise;
         const statusCode = completedRecord.status === 'failed' ? 500 : 200;
         res.writeHead(statusCode, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(completedRecord));
@@ -1062,6 +1111,7 @@ export class NexusDaemonServer extends EventEmitter {
           taskId: item.taskId,
           agentName: item.agentName,
           kind: item.kind,
+          toolName: item.toolName,
           details: item.details,
           expiresAt: item.expiresAt,
           requestedAt: item.requestedAt,

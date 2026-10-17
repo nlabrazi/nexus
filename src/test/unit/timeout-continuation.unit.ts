@@ -112,6 +112,55 @@ suite('Agent turn timeout continuation integration', () => {
       assert.equal(result, 'Done');
       assert.equal(promptSignal.aborted, true);
     });
+
+    test('does not time out while user approval is pending and resets timeout on decision', async (t) => {
+      t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+      const child = new FakeProcess();
+      t.mock.method(childProcess, 'spawn', () => child);
+
+      const approvalDecision = deferred<'accept' | 'decline'>();
+      const client = new CodexClient(async () => approvalDecision.promise, {
+        turnTimeoutMs: 10_000,
+      });
+      t.after(() => client.stop());
+      await client.start();
+
+      const turnPromise = client.runTurn('thread', 'Long exploration with approvals');
+      await flush();
+
+      // 8s into the turn, Codex requests an approval
+      t.mock.timers.tick(8_000);
+      await flush();
+      child.receive({
+        id: 77,
+        method: 'item/commandExecution/requestApproval',
+        params: {
+          threadId: 'thread',
+          turnId: 'turn',
+          itemId: 'cmd-1',
+          command: 'ls -la',
+        },
+      });
+      await flush();
+
+      // User takes 25s (> 10s turnTimeoutMs) to approve — turn must NOT time out
+      t.mock.timers.tick(25_000);
+      await flush();
+      assert.equal(client.getStatus().turn?.interrupting, undefined);
+
+      // User accepts ("Poursuivre")
+      approvalDecision.resolve('accept');
+      await flush();
+
+      // Another 8s of work after approval (< 10s since approval decision)
+      t.mock.timers.tick(8_000);
+      await flush();
+      assert.equal(client.getStatus().turn?.interrupting, undefined);
+
+      child.complete();
+      const result = await turnPromise;
+      assert.equal(result, 'Done');
+    });
   });
 
   suite('Antigravity timeout continuation', () => {

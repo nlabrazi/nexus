@@ -38,6 +38,7 @@ export class CodexClient {
   private starting?: Promise<void>;
   private connectionId = 0;
   private turnFailure?: (error: Error) => void;
+  private resetTurnTimeout?: () => void;
   private readonly telemetry = new Map<string, ThreadTelemetry>();
   private rateLimits?: RateLimitSnapshot[];
   private rateLimitsUpdatedAt?: number;
@@ -50,7 +51,10 @@ export class CodexClient {
     private readonly options?: CodexClientOptions
   ) {
     this.approvals = new CodexApprovals(
-      (message) => this.write(message),
+      (message) => {
+        this.resetTurnTimeout?.();
+        this.write(message);
+      },
       options?.restrictedProfile ? undefined : approvalHandler
     );
   }
@@ -498,6 +502,9 @@ export class CodexClient {
         if (this.turnFailure === fail) {
           this.turnFailure = undefined;
         }
+        if (this.resetTurnTimeout === resetTimeout) {
+          this.resetTurnTimeout = undefined;
+        }
         if (this.process === child) {
           this.approvals.endTurn();
         }
@@ -617,11 +624,13 @@ export class CodexClient {
           if (typeof params.itemId !== 'string' || typeof params.delta !== 'string') {
             throw new Error('Invalid agent message delta');
           }
+          resetTimeout();
           const message = messages.get(params.itemId) ?? { streamed: '' };
           message.streamed += params.delta;
           messages.set(params.itemId, message);
           onChunk?.(params.delta);
         } else {
+          resetTimeout();
           rememberItem(params.item, notification.method === 'item/completed');
         }
       };
@@ -650,8 +659,13 @@ export class CodexClient {
       };
 
       const scheduleTimeout = () => {
+        clearTimeout(timeout);
         timeout = setTimeout(async () => {
           if (settled) {
+            return;
+          }
+          if (this.approvals.getPendingCount() > 0) {
+            scheduleTimeout();
             return;
           }
           if (this.options?.turnTimeoutHandler) {
@@ -683,10 +697,18 @@ export class CodexClient {
         }, turnTimeoutMs);
       };
 
+      const resetTimeout = () => {
+        if (settled || timedOut || turnTimeoutMs <= 0) {
+          return;
+        }
+        scheduleTimeout();
+      };
+
       if (turnTimeoutMs > 0) {
         scheduleTimeout();
       }
       this.turnFailure = fail;
+      this.resetTurnTimeout = resetTimeout;
       this.notificationListeners.add(onNotification);
       void this.request('turn/start', {
         threadId,
@@ -847,6 +869,7 @@ export class CodexClient {
 
       // Requête envoyée PAR Codex vers Nexus.
       if (message.method && message.id !== undefined) {
+        this.resetTurnTimeout?.();
         this.approvals.handleRequest({
           id: message.id,
           method: message.method,
