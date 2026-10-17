@@ -1,5 +1,5 @@
 <template>
-  <div class="nexus-app">
+  <div class="nexus-app" :class="currentView === 'workspace' ? `theme-${workspaceMode}` : 'theme-home'">
     <!-- Streamlined Cyber HUD Header -->
     <header class="app-header cyber-header">
       <div class="header-left">
