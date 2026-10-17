@@ -669,6 +669,28 @@
       </div>
     </NexusSheet>
 
+    <!-- DISCREET APPROVAL DECISION TOAST (Top-Layer Manual Popover, No Backdrop Blur) -->
+    <div
+      ref="approvalDecisionToastRef"
+      popover="manual"
+      role="status"
+      aria-live="polite"
+      class="approval-decision-toast"
+      :class="[
+        `is-${approvalDecisionToast.variant}`,
+        { 'is-visible': approvalDecisionToast.visible },
+      ]"
+      @click="hideApprovalDecisionToast"
+    >
+      <span class="approval-toast-badge" aria-hidden="true">
+        <NexusIcon :name="approvalDecisionToast.variant === 'accepted' ? 'check' : 'close'" />
+      </span>
+      <div class="approval-toast-copy">
+        <strong class="approval-toast-title">{{ approvalDecisionToast.title }}</strong>
+        <span v-if="approvalDecisionToast.subtitle" class="approval-toast-subtitle">{{ approvalDecisionToast.subtitle }}</span>
+      </div>
+    </div>
+
     <!-- QUICK PROJECT SELECTOR SHEET -->
     <NexusSheet v-model="showProjectMenu" title="Changer de projet">
       <p v-if="errorMessage" class="inline-error" role="alert">{{ errorMessage }}</p>
@@ -1517,9 +1539,74 @@ const isDecidingApproval = ref<boolean>(false);
 const approvalDecidingId = ref<string | null>(null);
 const activeApprovalIndex = ref<number>(0);
 
+const approvalDecisionToastRef = ref<HTMLElement | null>(null);
+const approvalDecisionToast = ref<{
+  visible: boolean;
+  variant: "accepted" | "declined" | "error";
+  title: string;
+  subtitle: string;
+}>({
+  visible: false,
+  variant: "accepted",
+  title: "",
+  subtitle: "",
+});
+let approvalToastTimer: ReturnType<typeof setTimeout> | null = null;
+
+function hideApprovalDecisionToast() {
+  if (approvalToastTimer) {
+    clearTimeout(approvalToastTimer);
+    approvalToastTimer = null;
+  }
+  approvalDecisionToast.value.visible = false;
+  const el = approvalDecisionToastRef.value as any;
+  if (el && typeof el.hidePopover === "function") {
+    try {
+      el.hidePopover();
+    } catch {}
+  }
+}
+
+function showApprovalDecisionToast(
+  variant: "accepted" | "declined" | "error",
+  title: string,
+  subtitle = ""
+) {
+  if (approvalToastTimer) {
+    clearTimeout(approvalToastTimer);
+    approvalToastTimer = null;
+  }
+  approvalDecisionToast.value = {
+    visible: true,
+    variant,
+    title,
+    subtitle,
+  };
+  void nextTick(() => {
+    const el = approvalDecisionToastRef.value as any;
+    if (el && typeof el.showPopover === "function") {
+      try {
+        el.showPopover();
+      } catch {}
+    }
+  });
+  approvalToastTimer = setTimeout(() => {
+    hideApprovalDecisionToast();
+  }, 2400);
+}
+
 const pendingApprovals = computed(() => {
   return approvals.value.filter((a) => a.status === "pending");
 });
+
+watch(
+  () => pendingApprovals.value.length,
+  (count) => {
+    if (count === 0 && showApprovalModal.value) {
+      showApprovalModal.value = false;
+    }
+  }
+);
 
 const pendingApprovalsCount = computed(() => {
   const localPending = pendingApprovals.value.length;
@@ -2060,6 +2147,7 @@ onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer);
   if (clockTimer) clearInterval(clockTimer);
   if (fastApprovalTimer) clearInterval(fastApprovalTimer);
+  if (approvalToastTimer) clearTimeout(approvalToastTimer);
   if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
   if (wsInstance) {
     wsInstance.close();
@@ -2574,21 +2662,32 @@ async function decideApproval(
       found.decision = decision;
     }
 
-    // Refresh state from core
-    await Promise.all([
+    // Close modal immediately if no more pending approvals remain
+    if (pendingApprovals.value.length === 0) {
+      showApprovalModal.value = false;
+    }
+
+    triggerHaptic(decision === "accept" ? "success" : "cancel");
+    showApprovalDecisionToast(
+      decision === "accept" ? "accepted" : "declined",
+      decision === "accept" ? "Approbation validée" : "Approbation refusée",
+      decision === "accept"
+        ? "L’action autorisée poursuit son exécution"
+        : "L’action demandée a été bloquée"
+    );
+
+    // Refresh state from core in background
+    void Promise.all([
       fetchApprovals(true),
       fetchStatus(true),
       fetchTasks(true),
     ]);
-
-    // If no more pending approvals, auto-close modal after brief delay
-    if (pendingApprovals.value.length === 0) {
-      setTimeout(() => {
-        showApprovalModal.value = false;
-      }, 400);
-    }
   } catch (err: any) {
-    alert(`Erreur d’approbation : ${err?.message || err}`);
+    showApprovalDecisionToast(
+      "error",
+      "Échec de l’approbation",
+      err?.message || "Impossible de transmettre la décision"
+    );
   } finally {
     isDecidingApproval.value = false;
     approvalDecidingId.value = null;

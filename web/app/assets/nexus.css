@@ -1684,19 +1684,18 @@ svg.icon {
 
   padding: 0;
   border: 1px solid rgba(130, 197, 223, 0.28);
-  border-bottom: 0;
-  border-radius: 20px 20px 0 0;
-  width: 100%;
-  max-width: 560px;
-  max-height: calc(100dvh - var(--safe-top) - 16px);
-  margin: auto auto 0;
+  border-radius: 18px;
+  width: calc(100% - 28px);
+  max-width: 500px;
+  max-height: calc(100dvh - var(--safe-top, 0px) - var(--safe-bottom, 0px) - 48px);
+  margin: auto;
   overscroll-behavior: contain;
-  box-shadow: none;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
   position: relative;
 
   /* Modern top-layer discrete transition */
   transition-property: opacity, transform, display, overlay;
-  transition-duration: 0.25s;
+  transition-duration: 0.22s;
   transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
   transition-behavior: allow-discrete;
 }
@@ -1714,26 +1713,27 @@ svg.icon {
 }
 
 .sheet::backdrop {
-  background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(4px);
+  background: rgba(5, 11, 18, 0.38);
+  backdrop-filter: blur(1.5px);
+  -webkit-backdrop-filter: blur(1.5px);
   transition:
-    display 0.25s allow-discrete,
-    overlay 0.25s allow-discrete,
-    background-color 0.25s ease-out;
+    display 0.22s allow-discrete,
+    overlay 0.22s allow-discrete,
+    background-color 0.22s ease-out;
 }
 
 dialog[open].sheet {
   opacity: 1;
-  transform: translateY(0);
+  transform: translateY(0) scale(1);
 
   @starting-style {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(10px) scale(0.98);
   }
 }
 
 .sheet-body {
-  padding: 16px 20px calc(24px + var(--safe-bottom));
+  padding: 18px 20px 20px;
 }
 
 .sheet-header {
@@ -2447,8 +2447,8 @@ body {
 .system-health dd { margin: 0; }
 .system-footer { text-align: center; color: var(--muted); font-size: 10px; letter-spacing: 3px; margin-top: 26px; }
 .system-footer span { display: block; letter-spacing: 0; font-size: 11px; margin-top: 6px; opacity: .8; }
-.sheet { background: #13232f; border-color: var(--line-strong); box-shadow: 0 24px 100px #0008; }
-.sheet::backdrop { background: #030b13bb; backdrop-filter: blur(6px); }
+.sheet { background: #13232f; border-color: var(--line-strong); box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45); border-radius: 18px; }
+.sheet::backdrop { background: rgba(5, 11, 18, 0.38); backdrop-filter: blur(1.5px); -webkit-backdrop-filter: blur(1.5px); }
 .settings-tabs { background: var(--background); }
 .settings-tabs button[aria-selected="true"] { background: var(--raised); color: var(--accent); }
 .brain-overview, .provider-card { border-color: var(--line); background: var(--surface); border-radius: 12px; }
@@ -3642,10 +3642,10 @@ dialog[open].sheet {
 .sheet-body {
   flex: 1;
   min-height: 0;
-  max-height: calc(100dvh - var(--safe-top, 0px) - 20px);
+  max-height: calc(100dvh - var(--safe-top, 0px) - var(--safe-bottom, 0px) - 52px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 16px 20px calc(34px + var(--safe-bottom, 0px));
+  padding: 18px 20px 22px;
 }
 
 /* Soft-edge mask fades on dynamic scroll containers */
@@ -3705,8 +3705,7 @@ dialog[open].sheet {
 /* Soft-edge fade on nested scrollable lists */
 .models-sheet-list,
 .project-sheet-list,
-.task-list,
-.approval-code {
+.task-list {
   padding-bottom: 18px;
   -webkit-mask-image: linear-gradient(
     to bottom,
@@ -3789,4 +3788,123 @@ dialog[open].sheet {
   50% {
     transform: rotate(90deg) translateX(2px);
   }
+}
+
+/* ==========================================================================
+   DISCREET CENTERED APPROVAL DECISION TOAST (TOP-LAYER MANUAL POPOVER)
+   ========================================================================== */
+[popover].approval-decision-toast,
+.approval-decision-toast {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: fit-content;
+  max-width: min(360px, calc(100vw - 32px));
+  height: fit-content;
+  display: none;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px 12px 14px;
+  border-radius: 999px;
+  background: rgba(12, 22, 32, 0.94);
+  border: 1px solid rgba(139, 206, 173, 0.45);
+  color: var(--text-bright);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.45),
+    0 0 18px rgba(16, 185, 129, 0.16);
+  z-index: 9999;
+  cursor: pointer;
+  user-select: none;
+
+  opacity: 0;
+  transform: translateY(8px) scale(0.95);
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    display 0.22s allow-discrete,
+    overlay 0.22s allow-discrete;
+  transition-behavior: allow-discrete;
+}
+
+[popover].approval-decision-toast::backdrop {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+[popover].approval-decision-toast:is(:popover-open, .\:popover-open),
+.approval-decision-toast.is-visible {
+  display: inline-flex;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+@starting-style {
+  [popover].approval-decision-toast:is(:popover-open, .\:popover-open),
+  .approval-decision-toast.is-visible {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+}
+
+.approval-decision-toast.is-accepted {
+  border-color: rgba(16, 185, 129, 0.55);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.45),
+    0 0 20px rgba(16, 185, 129, 0.22);
+}
+
+.approval-decision-toast.is-declined,
+.approval-decision-toast.is-error {
+  border-color: rgba(244, 63, 94, 0.55);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.45),
+    0 0 20px rgba(244, 63, 94, 0.22);
+}
+
+.approval-toast-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba(16, 185, 129, 0.18);
+  border: 1px solid rgba(16, 185, 129, 0.5);
+  color: #34d399;
+}
+
+.approval-decision-toast.is-declined .approval-toast-badge,
+.approval-decision-toast.is-error .approval-toast-badge {
+  background: rgba(244, 63, 94, 0.18);
+  border-color: rgba(244, 63, 94, 0.5);
+  color: #fb7185;
+}
+
+.approval-toast-badge .icon {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2.3;
+}
+
+.approval-toast-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.approval-toast-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+  color: var(--text-bright);
+  line-height: 1.25;
+}
+
+.approval-toast-subtitle {
+  font-size: 11px;
+  color: var(--muted-light);
+  line-height: 1.3;
 }
