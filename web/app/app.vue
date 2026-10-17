@@ -771,7 +771,6 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
 import { LocalNotifications } from "@capacitor/local-notifications";
 import { PushNotifications } from "@capacitor/push-notifications";
-import { ForegroundService } from "@capawesome-team/capacitor-android-foreground-service";
 import { StatusBar, Style } from "@capacitor/status-bar";
 import { VoiceRecorder } from "capacitor-voice-recorder";
 import { SpeechRecognition } from "@capacitor-community/speech-recognition";
@@ -1108,12 +1107,36 @@ watch(notificationsEnabled, (val) => {
   try {
     localStorage.setItem("nexus_notifications_enabled", String(val));
   } catch {}
+  void syncNativeDaemonConfig();
 });
 
 interface NexusNativeAlertPluginInterface {
-  sendUrgentNotification(options: { title: string; body: string; approvalId?: string }): Promise<void>;
+  sendUrgentNotification(options: {
+    title: string;
+    body: string;
+    approvalId?: string;
+    dedupKey?: string;
+  }): Promise<void>;
+  configureDaemon(options: {
+    url: string;
+    token: string;
+    notificationsEnabled: boolean;
+  }): Promise<void>;
 }
 const NexusNativeAlert = registerPlugin<NexusNativeAlertPluginInterface>("NexusNativeAlert");
+
+async function syncNativeDaemonConfig() {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await NexusNativeAlert.configureDaemon({
+      url: coreUrl.value || "",
+      token: authToken.value || "",
+      notificationsEnabled: notificationsEnabled.value,
+    });
+  } catch (err) {
+    console.warn("NexusNativeAlert.configureDaemon error:", err);
+  }
+}
 
 async function sendSystemNotification(title: string, body: string, extra?: Record<string, any>) {
   if (!notificationsEnabled.value) return;
@@ -1123,6 +1146,7 @@ async function sendSystemNotification(title: string, body: string, extra?: Recor
         title,
         body,
         approvalId: extra?.approvalId || "",
+        dedupKey: extra?.dedupKey || (extra?.approvalId ? `approval:${extra.approvalId}` : ""),
       });
     } catch (e) {
       console.warn("NexusNativeAlert error, fallback local-notif:", e);
@@ -1133,7 +1157,7 @@ async function sendSystemNotification(title: string, body: string, extra?: Recor
               id: Math.floor(Math.random() * 1000000) + 1,
               title,
               body,
-              channelId: "nexus_urgent_sms_channel",
+              channelId: "nexus_urgent_sms_channel_v2",
               extra,
             },
           ],
@@ -1142,7 +1166,7 @@ async function sendSystemNotification(title: string, body: string, extra?: Recor
     }
   } else if (typeof Notification !== "undefined" && Notification.permission === "granted") {
     try {
-      new Notification(title, { body, icon: "/icon.png" });
+      new Notification(title, { body, icon: "/pwa-icon.png", badge: "/pwa-icon.png" });
     } catch {}
   }
 }
@@ -1641,7 +1665,8 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
           notifiedTaskIds.add(payload.taskId);
           void sendSystemNotification(
             "Nexus : Tâche terminée ✅",
-            payload?.fileSummary || payload?.summary || "La tâche demandée a été exécutée avec succès."
+            payload?.fileSummary || payload?.summary || "La tâche demandée a été exécutée avec succès.",
+            { dedupKey: `task:${payload.taskId}:completed` }
           );
         }
         if (currentInFlightTaskId.value === payload.taskId) {
@@ -1677,7 +1702,8 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
           notifiedTaskIds.add(payload.taskId);
           void sendSystemNotification(
             "Nexus : Tâche échouée ❌",
-            payload.error || "Une erreur est survenue lors de l'exécution."
+            payload.error || "Une erreur est survenue lors de l'exécution.",
+            { dedupKey: `task:${payload.taskId}:failed` }
           );
         }
         if (currentInFlightTaskId.value === payload.taskId) {
@@ -1756,7 +1782,7 @@ function notifyApprovalIfNeeded(item: Partial<PendingApprovalItem> & { approvalI
   void sendSystemNotification(
     parsed.notificationTitle,
     item.summary || parsed.notificationBody,
-    { approvalId: item.approvalId }
+    { approvalId: item.approvalId, dedupKey: `approval:${item.approvalId}` }
   );
 }
 
@@ -1844,6 +1870,8 @@ onMounted(async () => {
       | "dashboard"
       | null;
 
+    authToken.value = savedToken;
+    authTokenInput.value = savedToken;
     fcmToken.value = localStorage.getItem("nexus_fcm_token") || "";
 
     if (savedUrl) {
@@ -1930,16 +1958,7 @@ onMounted(async () => {
       } catch (err) {
         console.warn("PushNotifications init error:", err);
       }
-      try {
-        await ForegroundService.startForegroundService({
-          id: 1001,
-          title: "Nexus",
-          body: "Connecté à votre PC — En écoute des tâches",
-          silent: true,
-        });
-      } catch (err) {
-        console.warn("ForegroundService start error:", err);
-      }
+      await syncNativeDaemonConfig();
     } else if (typeof Notification !== "undefined" && Notification.permission === "default") {
       try {
         void Notification.requestPermission();
@@ -1947,8 +1966,6 @@ onMounted(async () => {
     }
 
     coreUrlInput.value = coreUrl.value;
-    authToken.value = savedToken;
-    authTokenInput.value = savedToken;
     if (savedTab && ["chat", "agent", "activity", "dashboard", "system"].includes(savedTab))
       activeTab.value = savedTab;
 
@@ -2060,6 +2077,7 @@ watch([coreUrl, authToken], () => {
     wsInstance = null;
   }
   connectWebSocket();
+  void syncNativeDaemonConfig();
 });
 
 let fastApprovalTimer: ReturnType<typeof setInterval> | null = null;
@@ -2408,7 +2426,8 @@ async function fetchTasks(background = false) {
               notifiedTaskIds.add(activeId);
               void sendSystemNotification(
                 "Nexus : Tâche terminée ✅",
-                fileSummary || "La tâche demandée a été exécutée avec succès."
+                fileSummary || "La tâche demandée a été exécutée avec succès.",
+                { dedupKey: `task:${activeId}:completed` }
               );
             }
             isSending.value = false;
@@ -2440,7 +2459,11 @@ async function fetchTasks(background = false) {
               }
               if (!notifiedTaskIds.has(activeId)) {
                 notifiedTaskIds.add(activeId);
-                void sendSystemNotification("Nexus : Tâche échouée ❌", errText);
+                void sendSystemNotification(
+                  "Nexus : Tâche échouée ❌",
+                  errText,
+                  { dedupKey: `task:${activeId}:failed` }
+                );
               }
             }
             isSending.value = false;

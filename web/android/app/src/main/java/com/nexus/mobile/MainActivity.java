@@ -1,13 +1,6 @@
 package com.nexus.mobile;
 
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
 import android.content.Context;
-import android.media.AudioAttributes;
-import android.media.RingtoneManager;
-import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
 import com.getcapacitor.BridgeActivity;
@@ -20,12 +13,32 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(NexusNativeAlertPlugin.class);
         super.onCreate(savedInstanceState);
-        createUrgentNotificationChannel();
+        NexusNativeAlertPlugin.ensureUrgentChannel(this);
         acquireCpuWakeLock();
+        NexusBackgroundService.startOrUpdate(this);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        NexusNativeAlertPlugin.setAppInForeground(true);
+    }
+
+    @Override
+    public void onPause() {
+        NexusNativeAlertPlugin.setAppInForeground(false);
+        super.onPause();
+    }
+
+    @Override
+    public void onStop() {
+        NexusNativeAlertPlugin.setAppInForeground(false);
+        super.onStop();
     }
 
     @Override
     public void onDestroy() {
+        NexusNativeAlertPlugin.setAppInForeground(false);
         super.onDestroy();
         if (cpuWakeLock != null && cpuWakeLock.isHeld()) {
             try {
@@ -43,34 +56,6 @@ public class MainActivity extends BridgeActivity {
                 cpuWakeLock.acquire();
             }
         } catch (Exception ignored) {
-        }
-    }
-
-    private void createUrgentNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            String channelId = "nexus_urgent_sms_channel";
-            CharSequence name = "Nexus Alertes Urgentes";
-            String description = "Alertes avec sonnerie et pop-up comme un SMS pour les approbations Nexus";
-            int importance = NotificationManager.IMPORTANCE_HIGH;
-
-            NotificationChannel channel = new NotificationChannel(channelId, name, importance);
-            channel.setDescription(description);
-            channel.enableVibration(true);
-            channel.setVibrationPattern(new long[]{0, 300, 150, 300});
-            channel.enableLights(true);
-            channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
-
-            Uri defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
-            AudioAttributes audioAttributes = new AudioAttributes.Builder()
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .setUsage(AudioAttributes.USAGE_NOTIFICATION_COMMUNICATION_INSTANT)
-                .build();
-            channel.setSound(defaultSoundUri, audioAttributes);
-
-            NotificationManager notificationManager = getSystemService(NotificationManager.class);
-            if (notificationManager != null) {
-                notificationManager.createNotificationChannel(channel);
-            }
         }
     }
 }

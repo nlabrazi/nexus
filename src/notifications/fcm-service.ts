@@ -1,5 +1,6 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import type { KeyValueStorage } from '../runtime/types';
 
@@ -17,13 +18,22 @@ export class FcmService {
 
   constructor(options: { serviceAccountPath?: string; storage?: KeyValueStorage }) {
     this.storage = options.storage || null;
-    const resolvedPath =
-      options.serviceAccountPath || path.resolve(process.cwd(), 'firebase-service-account.json');
-    if (fs.existsSync(resolvedPath)) {
-      try {
-        this.serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
-      } catch (e) {
-        console.warn('[FCM] Failed to parse service account JSON:', e);
+    const candidatePaths = [
+      options.serviceAccountPath,
+      process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
+      path.resolve(process.cwd(), 'firebase-service-account.json'),
+      path.resolve(__dirname, '../../firebase-service-account.json'),
+      path.resolve(os.homedir(), 'code/bricolage/nexus/firebase-service-account.json'),
+    ].filter((p): p is string => Boolean(p));
+
+    for (const candidate of candidatePaths) {
+      if (fs.existsSync(candidate)) {
+        try {
+          this.serviceAccount = JSON.parse(fs.readFileSync(candidate, 'utf8'));
+          break;
+        } catch (e) {
+          console.warn('[FCM] Failed to parse service account JSON:', e);
+        }
       }
     }
   }
@@ -147,25 +157,19 @@ export class FcmService {
 
     for (const token of tokens) {
       try {
+        const dataPayload: Record<string, string> = {
+          ...(notification.data || {}),
+          title: notification.title,
+          body: notification.body,
+        };
         const payload = {
           message: {
             token,
-            notification: {
-              title: notification.title,
-              body: notification.body,
-            },
             android: {
               priority: 'HIGH',
-              notification: {
-                channel_id: 'nexus_urgent_sms_channel',
-                sound: 'default',
-                default_sound: true,
-                default_vibrate_timings: true,
-                notification_priority: 'PRIORITY_MAX',
-                visibility: 'PUBLIC',
-              },
+              ttl: '180s',
             },
-            data: notification.data || {},
+            data: dataPayload,
           },
         };
 
