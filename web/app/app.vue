@@ -65,7 +65,9 @@
     <div class="screen-container">
       <Transition :name="slideDirection === 'forward' ? 'screen-slide-forward' : 'screen-slide-backward'" mode="out-in">
         <!-- 1. HOME SCREEN (Ultra-sleek Cyberpunk HUD) -->
-        <main v-if="currentView === 'home'" key="home" class="home-screen" aria-label="Accueil Nexus">
+        <main v-if="currentView === 'home'" key="home" ref="homeScrollRef" class="home-screen"
+          :class="{ 'has-scroll-top': canScrollHomeUp, 'has-scroll-bottom': canScrollHomeDown }"
+          aria-label="Accueil Nexus" @scroll.passive="updateHomeScrollState">
           <div class="home-hero">
             <div class="cyber-scan-tag">
               <span class="scan-dot" :class="{ online: isNodeReady }" />
@@ -141,12 +143,21 @@
               <NexusIcon name="chevron" />
             </button>
           </div>
+
+          <div class="scroll-affordance-hint home-scroll-hint" :class="{ visible: canScrollHomeDown }" aria-hidden="true">
+            <span class="scroll-affordance-pill">
+              <span>Défiler</span>
+              <NexusIcon name="chevron" class="scroll-chevron-down" />
+            </span>
+          </div>
         </main>
 
-        <!-- 2. WORKSPACE SCREEN (Chat + Centered STT Mic) -->
+        <!-- 2. WORKSPACE SCREEN (Chat + Inline STT Mic) -->
         <main v-else key="workspace" class="workspace-screen" aria-label="Espace de travail">
-          <div ref="messagesScrollRef" class="messages-stream" role="log" aria-label="Messages" aria-live="polite"
-            aria-relevant="additions text">
+          <div ref="messagesScrollRef" class="messages-stream"
+            :class="{ 'has-scroll-top': canScrollMessagesUp, 'has-scroll-bottom': canScrollMessagesDown }"
+            role="log" aria-label="Messages" aria-live="polite"
+            aria-relevant="additions text" @scroll.passive="updateMessagesScrollState">
             <!-- Welcome HUD if no messages -->
             <div v-if="!messages.length" class="welcome-hud">
               <p class="eyebrow">{{ workspaceMode === 'code' ? 'AGENT DE CODE' : 'NEXUS BRAIN' }}</p>
@@ -205,6 +216,13 @@
                 <NexusIcon name="stop" />Arrêter
               </button>
             </div>
+          </div>
+
+          <div class="scroll-affordance-hint workspace-scroll-hint" :class="{ visible: canScrollMessagesDown }" aria-hidden="true">
+            <span class="scroll-affordance-pill">
+              <span>Défiler vers le bas</span>
+              <NexusIcon name="chevron" class="scroll-chevron-down" />
+            </span>
           </div>
 
           <!-- Centered STT Mic & Composer Dock -->
@@ -963,8 +981,35 @@ const lastTaskFailed = ref(false);
 const currentInFlightTaskId = ref<string | null>(null);
 const messages = ref<ChatMessage[]>([]);
 const messagesScrollRef = ref<HTMLElement | null>(null);
+const homeScrollRef = ref<HTMLElement | null>(null);
+const canScrollMessagesUp = ref(false);
+const canScrollMessagesDown = ref(false);
+const canScrollHomeUp = ref(false);
+const canScrollHomeDown = ref(false);
 const chatTextareaRef = ref<HTMLTextAreaElement | null>(null);
 const settingsError = ref("");
+
+function updateMessagesScrollState() {
+  const el = messagesScrollRef.value;
+  if (!el) {
+    canScrollMessagesUp.value = false;
+    canScrollMessagesDown.value = false;
+    return;
+  }
+  canScrollMessagesUp.value = el.scrollTop > 10;
+  canScrollMessagesDown.value = el.scrollHeight - el.scrollTop - el.clientHeight > 14;
+}
+
+function updateHomeScrollState() {
+  const el = homeScrollRef.value;
+  if (!el) {
+    canScrollHomeUp.value = false;
+    canScrollHomeDown.value = false;
+    return;
+  }
+  canScrollHomeUp.value = el.scrollTop > 10;
+  canScrollHomeDown.value = el.scrollHeight - el.scrollTop - el.clientHeight > 14;
+}
 
 function resizeComposer() {
   const textarea = chatTextareaRef.value;
@@ -2719,6 +2764,8 @@ function scrollToBottom() {
     if (messagesScrollRef.value) {
       messagesScrollRef.value.scrollTop = messagesScrollRef.value.scrollHeight;
     }
+    updateMessagesScrollState();
+    updateHomeScrollState();
   });
 }
 

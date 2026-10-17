@@ -3565,3 +3565,164 @@ body {
   background: rgba(0, 240, 255, 0.08);
   border: 1px solid rgba(0, 240, 255, 0.25);
 }
+
+/* ==========================================================================
+   SCROLLABILITY AFFORDANCE HINTS & SOFT-EDGE CONTENT FADE
+   ========================================================================== */
+dialog[open].sheet {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sheet-body {
+  flex: 1;
+  min-height: 0;
+  max-height: calc(100dvh - var(--safe-top, 0px) - 20px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px 20px calc(34px + var(--safe-bottom, 0px));
+}
+
+/* Soft-edge mask fades on dynamic scroll containers */
+.messages-stream.has-scroll-bottom,
+.home-screen.has-scroll-bottom,
+.sheet-body.has-scroll-bottom {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black calc(100% - 42px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black calc(100% - 42px),
+    transparent 100%
+  );
+}
+
+.messages-stream.has-scroll-top:not(.has-scroll-bottom),
+.home-screen.has-scroll-top:not(.has-scroll-bottom),
+.sheet-body.has-scroll-top:not(.has-scroll-bottom) {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 28px,
+    black 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 28px,
+    black 100%
+  );
+}
+
+.messages-stream.has-scroll-top.has-scroll-bottom,
+.home-screen.has-scroll-top.has-scroll-bottom,
+.sheet-body.has-scroll-top.has-scroll-bottom {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 28px,
+    black calc(100% - 42px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 28px,
+    black calc(100% - 42px),
+    transparent 100%
+  );
+}
+
+/* Soft-edge fade on nested scrollable lists */
+.models-sheet-list,
+.project-sheet-list,
+.task-list,
+.approval-code {
+  padding-bottom: 18px;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black calc(100% - 22px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black calc(100% - 22px),
+    transparent 100%
+  );
+}
+
+/* Non-interactive scroll-down affordance hint pill */
+.scroll-affordance-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: max(10px, var(--safe-bottom, 0px));
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+  z-index: 25;
+}
+
+.scroll-affordance-hint.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.workspace-scroll-hint {
+  position: relative;
+  bottom: auto;
+  height: 0;
+  margin-top: -28px;
+  margin-bottom: 28px;
+}
+
+.scroll-affordance-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: rgba(8, 14, 22, 0.9);
+  border: 1px solid rgba(0, 240, 255, 0.35);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45), 0 0 10px rgba(0, 240, 255, 0.18);
+  backdrop-filter: blur(8px);
+}
+
+.nexus-app.theme-brain .scroll-affordance-pill {
+  color: #c084fc;
+  border-color: rgba(168, 85, 247, 0.4);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45), 0 0 10px rgba(168, 85, 247, 0.22);
+}
+
+.scroll-chevron-down {
+  width: 12px;
+  height: 12px;
+  transform: rotate(90deg);
+  animation: scroll-hint-bob 1.5s ease-in-out infinite;
+}
+
+@keyframes scroll-hint-bob {
+  0%, 100% {
+    transform: rotate(90deg) translateX(-1px);
+  }
+  50% {
+    transform: rotate(90deg) translateX(2px);
+  }
+}
