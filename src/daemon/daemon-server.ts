@@ -42,6 +42,7 @@ export interface PendingApprovalItem {
   readonly agentName: string;
   readonly kind: string;
   readonly toolName?: string;
+  readonly summary?: string;
   readonly details: string;
   readonly expiresAt: number;
   readonly requestedAt: number;
@@ -253,17 +254,10 @@ export class NexusDaemonServer extends EventEmitter {
 
       signal.addEventListener('abort', () => settle('decline'), { once: true });
 
-      let promptDesc = 'Une action requiert votre validation';
-      let toolName = request.kind;
-      try {
-        const parsed = JSON.parse(request.details);
-        if (parsed?.toolName) toolName = parsed.toolName;
-        if (parsed?.CommandLine) promptDesc = `Commande : ${parsed.CommandLine}`;
-        else if (parsed?.TargetFile) promptDesc = `Fichier : ${parsed.TargetFile}`;
-        else if (parsed?.question) promptDesc = parsed.question;
-      } catch {
-        promptDesc = request.details;
-      }
+      const { toolName, summary: promptDesc } = this.summarizeApprovalRequest(
+        request.kind,
+        request.details
+      );
 
       const item: PendingApprovalItem = {
         approvalId,
@@ -271,6 +265,7 @@ export class NexusDaemonServer extends EventEmitter {
         agentName: request.agentName ?? 'Agent',
         kind: request.kind,
         toolName,
+        summary: promptDesc,
         details: request.details,
         expiresAt,
         requestedAt: Date.now(),
@@ -284,12 +279,13 @@ export class NexusDaemonServer extends EventEmitter {
         agentName: request.agentName ?? 'Agent',
         kind: request.kind,
         toolName,
+        summary: promptDesc,
         details: request.details,
         expiresAt,
       });
 
       void this.fcmService.sendPush({
-        title: `Nexus : Approbation requise (${toolName})`,
+        title: `Nexus · Approbation (${toolName})`,
         body: promptDesc,
         data: {
           approvalId,
@@ -297,6 +293,141 @@ export class NexusDaemonServer extends EventEmitter {
         },
       });
     });
+  }
+
+  private summarizeApprovalRequest(
+    kind: string,
+    rawDetails: string
+  ): { toolName: string; summary: string } {
+    const unwrapShellCommand = (rawCmd: unknown): string => {
+      if (Array.isArray(rawCmd)) {
+        const parts = rawCmd.map((p) => String(p ?? '').trim()).filter(Boolean);
+        if (
+          parts.length >= 3 &&
+          /(?:^|\/)(?:ba|z|da|k)?sh$/i.test(parts[0]) &&
+          /^-[a-z]*c[a-z]*$/i.test(parts[1])
+        ) {
+          return unwrapShellCommand(parts.slice(2).join(' '));
+        }
+        return parts.join(' ');
+      }
+      if (typeof rawCmd !== 'string') return '';
+      let cmd = rawCmd.trim();
+      const match = cmd.match(
+        /^(?:\/usr\/bin\/env\s+)?(?:\/bin\/|\/usr\/bin\/)?(?:ba|z|da|k)?sh\s+-[a-z]*c[a-z]*\s+([\s\S]+)$/i
+      );
+      if (match) {
+        cmd = match[1].trim();
+        if (
+          (cmd.startsWith("'") && cmd.endsWith("'")) ||
+          (cmd.startsWith('"') && cmd.endsWith('"'))
+        ) {
+          cmd = cmd.slice(1, -1).trim();
+        }
+      }
+      return cmd;
+    };
+
+    try {
+      const parsed = JSON.parse(rawDetails) as Record<string, unknown>;
+      const action =
+        parsed?.action && typeof parsed.action === 'object' && !Array.isArray(parsed.action)
+          ? (parsed.action as Record<string, unknown>)
+          : undefined;
+      const network =
+        parsed?.networkApprovalContext &&
+        typeof parsed.networkApprovalContext === 'object' &&
+        !Array.isArray(parsed.networkApprovalContext)
+          ? (parsed.networkApprovalContext as Record<string, unknown>)
+          : undefined;
+
+      const reason = [
+        parsed?.reason,
+        parsed?.justification,
+        parsed?.Description,
+        parsed?.description,
+        parsed?.Instruction,
+        parsed?.toolSummary,
+        parsed?.toolAction,
+        action?.reason,
+        action?.description,
+      ]
+        .map((v) => (typeof v === 'string' ? v.trim() : ''))
+        .find((v) => v.length > 0);
+
+      const cmd = unwrapShellCommand(
+        parsed?.CommandLine ?? parsed?.command ?? action?.command ?? parsed?.cmd ?? action?.cmd
+      );
+      const shortCmd = cmd.length > 72 ? `${cmd.slice(0, 71).trimEnd()}…` : cmd;
+
+      const changes = Array.isArray(parsed?.changes)
+        ? parsed.changes
+        : Array.isArray(action?.changes)
+          ? action.changes
+          : [];
+      const firstChangePath =
+        changes.length > 0 &&
+        changes[0] &&
+        typeof changes[0] === 'object' &&
+        typeof (changes[0] as Record<string, unknown>).path === 'string'
+          ? String((changes[0] as Record<string, unknown>).path)
+          : '';
+      const targetFile =
+        (typeof parsed?.TargetFile === 'string' && parsed.TargetFile.trim()) ||
+        (typeof parsed?.file_path === 'string' && parsed.file_path.trim()) ||
+        (typeof parsed?.path === 'string' && parsed.path.trim()) ||
+        firstChangePath;
+
+      if (typeof parsed?.question === 'string' && parsed.question.trim()) {
+        return { toolName: 'Question', summary: parsed.question.trim() };
+      }
+      if (cmd) {
+        const firstToken = cmd.split(/\s+/)[0]?.toLowerCase() ?? '';
+        const summary = reason
+          ? `${reason.replace(/[.!?]+$/, '')} (${shortCmd}) — pouvez-vous valider ?`
+          : ['ping', 'curl', 'wget', 'nc', 'dig', 'nslookup'].includes(firstToken)
+            ? `Je souhaite lancer un test réseau « ${shortCmd} » — pouvez-vous valider ?`
+            : `Je souhaite exécuter « ${shortCmd} » — pouvez-vous valider ?`;
+        return { toolName: 'Commande', summary };
+      }
+      if (network && typeof network.host === 'string' && network.host.trim()) {
+        const host = network.host.trim();
+        return {
+          toolName: 'Réseau',
+          summary: reason
+            ? `${reason} (${host}) — pouvez-vous valider ?`
+            : `Je souhaite accéder à l'hôte réseau ${host} — pouvez-vous valider ?`,
+        };
+      }
+      if (targetFile) {
+        const fileLabel = basename(targetFile);
+        return {
+          toolName: changes.length > 1 ? 'Fichiers' : 'Fichier',
+          summary: reason
+            ? `${reason} (${fileLabel}) — pouvez-vous valider ?`
+            : `Je souhaite modifier ${changes.length > 1 ? `${changes.length} fichiers (dont ${fileLabel})` : `le fichier « ${fileLabel} »`} — pouvez-vous valider ?`,
+        };
+      }
+      if (reason) {
+        return {
+          toolName: kind === 'fileChange' ? 'Fichier' : 'Action',
+          summary: `${reason.replace(/[.!?]+$/, '')} — pouvez-vous valider ?`,
+        };
+      }
+    } catch {
+      const cleanRaw = rawDetails.replace(/\s+/g, ' ').trim().slice(0, 120);
+      if (cleanRaw && !cleanRaw.startsWith('{')) {
+        return {
+          toolName: kind === 'fileChange' ? 'Fichier' : 'Commande',
+          summary: `${cleanRaw} — pouvez-vous valider ?`,
+        };
+      }
+    }
+
+    return {
+      toolName: kind === 'fileChange' ? 'Fichier' : 'Commande',
+      summary: 'Une action de l’agent requiert votre accord — pouvez-vous valider ?',
+    };
   }
 
   private getNodeInfo() {
@@ -1112,6 +1243,7 @@ export class NexusDaemonServer extends EventEmitter {
           agentName: item.agentName,
           kind: item.kind,
           toolName: item.toolName,
+          summary: item.summary,
           details: item.details,
           expiresAt: item.expiresAt,
           requestedAt: item.requestedAt,

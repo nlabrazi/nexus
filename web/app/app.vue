@@ -595,16 +595,35 @@
             }}<small>{{ formatApprovalKind(activeApproval.kind) }}</small></span>
         </div>
         <div v-if="activeApprovalParsed" class="approval-parsed-body">
-          <div v-if="activeApprovalParsed.CommandLine" class="approval-parsed-item">
-            <span class="approval-parsed-label">Commande shell :</span>
-            <pre class="approval-code"><code>{{ activeApprovalParsed.CommandLine }}</code></pre>
+          <p class="approval-reason-banner">
+            {{ activeApproval.summary || activeApprovalParsed.reason }}
+          </p>
+
+          <div v-if="activeApprovalParsed.command" class="approval-parsed-item">
+            <span class="approval-parsed-label">Commande à exécuter :</span>
+            <pre class="approval-code"><code>{{ activeApprovalParsed.command }}</code></pre>
+            <span v-if="activeApprovalParsed.cwd" class="approval-cwd-tag">
+              📁 {{ activeApprovalParsed.cwd }}
+            </span>
           </div>
-          <div v-else-if="activeApprovalParsed.TargetFile" class="approval-parsed-item">
-            <span class="approval-parsed-label">Fichier :</span>
-            <pre class="approval-code"><code>{{ activeApprovalParsed.TargetFile }}</code></pre>
-            <p v-if="activeApprovalParsed.Description" class="approval-parsed-desc">{{ activeApprovalParsed.Description }}</p>
+
+          <div v-if="activeApprovalParsed.files && activeApprovalParsed.files.length" class="approval-parsed-item">
+            <span class="approval-parsed-label">
+              {{ activeApprovalParsed.files.length > 1 ? "Fichiers concernés :" : "Fichier concerné :" }}
+            </span>
+            <ul class="approval-files-list">
+              <li v-for="(file, fIdx) in activeApprovalParsed.files" :key="fIdx" class="approval-file-entry">
+                <code>{{ file.path }}</code>
+              </li>
+            </ul>
           </div>
-          <div v-else-if="activeApprovalParsed.questions && activeApprovalParsed.questions.length" class="approval-questions">
+
+          <div v-if="activeApprovalParsed.network" class="approval-parsed-item">
+            <span class="approval-parsed-label">Accès réseau :</span>
+            <pre class="approval-code"><code>{{ activeApprovalParsed.network.protocol ? `${activeApprovalParsed.network.protocol}://` : '' }}{{ activeApprovalParsed.network.host }}</code></pre>
+          </div>
+
+          <div v-if="activeApprovalParsed.questions && activeApprovalParsed.questions.length" class="approval-questions">
             <div v-for="(q, qIdx) in activeApprovalParsed.questions" :key="qIdx" class="question-block">
               <p class="question-title"><strong>{{ q.question }}</strong></p>
               <div class="question-options">
@@ -615,9 +634,7 @@
               </div>
             </div>
           </div>
-          <pre v-else class="approval-code"><code>{{ activeApproval.details }}</code></pre>
         </div>
-        <pre v-else class="approval-code"><code>{{ activeApproval.details }}</code></pre>
         <p class="approval-expiry" :class="{
           danger: getApprovalRemainingSeconds(activeApproval.expiresAt) <= 15,
         }">
@@ -749,6 +766,7 @@ import { shouldSpeakReply } from "./utils/voice-reply.mjs";
 import { createSpeechPlayback } from "./utils/speech-playback.mjs";
 import { cleanTextForSpeech } from "./utils/speech-text.mjs";
 import { getAssistantState, assistantStateLabels, getInteractionMessage } from "./utils/assistant-state.mjs";
+import { parseApprovalDetails } from "./utils/approval-parser.mjs";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
 import { LocalNotifications } from "@capacitor/local-notifications";
@@ -839,6 +857,7 @@ interface PendingApprovalItem {
   agentName: string;
   kind: "command" | "fileChange" | "consent";
   toolName?: string;
+  summary?: string;
   details: string;
   expiresAt: number;
   createdAt: number;
@@ -1494,14 +1513,8 @@ const activeApproval = computed(() => {
 });
 
 const activeApprovalParsed = computed<any>(() => {
-  if (!activeApproval.value?.details) return null;
-  try {
-    const raw = activeApproval.value.details;
-    if (typeof raw === "string" && (raw.trim().startsWith("{") || raw.trim().startsWith("["))) {
-      return JSON.parse(raw);
-    }
-  } catch {}
-  return null;
+  if (!activeApproval.value) return null;
+  return parseApprovalDetails(activeApproval.value);
 });
 
 // Voice / Push-to-Talk State
@@ -1739,26 +1752,10 @@ function notifyApprovalIfNeeded(item: Partial<PendingApprovalItem> & { approvalI
   }
   notifiedApprovalIds.add(item.approvalId);
 
-  let toolLabel = item.toolName || item.kind || "Action";
-  let bodyText =
-    toolLabel === "ask_question"
-      ? "L'agent vous pose une question."
-      : `L'agent demande à exécuter : ${toolLabel}`;
-  if (typeof item.details === "string" && item.details.trim()) {
-    try {
-      const parsed = JSON.parse(item.details);
-      if (parsed?.toolName) toolLabel = parsed.toolName;
-      if (parsed?.CommandLine) bodyText = `Commande : ${parsed.CommandLine}`;
-      else if (parsed?.TargetFile) bodyText = `Fichier : ${parsed.TargetFile}`;
-      else if (parsed?.question) bodyText = String(parsed.question);
-    } catch {
-      bodyText = item.details.slice(0, 140);
-    }
-  }
-
+  const parsed = parseApprovalDetails(item);
   void sendSystemNotification(
-    `Nexus : Approbation requise (${toolLabel})`,
-    bodyText,
+    parsed.notificationTitle,
+    item.summary || parsed.notificationBody,
     { approvalId: item.approvalId }
   );
 }
