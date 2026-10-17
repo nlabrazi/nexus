@@ -2570,21 +2570,20 @@ body {
 }
 
 .cyber-beacon {
-  border: 1px solid var(--line-dim);
-  background: rgba(255, 255, 255, 0.03);
+  border: 0;
+  background: transparent;
+  padding: 4px 8px;
+  min-height: 0;
+  cursor: default;
+  user-select: none;
+  pointer-events: none;
 }
 
-.cyber-settings-btn {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--line-dim);
-  border-radius: 8px;
-  color: var(--muted-light);
-  transition: all 0.2s;
-}
-.cyber-settings-btn:hover {
-  color: var(--accent);
-  border-color: var(--line);
-  background: rgba(0, 240, 255, 0.08);
+.status-beacon.ready.cyber-beacon,
+.status-beacon.is-online.cyber-beacon {
+  border: 0;
+  background: transparent;
+  color: var(--success);
 }
 
 /* ==========================================================================
@@ -3108,6 +3107,65 @@ body {
   min-height: 24px;
 }
 
+.composer-right-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-bottom: 1px;
+}
+
+.cyber-inline-mic-btn {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  color: var(--accent);
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.cyber-inline-mic-btn .icon {
+  width: 17px;
+  height: 17px;
+}
+.cyber-inline-mic-btn:hover:not(:disabled) {
+  background: rgba(0, 240, 255, 0.16);
+  border-color: var(--accent);
+  box-shadow: 0 0 14px rgba(0, 240, 255, 0.3);
+}
+.cyber-inline-mic-btn.mode-brain {
+  background: rgba(168, 85, 247, 0.1);
+  border-color: rgba(168, 85, 247, 0.35);
+  color: var(--cyber-purple);
+}
+.cyber-inline-mic-btn.mode-brain:hover:not(:disabled) {
+  background: rgba(168, 85, 247, 0.18);
+  border-color: var(--cyber-purple);
+  box-shadow: 0 0 14px rgba(168, 85, 247, 0.35);
+}
+.cyber-inline-mic-btn.listening {
+  border-color: var(--success);
+  color: #ffffff;
+  background: rgba(16, 185, 129, 0.28);
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.6);
+  animation: cyber-mic-pulse 1.2s infinite;
+}
+.cyber-inline-mic-btn.processing {
+  border-color: var(--warning);
+  color: var(--warning);
+  animation: spin 1.5s linear infinite;
+}
+.cyber-inline-mic-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 .cyber-send-btn {
   width: 36px;
   height: 36px;
@@ -3120,9 +3178,8 @@ body {
   flex-shrink: 0;
   cursor: pointer;
   transition: all 0.2s;
-  margin-bottom: 1px;
 }
-.cyber-send-btn:hover {
+.cyber-send-btn:hover:not(:disabled) {
   background: var(--accent-bright);
   box-shadow: var(--accent-glow);
 }

@@ -15,35 +15,15 @@
         </a>
       </div>
 
-      <div class="header-center">
-        <!-- Discrete context pill in workspace -->
-        <div v-if="currentView === 'workspace'" class="workspace-context-bar">
-          <span class="mode-indicator" :class="workspaceMode">
-            {{ workspaceMode === 'code' ? 'CODE' : 'BRAINSTORM' }}
-          </span>
-          <button type="button" class="context-pill" @click="openAgentPicker" aria-label="Changer d'agent ou de modèle">
-            <NexusIcon :name="workspaceMode === 'brain' ? 'sparkles' : 'cpu'" />
-            <span class="truncate">{{ selectedBackendShortLabel(selectedBackend) }}{{ currentSelectedModel ? ` · ${shortModelName(currentSelectedModel)}` : '' }}</span>
-          </button>
-          <button type="button" class="context-pill project-pill" @click="showProjectMenu = true" aria-label="Changer de projet">
-            <NexusIcon name="folder" />
-            <span class="truncate">{{ activeProjectName || 'Projet' }}</span>
-          </button>
-        </div>
-      </div>
-
       <div class="header-right">
-        <button class="status-beacon cyber-beacon" type="button" :class="runtimeStatus.toLowerCase()"
-          :aria-label="`Nexus : ${runtimeStatusText}. Ouvrir la connexion`" @click="openConnectionSettings">
+        <div class="status-beacon cyber-beacon" :class="[runtimeStatus.toLowerCase(), { 'is-online': isNodeReady }]"
+          role="status" aria-live="polite" :aria-label="`Statut : ${runtimeStatusText}`">
           <span class="beacon-dot" />
-          <span class="beacon-label" role="status" aria-live="polite">
+          <span class="beacon-label">
             {{ connectionStatus === 'connecting' ? 'Connexion…' : isNodeReady ? 'Connecté' : 'Hors ligne' }}
           </span>
-        </button>
-        <button type="button" class="icon-button cyber-settings-btn" aria-label="Ouvrir les paramètres" @click="showSettings = true">
-          <NexusIcon name="settings" />
-        </button>
-        <button type="button" class="header-menu-btn" aria-label="Options de la discussion" :aria-expanded="showQuickMenu"
+        </div>
+        <button type="button" class="header-menu-btn" aria-label="Options et paramètres" :aria-expanded="showQuickMenu"
           @click="showQuickMenu = !showQuickMenu">
           <NexusIcon name="dots" />
         </button>
@@ -52,15 +32,20 @@
 
     <!-- Quick Overflow Menu Dropdown -->
     <div v-if="showQuickMenu" class="menu-backdrop" @click="showQuickMenu = false" />
-    <div v-if="showQuickMenu" class="quick-menu" aria-label="Options de la discussion">
-      <button type="button" class="menu-item" @click="toggleTts(); showQuickMenu = false">
-        <NexusIcon :name="ttsEnabled ? 'speaker' : 'speakerOff'" />
-        <span>{{ ttsEnabled ? 'Voix activée' : 'Voix désactivée' }}</span>
+    <div v-if="showQuickMenu" class="quick-menu" aria-label="Options et paramètres">
+      <button type="button" class="menu-item" @click="showQuickMenu = false; openAgentPicker()">
+        <NexusIcon :name="workspaceMode === 'brain' ? 'sparkles' : 'cpu'" />
+        <span>Agent & modèle ({{ selectedBackendShortLabel(selectedBackend) }})</span>
       </button>
 
       <button type="button" class="menu-item" @click="showQuickMenu = false; showProjectMenu = true">
         <NexusIcon name="folder" />
-        <span>Changer de projet</span>
+        <span>Changer de projet{{ activeProjectName ? ` (${activeProjectName})` : '' }}</span>
+      </button>
+
+      <button type="button" class="menu-item" @click="toggleTts(); showQuickMenu = false">
+        <NexusIcon :name="ttsEnabled ? 'speaker' : 'speakerOff'" />
+        <span>{{ ttsEnabled ? 'Voix activée' : 'Voix désactivée' }}</span>
       </button>
 
       <button v-if="messages.length" type="button" class="menu-item danger" @click="showQuickMenu = false; clearChat()">
@@ -72,7 +57,7 @@
 
       <button type="button" class="menu-item" @click="showQuickMenu = false; showSettings = true">
         <NexusIcon name="settings" />
-        <span>Connexion & paramètres</span>
+        <span>Paramètres & configuration</span>
       </button>
     </div>
 
@@ -258,27 +243,6 @@
               </button>
             </div>
 
-            <!-- Centered STT Microphone Orb -->
-            <div class="cyber-mic-stage">
-              <button type="button" class="cyber-mic-orb"
-                :class="{
-                  listening: isListening,
-                  processing: isProcessingAudio,
-                  'mode-brain': workspaceMode === 'brain'
-                }"
-                :disabled="isSending || isProcessingAudio"
-                :aria-pressed="isListening"
-                :aria-label="isListening ? 'Terminer la dictée' : 'Parler à Nexus'"
-                @click="handleMicClick">
-                <span class="mic-icon-wrapper">
-                  <NexusIcon :name="isListening ? 'stop' : 'mic'" />
-                </span>
-              </button>
-              <span class="mic-hint-text">
-                {{ isListening ? 'Enregistrement…' : isProcessingAudio ? 'Transcription…' : 'Toucher pour parler' }}
-              </span>
-            </div>
-
             <!-- Quick Slash Commands Bar -->
             <div class="cyber-slash-bar" aria-label="Commandes rapides">
               <button type="button" class="slash-chip" :disabled="isSending || !isNodeReady" @click="sendQuickCommand('/new')">/new</button>
@@ -289,7 +253,7 @@
 
             <!-- Sleek Cyber Input Form -->
             <form class="cyber-composer-form" @submit.prevent="submitMessage">
-              <div class="composer-input-row">
+              <div class="composer-input-row" :class="`mode-${workspaceMode}`">
                 <button type="button" class="composer-mode-tag" :class="workspaceMode"
                   :aria-label="`Mode actuel: ${workspaceMode}. Cliquer pour changer.`"
                   @click="toggleWorkspaceMode">
@@ -306,9 +270,25 @@
                   @keydown="handleComposerKeydown"
                   @input="resizeComposer" />
 
-                <button type="submit" class="cyber-send-btn" :disabled="!canSend" aria-label="Envoyer le message">
-                  <NexusIcon name="arrow" />
-                </button>
+                <div class="composer-right-actions">
+                  <button type="button" class="cyber-inline-mic-btn"
+                    :class="{
+                      listening: isListening,
+                      processing: isProcessingAudio,
+                      'mode-brain': workspaceMode === 'brain'
+                    }"
+                    :disabled="isSending || isProcessingAudio"
+                    :aria-pressed="isListening"
+                    :aria-label="isListening ? 'Terminer la dictée' : 'Parler à Nexus'"
+                    :title="isListening ? 'Terminer la dictée' : 'Toucher pour parler'"
+                    @click="handleMicClick">
+                    <NexusIcon :name="isListening ? 'stop' : 'mic'" />
+                  </button>
+
+                  <button type="submit" class="cyber-send-btn" :class="`mode-${workspaceMode}`" :disabled="!canSend" aria-label="Envoyer le message">
+                    <NexusIcon name="arrow" />
+                  </button>
+                </div>
               </div>
             </form>
           </div>
