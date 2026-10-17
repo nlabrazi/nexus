@@ -420,7 +420,7 @@
                 class="effort-pill-btn" :class="{ active: currentSelectedEffort === eff.reasoningEffort }"
                 @click="handleSelectModel(currentSelectedModel, eff.reasoningEffort)">
                 <strong>{{ eff.reasoningEffort.toUpperCase() }}</strong>
-                <small v-if="eff.description">{{ eff.description }}</small>
+                <small v-if="eff.description"> {{ eff.description }}</small>
               </button>
             </div>
           </div>
@@ -711,7 +711,7 @@
               class="effort-pill-btn" :class="{ active: currentSelectedEffort === eff.reasoningEffort }"
               @click="handleSelectModel(currentSelectedModel, eff.reasoningEffort)">
               <strong>{{ eff.reasoningEffort.toUpperCase() }}</strong>
-              <small v-if="eff.description">{{ eff.description }}</small>
+              <small v-if="eff.description"> {{ eff.description }}</small>
             </button>
           </div>
         </div>
