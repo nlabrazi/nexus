@@ -7,11 +7,12 @@ import { ModelPreferences } from '../codex/model-preferences';
 import { ApprovalDecision } from '../codex/types';
 import { BrainModel } from '../conversational/model';
 import { BrainSessionPersistence } from '../conversational/persistence';
-import { AgentBackendType } from '../telegram/status';
+export type AgentBackendType = 'codex' | 'antigravity' | 'claude';
+export type { NexusStatusSnapshot } from './status';
 import { WorkspaceGuard } from '../workspace/guard';
 import { ProjectMemory } from '../memory/project-memory';
 
-export type TaskBackendType = 'codex' | 'antigravity' | 'brain';
+export type TaskBackendType = 'codex' | 'antigravity' | 'claude' | 'brain';
 
 export type RemoteSessionAction = { type: 'new' } | { type: 'resume'; sessionId: string };
 
@@ -36,11 +37,11 @@ export type TurnTimeoutHandler = (
 export type RuntimeApprovalRequest =
   | CodexApprovalRequest
   | {
-    readonly kind: 'inspection';
-    readonly agentName: string;
-    readonly details: string;
-    readonly expiresAt: number;
-  };
+      readonly kind: 'inspection';
+      readonly agentName: string;
+      readonly details: string;
+      readonly expiresAt: number;
+    };
 
 export type RuntimeApprovalHandler = (
   request: RuntimeApprovalRequest,
@@ -50,12 +51,15 @@ export type RuntimeApprovalHandler = (
 export interface KeyValueStorage {
   get(key: string): unknown;
   update(key: string, value: unknown): PromiseLike<void>;
+  syncKey?(key: string): Promise<unknown>;
+  hydrateFromRemote?(): Promise<void>;
 }
 
 import { CodingAgentProjectSummary } from '../conversational/tools';
 
 export interface NexusRuntimeOptions {
   readonly workspaceGuard: WorkspaceGuard;
+  readonly storage?: KeyValueStorage;
   readonly targetPath?: () => string;
   readonly requestApproval?: RuntimeApprovalHandler;
   readonly requestTurnTimeoutContinuation?: TurnTimeoutHandler;

@@ -35,13 +35,20 @@ export class MemoryBrainSessionPersistence implements BrainSessionPersistence {
   }
 }
 
+import { KeyValueStorage } from '../runtime/types';
+
 export class FileBrainSessionPersistence implements BrainSessionPersistence {
   private readonly memoryFallback = new MemoryBrainSessionPersistence();
 
   constructor(
     private readonly directory: string,
-    private readonly maxMessages = 20
-  ) { }
+    private readonly maxMessages = 20,
+    private readonly storage?: KeyValueStorage
+  ) {}
+
+  private storageKey(conversationId: string): string {
+    return `nexus.brain.session:${conversationId}`;
+  }
 
   private resolveFilePath(conversationId: string): string {
     const hash = createHash('sha256').update(conversationId).digest('hex').slice(0, 16);
@@ -53,7 +60,24 @@ export class FileBrainSessionPersistence implements BrainSessionPersistence {
     return join(this.directory, fileName);
   }
 
+  private isValidRecord(parsed: unknown): parsed is BrainSessionRecord {
+    if (!parsed || typeof parsed !== 'object') {
+      return false;
+    }
+    const candidate = parsed as Record<string, unknown>;
+    return (
+      candidate.version === 1 &&
+      typeof candidate.conversationId === 'string' &&
+      typeof candidate.context === 'string' &&
+      Array.isArray(candidate.messages)
+    );
+  }
+
   load(conversationId: string): BrainSessionRecord | undefined {
+    const stored = this.storage?.get(this.storageKey(conversationId));
+    if (this.isValidRecord(stored)) {
+      return stored;
+    }
     try {
       const filePath = this.resolveFilePath(conversationId);
       if (!existsSync(filePath)) {
@@ -61,14 +85,11 @@ export class FileBrainSessionPersistence implements BrainSessionPersistence {
       }
       const raw = readFileSync(filePath, 'utf-8');
       const parsed = JSON.parse(raw);
-      if (
-        parsed &&
-        parsed.version === 1 &&
-        typeof parsed.conversationId === 'string' &&
-        typeof parsed.context === 'string' &&
-        Array.isArray(parsed.messages)
-      ) {
-        return parsed as BrainSessionRecord;
+      if (this.isValidRecord(parsed)) {
+        if (this.storage) {
+          void this.storage.update(this.storageKey(conversationId), parsed);
+        }
+        return parsed;
       }
       return undefined;
     } catch {
@@ -112,6 +133,9 @@ export class FileBrainSessionPersistence implements BrainSessionPersistence {
     };
 
     this.memoryFallback.save(cleanRecord);
+    if (this.storage) {
+      void this.storage.update(this.storageKey(record.conversationId), cleanRecord);
+    }
 
     try {
       if (!existsSync(this.directory)) {
@@ -126,6 +150,9 @@ export class FileBrainSessionPersistence implements BrainSessionPersistence {
 
   clear(conversationId: string): void {
     this.memoryFallback.clear(conversationId);
+    if (this.storage) {
+      void this.storage.update(this.storageKey(conversationId), undefined);
+    }
     try {
       const filePath = this.resolveFilePath(conversationId);
       if (existsSync(filePath)) {

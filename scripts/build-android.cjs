@@ -15,6 +15,64 @@ function run(command, args, cwd = root) {
   if (result.status !== 0) throw new Error(`${command} a échoué (${result.status ?? result.signal}).`);
 }
 
+function bumpSemver(version, kind) {
+  const parts = String(version || '1.0.0').split('.').map(n => Number.parseInt(n, 10) || 0);
+  const [major = 1, minor = 0, patch = 0] = parts;
+  if (kind === 'major') return `${major + 1}.0.0`;
+  if (kind === 'minor') return `${major}.${minor + 1}.0`;
+  return `${major}.${minor}.${patch + 1}`;
+}
+
+function syncReleaseVersion() {
+  const args = process.argv.slice(2);
+  const pkgPath = path.join(root, 'package.json');
+  const webPkgPath = path.join(root, 'web', 'package.json');
+  const gradlePath = path.join(android, 'app', 'build.gradle');
+  const appVersionPath = path.join(root, 'web', 'app', 'utils', 'app-version.mjs');
+
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+  const webPkg = JSON.parse(fs.readFileSync(webPkgPath, 'utf8'));
+  let gradleContent = fs.readFileSync(gradlePath, 'utf8');
+
+  const currentGradleCode = Number(gradleContent.match(/versionCode\s+(\d+)/)?.[1] || 3);
+  const currentGradleName = gradleContent.match(/versionName\s+"([^"]+)"/)?.[1] || pkg.version || '1.3.0';
+
+  const explicitVersionIdx = args.indexOf('--version');
+  const bumpIdx = args.indexOf('--bump');
+  const incrementBuild = args.includes('--increment-build');
+
+  let nextVersion = pkg.version || currentGradleName;
+  let nextBuildCode = currentGradleCode;
+
+  if (explicitVersionIdx !== -1 && args[explicitVersionIdx + 1]) {
+    nextVersion = args[explicitVersionIdx + 1].replace(/^v/, '');
+    nextBuildCode = currentGradleCode + 1;
+  } else if (bumpIdx !== -1) {
+    const bumpKind = args[bumpIdx + 1] || 'patch';
+    nextVersion = bumpSemver(nextVersion, bumpKind);
+    nextBuildCode = currentGradleCode + 1;
+  } else if (incrementBuild || currentGradleName !== nextVersion) {
+    nextBuildCode = currentGradleCode + 1;
+  }
+
+  pkg.version = nextVersion;
+  webPkg.version = nextVersion;
+  fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
+  fs.writeFileSync(webPkgPath, `${JSON.stringify(webPkg, null, 2)}\n`);
+
+  gradleContent = gradleContent
+    .replace(/versionCode\s+\d+/, `versionCode ${nextBuildCode}`)
+    .replace(/versionName\s+"[^"]+"/, `versionName "${nextVersion}"`);
+  fs.writeFileSync(gradlePath, gradleContent);
+
+  fs.writeFileSync(
+    appVersionPath,
+    `export const APP_VERSION = "${nextVersion}";\nexport const APP_BUILD = ${nextBuildCode};\n`
+  );
+
+  return { versionName: nextVersion, versionCode: nextBuildCode };
+}
+
 try {
   // Prefer Nexus's isolated Linux tools; leave the system Java unchanged.
   const managedJava = path.join(tools, 'jdk-21');
@@ -42,7 +100,8 @@ try {
   env.ANDROID_HOME = sdk;
   env.ANDROID_SDK_ROOT = sdk;
 
-  console.log(`Compilation Android avec Java ${major}.`);
+  const { versionName, versionCode } = syncReleaseVersion();
+  console.log(`Compilation Android Nexus v${versionName} (build #${versionCode}) avec Java ${major}.`);
   run(windows ? 'npm.cmd' : 'npm', ['--prefix', 'web', 'run', 'cap:build']);
 
   // Use the SDK for this build, then restore the user's Android Studio setting.
@@ -58,9 +117,12 @@ try {
     else fs.writeFileSync(properties, original);
   }
 
-  const apk = path.join(root, 'nexus-debug.apk');
-  fs.copyFileSync(path.join(android, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk'), apk);
-  console.log(`\nAPK prêt : ${apk}\nTransférez ce fichier sur votre téléphone pour l’installer.`);
+  const builtApk = path.join(android, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
+  const versionedApk = path.join(root, `nexus-v${versionName}-b${versionCode}.apk`);
+  const latestApk = path.join(root, 'nexus-debug.apk');
+  fs.copyFileSync(builtApk, versionedApk);
+  fs.copyFileSync(builtApk, latestApk);
+  console.log(`\nAPK versionné prêt : ${versionedApk}\nAlias rapide : ${latestApk}\nTransférez ce fichier sur votre téléphone pour l’installer.`);
 } catch (error) {
   console.error(`\nBuild Android : ${error.message}`);
   process.exitCode = 1;

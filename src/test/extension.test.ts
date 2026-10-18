@@ -13,7 +13,7 @@ suite('Nexus extension integration', () => {
     for (const command of [
       'nexus.diagnostics',
       'nexus.status',
-      'nexus.pairTelegram',
+      'nexus.selectBackend',
       'nexus.startCodexSession',
       'nexus.startAntigravitySession',
       'nexus.testSpeechToText',

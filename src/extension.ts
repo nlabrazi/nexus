@@ -5,14 +5,6 @@ import { initializeLogging } from './logging/persistence';
 import { logger } from './logging/logger';
 import * as vscode from 'vscode';
 
-import { TelegramClient } from './telegram/client';
-import {
-  RemoteBranchAction,
-  RemotePromptReply,
-  RemoteSessionAction,
-  TelegramService,
-} from './telegram/service';
-
 import { CodexClient } from './codex/client';
 import { CodexService } from './codex/service';
 import { WorkspaceSessionPersistence } from './codex/persistence';
@@ -23,14 +15,11 @@ import { AntigravityClient } from './antigravity/client';
 import { AntigravityService } from './antigravity/service';
 import { WorkspaceAntigravitySessionPersistence } from './antigravity/persistence';
 import { WorkspaceAntigravityModelPreferences } from './antigravity/model-preferences';
-import { AgentBackendType } from './telegram/status';
+import { AgentBackendType, RemoteSessionAction } from './runtime/types';
 import { registerSpeechTestCommand } from './speech/commands';
-import { createConfiguredSpeechService } from './speech/configuration';
-import { synthesizeAcknowledgement } from './speech/acknowledgement';
 import { NexusRuntime } from './runtime';
 
 let nexusRuntime: NexusRuntime | undefined;
-let telegramService: TelegramService | undefined;
 let codexService: CodexService | undefined;
 let antigravityService: AntigravityService | undefined;
 
@@ -64,12 +53,8 @@ export async function activate(context: vscode.ExtensionContext) {
   nexusRuntime = new NexusRuntime({
     workspaceGuard,
     targetPath: () => workspaceGuard.targetPath(),
-    requestApproval: async (request, signal) => {
-      return (await telegramService?.requestApproval(request, signal)) ?? 'decline';
-    },
-    requestTurnTimeoutContinuation: async (request, signal) => {
-      return (await telegramService?.requestTurnTimeoutContinuation(request, signal)) ?? false;
-    },
+    requestApproval: async () => 'decline',
+    requestTurnTimeoutContinuation: async () => false,
     codexPersistence: new WorkspaceSessionPersistence(context.workspaceState),
     codexModelPreferences: new WorkspaceModelPreferences(context.workspaceState),
     antigravityPersistence: new WorkspaceAntigravitySessionPersistence(context.workspaceState),
@@ -102,69 +87,12 @@ export async function activate(context: vscode.ExtensionContext) {
     const report = formatDiagnostics(
       { ...snapshot, tts: getTtsDiagnostic() },
       {
-        telegram: telegramService ? 'service démarré (connexion non vérifiée)' : 'non configuré',
         lastError: logger.getLastError(),
         logsAvailable: getLoggingStatus().available,
       }
     );
     output.appendLine(report);
     output.show(true);
-  });
-
-  const configureTelegramCommand = vscode.commands.registerCommand(
-    'nexus.configureTelegram',
-    async () => {
-      const token = await vscode.window.showInputBox({
-        prompt: 'Enter your Telegram bot token',
-        password: true,
-        ignoreFocusOut: true,
-      });
-
-      if (!token) {
-        return;
-      }
-
-      await context.secrets.store('nexus.telegram.botToken', token);
-
-      startTelegramService(context, token);
-
-      vscode.window.showInformationMessage('Nexus: Telegram configured.');
-    }
-  );
-
-  const testTelegramCommand = vscode.commands.registerCommand('nexus.testTelegram', async () => {
-    const token = await context.secrets.get('nexus.telegram.botToken');
-
-    if (!token) {
-      vscode.window.showWarningMessage('Nexus: Telegram is not configured.');
-
-      return;
-    }
-
-    try {
-      const client = new TelegramClient(token);
-
-      const data = await client.getMe();
-
-      vscode.window.showInformationMessage(`Nexus connected to @${data.result?.username}`);
-    } catch (error) {
-      vscode.window.showErrorMessage(
-        `Nexus: Unable to connect to Telegram: ${error instanceof Error ? error.message : String(error)
-        }`
-      );
-    }
-  });
-
-  const pairTelegramCommand = vscode.commands.registerCommand('nexus.pairTelegram', () => {
-    if (!telegramService) {
-      vscode.window.showWarningMessage('Nexus: Telegram is not configured.');
-
-      return;
-    }
-
-    const pairingCode = telegramService.createPairingCode();
-
-    vscode.window.showInformationMessage(`Send /pair ${pairingCode} to your Nexus Telegram bot`);
   });
 
   const testCodexCommand = vscode.commands.registerCommand('nexus.testCodex', async () => {
@@ -198,7 +126,8 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage(`Nexus: Codex session started — ${sessionId}`);
       } catch (error) {
         vscode.window.showErrorMessage(
-          `Nexus: Unable to start Codex session: ${error instanceof Error ? error.message : String(error)
+          `Nexus: Unable to start Codex session: ${
+            error instanceof Error ? error.message : String(error)
           }`
         );
       }
@@ -390,9 +319,6 @@ export async function activate(context: vscode.ExtensionContext) {
     statusCommand,
     diagnosticsCommand,
     selectBackendCommand,
-    configureTelegramCommand,
-    testTelegramCommand,
-    pairTelegramCommand,
     testCodexCommand,
     startCodexSessionCommand,
     testCodexPromptCommand,
@@ -417,147 +343,14 @@ export async function activate(context: vscode.ExtensionContext) {
   statusBar.show();
 
   context.subscriptions.push(statusBar);
-
-  const telegramToken = await context.secrets.get('nexus.telegram.botToken');
-
-  if (telegramToken) {
-    startTelegramService(context, telegramToken);
-  }
-}
-
-function startTelegramService(context: vscode.ExtensionContext, token: string): void {
-  telegramService?.stop();
-
-  const client = new TelegramClient(token);
-
-  const service: TelegramService = new TelegramService(context, client, {
-    onBrainPrompt: async (message, signal) => {
-      const folders = vscode.workspace.workspaceFolders ?? [];
-      const folder = folders.length === 1 ? folders[0] : undefined;
-      const conversationId = JSON.stringify([
-        context.globalState.get<number>('nexus.telegram.allowedUserId'),
-        context.globalState.get<number>('nexus.telegram.allowedChatId'),
-        folder?.uri.toString(),
-      ]);
-      return nexusRuntime!.executeBrain(message, signal, { conversationId });
-    },
-    onRemotePrompt: handleRemoteCodexPrompt,
-    synthesizeAcknowledgement: async (signal) => {
-      if (!vscode.workspace.isTrusted) {
-        throw new Error('Workspace is not trusted');
-      }
-      const config = vscode.workspace.getConfiguration('nexus.speech.tts');
-      if (!config.get<boolean>('enabled', true)) { return undefined; }
-      return synthesizeAcknowledgement(signal, {
-        pythonPath: config.get<string>('pythonPath', ''),
-        modelPath: config.get<string>('modelPath', ''),
-        scriptPath: context.asAbsolutePath('runtime/speech/synthesize.py'),
-        speakerId: config.get<number>('speakerId', 1),
-        speed: config.get<number>('speed', 1),
-      });
-    },
-    transcribeVoice: async (audio, signal) => {
-      const { service, language } = createConfiguredSpeechService(context);
-      return service.transcribe(audio, { signal, language });
-    },
-    getStatus: async () => {
-      const folders = vscode.workspace.workspaceFolders ?? [];
-      const workspace = folders.length === 1 ? folders[0] : undefined;
-      const status = await nexusRuntime!.getStatus();
-      return {
-        ...status,
-        tts: getTtsDiagnostic(),
-        workspace: workspace ? { name: workspace.name, path: workspace.uri.fsPath } : undefined,
-        workspaceCount: folders.length,
-      };
-    },
-    onSessionAction: handleSessionAction,
-    onStop: () => nexusRuntime!.cancelCurrentWork(),
-    onBranchAction: handleBranchAction,
-    modelControls: {
-      list: async () => nexusRuntime!.listModels('codex'),
-      select: async (selection, menuContext) =>
-        nexusRuntime!.selectModel('codex', selection, menuContext),
-    },
-    onRemoteAntigravityPrompt: handleRemoteAntigravityPrompt,
-    onAntigravitySessionAction: handleAntigravitySessionAction,
-    antigravityModelControls: {
-      list: async () => nexusRuntime!.listModels('antigravity'),
-      select: async (selection, menuContext) =>
-        nexusRuntime!.selectModel('antigravity', selection, menuContext),
-    },
-    onAntigravityStop: () => nexusRuntime!.getAntigravityService().cancelCurrentWork(),
-    getActiveBackend: () => {
-      return (
-        context.globalState.get<AgentBackendType>('nexus.activeBackend') ??
-        vscode.workspace.getConfiguration('nexus').get<AgentBackendType>('defaultBackend', 'codex')
-      );
-    },
-    setActiveBackend: async (backend: AgentBackendType) => {
-      nexusRuntime!.setActiveBackend(backend);
-      await context.globalState.update('nexus.activeBackend', backend);
-    },
-  });
-
-  telegramService = service;
-  void service.start();
-}
-
-async function handleRemoteCodexPrompt(prompt: string): Promise<RemotePromptReply> {
-  if (!nexusRuntime) {
-    throw new Error('Codex service unavailable.');
-  }
-
-  const result = await nexusRuntime.executeTask('codex', prompt);
-  return {
-    text: result.text,
-    fileSummary: result.fileSummary,
-  };
-}
-
-async function handleRemoteAntigravityPrompt(prompt: string): Promise<RemotePromptReply> {
-  if (!nexusRuntime) {
-    throw new Error('Gemini Antigravity service unavailable.');
-  }
-
-  const result = await nexusRuntime.executeTask('antigravity', prompt);
-  return {
-    text: result.text,
-    fileSummary: result.fileSummary,
-  };
-}
-
-async function handleSessionAction(action: RemoteSessionAction): Promise<string> {
-  if (!nexusRuntime) {
-    throw new Error('Codex service unavailable.');
-  }
-  return nexusRuntime.handleSessionAction('codex', action);
-}
-
-async function handleAntigravitySessionAction(action: RemoteSessionAction): Promise<string> {
-  if (!nexusRuntime) {
-    throw new Error('Gemini Antigravity service unavailable.');
-  }
-  return nexusRuntime.handleSessionAction('antigravity', action);
-}
-
-async function switchWorkspaceBranch(path: string, name: string): Promise<string> {
-  if (!nexusRuntime) {
-    throw new Error('Service unavailable.');
-  }
-  return nexusRuntime.switchBranch(name, path);
-}
-
-async function handleBranchAction(action: RemoteBranchAction): Promise<string> {
-  if (!nexusRuntime) {
-    throw new Error('Service unavailable.');
-  }
-  return nexusRuntime.handleBranchAction(action);
 }
 
 async function runLocalSessionAction(action: RemoteSessionAction): Promise<void> {
+  if (!nexusRuntime) {
+    throw new Error('Codex service unavailable.');
+  }
   try {
-    const id = await handleSessionAction(action);
+    const id = await nexusRuntime.handleSessionAction('codex', action);
     vscode.window.showInformationMessage(
       `Nexus : session Codex ${action.type === 'new' ? 'créée' : 'reprise'} — ${id}`
     );
@@ -569,8 +362,11 @@ async function runLocalSessionAction(action: RemoteSessionAction): Promise<void>
 }
 
 async function runLocalAntigravitySessionAction(action: RemoteSessionAction): Promise<void> {
+  if (!nexusRuntime) {
+    throw new Error('Gemini Antigravity service unavailable.');
+  }
   try {
-    const id = await handleAntigravitySessionAction(action);
+    const id = await nexusRuntime.handleSessionAction('antigravity', action);
     vscode.window.showInformationMessage(
       `Nexus : session Antigravity ${action.type === 'new' ? 'créée' : 'reprise'} — ${id}`
     );
@@ -581,14 +377,22 @@ async function runLocalAntigravitySessionAction(action: RemoteSessionAction): Pr
   }
 }
 
+async function switchWorkspaceBranch(path: string, name: string): Promise<string> {
+  if (!nexusRuntime) {
+    throw new Error('Service unavailable.');
+  }
+  return nexusRuntime.switchBranch(name, path);
+}
+
 export function deactivate() {
-  telegramService?.stop();
   nexusRuntime?.stop();
 }
 
 function getTtsDiagnostic(): string {
   const config = vscode.workspace.getConfiguration('nexus.speech.tts');
-  if (!config.get<boolean>('enabled', true)) { return 'désactivé'; }
+  if (!config.get<boolean>('enabled', true)) {
+    return 'désactivé';
+  }
   const python = config.get<string>('pythonPath', '');
   const model = config.get<string>('modelPath', '');
   return python && model && existsSync(python) && existsSync(model) && existsSync(`${model}.json`)

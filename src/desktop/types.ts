@@ -8,7 +8,7 @@ import {
   TaskBackend,
 } from '../protocol/types';
 import { TaskExecutionResult } from '../runtime/types';
-import { NexusStatusSnapshot } from '../telegram/status';
+import { NexusStatusSnapshot } from '../runtime/types';
 
 export interface DesktopProjectConfig {
   readonly id?: string;

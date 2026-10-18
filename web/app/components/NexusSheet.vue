@@ -7,7 +7,15 @@
     @click="onBackdropClick"
     @close="emit('update:modelValue', false)"
   >
-    <div class="sheet-body">
+    <div
+      ref="sheetBodyRef"
+      class="sheet-body"
+      :class="{
+        'has-scroll-top': canScrollUp,
+        'has-scroll-bottom': canScrollDown,
+      }"
+      @scroll.passive="updateScrollState"
+    >
       <header class="sheet-header">
         <h2 :id="titleId">{{ title }}</h2>
         <button
@@ -21,23 +29,60 @@
       </header>
       <slot />
     </div>
+    <div
+      class="scroll-affordance-hint"
+      :class="{ visible: canScrollDown }"
+      aria-hidden="true"
+    >
+      <span class="scroll-affordance-pill">
+        <span>Défiler</span>
+        <NexusIcon name="chevron" class="scroll-chevron-down" />
+      </span>
+    </div>
   </dialog>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, useId, watch } from "vue";
+import { nextTick, onMounted, onUnmounted, ref, useId, watch } from "vue";
 
 const props = defineProps<{ modelValue: boolean; title: string }>();
 const emit = defineEmits<{ "update:modelValue": [value: boolean] }>();
 const dialog = ref<HTMLDialogElement>();
+const sheetBodyRef = ref<HTMLElement>();
+const canScrollUp = ref(false);
+const canScrollDown = ref(false);
 const titleId = useId();
+
+let resizeObserver: ResizeObserver | null = null;
+let mutationObserver: MutationObserver | null = null;
+
+function updateScrollState() {
+  const el = sheetBodyRef.value;
+  if (!el) {
+    canScrollUp.value = false;
+    canScrollDown.value = false;
+    return;
+  }
+  canScrollUp.value = el.scrollTop > 8;
+  canScrollDown.value = el.scrollHeight - el.scrollTop - el.clientHeight > 10;
+}
+
 function close() {
   emit("update:modelValue", false);
 }
+
 function syncDialog() {
-  if (props.modelValue && !dialog.value?.open) dialog.value?.showModal();
-  else if (!props.modelValue && dialog.value?.open) dialog.value.close();
+  if (props.modelValue && !dialog.value?.open) {
+    dialog.value?.showModal();
+    void nextTick(() => {
+      updateScrollState();
+      setTimeout(updateScrollState, 80);
+    });
+  } else if (!props.modelValue && dialog.value?.open) {
+    dialog.value.close();
+  }
 }
+
 function onBackdropClick(event: MouseEvent) {
   if (event.target !== dialog.value) return;
   const rect = dialog.value.getBoundingClientRect();
@@ -49,6 +94,31 @@ function onBackdropClick(event: MouseEvent) {
   )
     close();
 }
+
 watch(() => props.modelValue, syncDialog, { flush: "post" });
-onMounted(syncDialog);
+
+onMounted(() => {
+  syncDialog();
+  if (typeof window !== "undefined" && sheetBodyRef.value) {
+    if ("ResizeObserver" in window) {
+      resizeObserver = new ResizeObserver(() => updateScrollState());
+      resizeObserver.observe(sheetBodyRef.value);
+    }
+    if ("MutationObserver" in window) {
+      mutationObserver = new MutationObserver(() => {
+        void nextTick(updateScrollState);
+      });
+      mutationObserver.observe(sheetBodyRef.value, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+      });
+    }
+  }
+});
+
+onUnmounted(() => {
+  resizeObserver?.disconnect();
+  mutationObserver?.disconnect();
+});
 </script>

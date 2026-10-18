@@ -10,6 +10,11 @@ const config: CapacitorConfig = {
   },
   plugins: {
     VoiceRecorder: {},
+    StatusBar: {
+      overlaysWebView: false,
+      style: 'DARK',
+      backgroundColor: '#07090e',
+    },
   },
 };
 

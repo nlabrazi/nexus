@@ -54,7 +54,7 @@ test('dashboard endpoint requires the Nexus token and transports a real Desktop 
   assert.equal(data.brain.selection, 'custom');
   assert.deepEqual(
     data.agents.map((a) => a.id),
-    ['codex', 'antigravity']
+    ['codex', 'antigravity', 'claude']
   );
   assert.ok(!JSON.stringify(data).includes('dashboard-token'));
   t.mock.method(desktop.getRuntime()!, 'getDashboard', async () => {

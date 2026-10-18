@@ -33,25 +33,51 @@ export function createNativeSpeechPlayback(engine, callbacks, timers = globalThi
     try {
       await bounded(stopped);
       if (current !== generation) return;
-      const result = await bounded(engine.getSupportedVoices());
+      const result = await bounded(engine.getSupportedVoices()).catch(() => ({ voices: [] }));
       if (current !== generation) return;
-      const voices = result.voices;
+      const voices = Array.isArray(result?.voices) ? result.voices : [];
       let voice = chooseSpeechVoice(voices, options.voiceURI);
-      if (voice < 0) throw new Error('missing voice');
+      if (voices.length > 0 && voice < 0) throw new Error('missing voice');
       const explicitVoice = voices.some((v) => v.voiceURI === options.voiceURI);
-      const localFrance = voices.findIndex((v) => v.lang.toLowerCase().replaceAll('_', '-') === 'fr-fr' && v.localService);
+      const localFrance = voices.findIndex((v) => {
+        const l = String(v.lang || '').toLowerCase().replaceAll('_', '-');
+        return (l === 'fr-fr' || l === 'fra-fra') && v.localService;
+      });
+      const rate = Number.isFinite(options.rate) && options.rate >= 0.8 && options.rate <= 1.3 ? options.rate : 1;
       for (const chunk of splitNativeSpeechText(text)) {
-        const play = () => bounded(engine.speak({
-          text: chunk, lang: voices[voice].lang, voice,
-          rate: Number.isFinite(options.rate) && options.rate >= 0.8 && options.rate <= 1.3 ? options.rate : 1,
-          pitch: 1, volume: 1, queueStrategy: 0, category: 'playback',
-        }), Math.max(60_000, chunk.length * 125));
+        const speakPayload = voice >= 0
+          ? {
+              text: chunk,
+              lang: String(voices[voice].lang || 'fr-FR').toLowerCase().startsWith('fra')
+                ? 'fr-FR'
+                : voices[voice].lang,
+              voice,
+              rate,
+              pitch: 1,
+              volume: 1,
+              queueStrategy: 0,
+              category: 'playback',
+            }
+          : {
+              text: chunk,
+              lang: 'fr-FR',
+              rate,
+              pitch: 1,
+              volume: 1,
+              queueStrategy: 0,
+              category: 'playback',
+            };
+        const play = () => bounded(engine.speak(speakPayload), Math.max(60_000, chunk.length * 125));
         try { await play(); }
         catch (error) {
           if (current !== generation) return;
-          if (explicitVoice || voices[voice].localService || localFrance < 0) throw error;
+          if (voice < 0 || explicitVoice || voices[voice].localService || localFrance < 0) throw error;
           // Automatic online voices can be unavailable offline; retain the France accent.
           voice = localFrance;
+          speakPayload.voice = voice;
+          speakPayload.lang = String(voices[voice].lang || 'fr-FR').toLowerCase().startsWith('fra')
+            ? 'fr-FR'
+            : voices[voice].lang;
           await play();
         }
         if (current !== generation) return;

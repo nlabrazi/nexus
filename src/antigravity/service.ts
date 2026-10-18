@@ -329,7 +329,8 @@ export class AntigravityService {
   async sendPrompt(
     prompt: string,
     cwd = this.workspacePath,
-    onFilesChanged?: (paths: readonly string[]) => void
+    onFilesChanged?: (paths: readonly string[]) => void,
+    onChunk?: (delta: string) => void
   ): Promise<string> {
     if (!prompt.trim()) {
       throw new Error('Antigravity prompt cannot be empty');
@@ -356,7 +357,7 @@ export class AntigravityService {
         assertSameWorkspace(this.workspaceIdentity, await this.validateWorkspace(path));
         this.assertCurrent(generation);
       }
-      return await this.client.runTurn(id, prompt, onFilesChanged);
+      return await this.client.runTurn(id, prompt, onFilesChanged, onChunk);
     } catch (error) {
       if (
         this.generation === generation &&

@@ -13,7 +13,7 @@ export class ConversationalService implements ConversationalAgent {
     private readonly model: BrainModel,
     private readonly tools: CodingAgentTools,
     private readonly persistence?: BrainSessionPersistence
-  ) { }
+  ) {}
 
   async clearConversation(conversationId: string): Promise<void> {
     this.conversations.delete(conversationId);
@@ -32,7 +32,8 @@ export class ConversationalService implements ConversationalAgent {
       throw new Error('Le message ou l’identifiant de conversation est invalide.');
     }
     const trimmedMessage = input.message.trim();
-    if (trimmedMessage.toLowerCase() === '/reset' || trimmedMessage.toLowerCase() === 'reset') {
+    const lowerCmd = trimmedMessage.toLowerCase();
+    if (lowerCmd === '/reset' || lowerCmd === 'reset' || lowerCmd === '/new') {
       await this.clearConversation(input.conversationId);
       return {
         text: '🧠 Conversation Nexus Brain réinitialisée. Nouveau fil de discussion démarré.',
@@ -43,7 +44,9 @@ export class ConversationalService implements ConversationalAgent {
     }
     this.running = true;
     try {
-      const context = JSON.stringify(input.project ?? null);
+      const context = JSON.stringify(
+        input.project ? { name: input.project.name, branch: input.project.branch } : null
+      );
       let previous = this.conversations.get(input.conversationId);
       if (!previous && this.persistence) {
         const persisted = await this.persistence.load(input.conversationId);

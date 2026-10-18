@@ -35,11 +35,11 @@
       </div>
       <div class="dashboard-section-heading"><h4>Agents de code</h4><small>Sessions du poste</small></div>
       <section v-for="agent in dashboard.agents" :key="agent.id" class="provider-card">
-        <div class="dashboard-card-heading"><h4>{{ agent.id === 'codex' ? 'Codex' : 'Antigravity' }}</h4><span class="usage-badge">{{ agent.state === 'running' ? 'En cours' : agent.state === 'ready' ? 'Session active' : 'Arrêté' }}</span></div>
+        <div class="dashboard-card-heading"><h4>{{ agent.id === 'codex' ? 'Codex (OpenAI)' : agent.id === 'claude' ? 'Claude Code (Anthropic)' : 'Antigravity (Google)' }}</h4><span class="usage-badge" :class="{ enabled: agent.state !== 'stopped' }">{{ agent.state === 'running' ? 'En cours' : agent.state === 'ready' ? 'Prêt / Actif' : 'Arrêté' }}</span></div>
         <p class="provider-model">{{ agent.model || 'Modèle non communiqué' }}</p>
-        <p class="dashboard-caption">{{ agent.totalTokens === undefined ? 'Consommation non communiquée par cet agent.' : `${formatCount(agent.totalTokens)} tokens dans la session` }}</p>
+        <p class="dashboard-caption">{{ agent.totalTokens === undefined ? 'Aucun token mesuré sur cette session.' : `${formatCount(agent.totalTokens)} tokens consommés${agent.costUsd ? ` · $${agent.costUsd.toFixed(4)}` : ''}` }}</p>
         <NexusQuota v-for="metric in agent.limits" :key="metric.id" :metric="metric" :now="now" />
-        <p v-if="!agent.limits.length" class="dashboard-caption">Quota d’abonnement non communiqué par cet agent.</p>
+        <p v-if="!agent.limits.length" class="dashboard-caption">Quota d’abonnement non exposé par le CLI de cet agent.</p>
       </section>
       <p class="dashboard-footnote">Actualisé à {{ time(dashboard.generatedAt) }}. Les fenêtres en heures indiquent le renouvellement d’un quota, pas un nombre d’heures de travail disponibles. Les compteurs Nexus repartent à zéro au redémarrage.</p>
     </template>
