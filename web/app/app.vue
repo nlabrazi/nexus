@@ -143,13 +143,6 @@
               <NexusIcon name="chevron" />
             </button>
           </div>
-
-          <div class="scroll-affordance-hint home-scroll-hint" :class="{ visible: canScrollHomeDown }" aria-hidden="true">
-            <span class="scroll-affordance-pill">
-              <span>Défiler</span>
-              <NexusIcon name="chevron" class="scroll-chevron-down" />
-            </span>
-          </div>
         </main>
 
         <!-- 2. WORKSPACE SCREEN (Chat + Inline STT Mic) -->
@@ -218,11 +211,11 @@
             </div>
           </div>
 
-          <div class="scroll-affordance-hint workspace-scroll-hint" :class="{ visible: canScrollMessagesDown }" aria-hidden="true">
-            <span class="scroll-affordance-pill">
+          <div class="scroll-affordance-hint workspace-scroll-hint" :class="{ visible: canScrollMessagesDown }">
+            <button type="button" class="scroll-affordance-pill" :tabindex="canScrollMessagesDown ? 0 : -1" aria-label="Défiler vers le bas de la discussion" @click="scrollMessagesToBottom">
               <span>Défiler vers le bas</span>
               <NexusIcon name="chevron" class="scroll-chevron-down" />
-            </span>
+            </button>
           </div>
 
           <!-- Centered STT Mic & Composer Dock -->
@@ -312,6 +305,13 @@
           </div>
         </main>
       </Transition>
+
+      <div v-if="currentView === 'home'" class="scroll-affordance-hint home-scroll-hint" :class="{ visible: canScrollHomeDown }">
+        <button type="button" class="scroll-affordance-pill" :tabindex="canScrollHomeDown ? 0 : -1" aria-label="Défiler vers le bas" @click="scrollHomeDown">
+          <span>Défiler</span>
+          <NexusIcon name="chevron" class="scroll-chevron-down" />
+        </button>
+      </div>
     </div>
 
 
@@ -933,6 +933,10 @@ function leaveMode() {
   slideDirection.value = "backward";
   currentView.value = "home";
   triggerHaptic("light");
+  nextTick(() => {
+    updateHomeScrollState();
+    setTimeout(updateHomeScrollState, 350);
+  });
 }
 
 function toggleWorkspaceMode() {
@@ -1055,6 +1059,33 @@ function updateHomeScrollState() {
   }
   canScrollHomeUp.value = el.scrollTop > 10;
   canScrollHomeDown.value = el.scrollHeight - el.scrollTop - el.clientHeight > 14;
+}
+
+function scrollHomeDown() {
+  const el = homeScrollRef.value;
+  if (!el) return;
+  void triggerHaptic("release");
+  const step = Math.max(240, Math.round(el.clientHeight * 0.7));
+  const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
+  const targetTop = remaining <= step * 1.25 ? el.scrollHeight : el.scrollTop + step;
+  if (typeof el.scrollTo === "function") {
+    el.scrollTo({ top: targetTop, behavior: "smooth" });
+  } else {
+    el.scrollTop = targetTop;
+  }
+  setTimeout(updateHomeScrollState, 260);
+}
+
+function scrollMessagesToBottom() {
+  const el = messagesScrollRef.value;
+  if (!el) return;
+  void triggerHaptic("release");
+  if (typeof el.scrollTo === "function") {
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  } else {
+    el.scrollTop = el.scrollHeight;
+  }
+  setTimeout(updateMessagesScrollState, 260);
 }
 
 function resizeComposer() {
@@ -1530,6 +1561,8 @@ function syncViewport() {
     "--app-height",
     `${window.visualViewport?.height || window.innerHeight}px`,
   );
+  updateHomeScrollState();
+  updateMessagesScrollState();
 }
 
 // Activity & Tasks State
@@ -1952,7 +1985,16 @@ onMounted(async () => {
   }
   if (typeof window !== "undefined") {
     syncViewport();
+    window.addEventListener("resize", syncViewport);
     window.visualViewport?.addEventListener("resize", syncViewport);
+    nextTick(() => {
+      updateHomeScrollState();
+      updateMessagesScrollState();
+      setTimeout(() => {
+        updateHomeScrollState();
+        updateMessagesScrollState();
+      }, 120);
+    });
     const savedUrl = localStorage.getItem("nexus_core_url");
     const savedToken = localStorage.getItem("nexus_auth_token") || "";
     const savedTab = localStorage.getItem("nexus_active_tab") as
@@ -2146,6 +2188,7 @@ function handleVisibilityChange() {
 }
 
 onUnmounted(() => {
+  window.removeEventListener("resize", syncViewport);
   window.visualViewport?.removeEventListener("resize", syncViewport);
   document.removeEventListener("visibilitychange", handleVisibilityChange);
   document.documentElement.style.removeProperty("--app-height");

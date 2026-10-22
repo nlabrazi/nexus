@@ -28,3 +28,16 @@ test('interaction feedback distinguishes sending from server receipt and hides i
   assert.equal(getInteractionMessage({ status: 'running', stage: 'inspecting', progressMessage: 'Internal event with private path' }, 'brain'), 'Analyse du projet…');
   assert.equal(getInteractionMessage({ status: 'running', stage: 'executing' }, 'codex'), 'Votre agent travaille…');
 });
+
+test('scroll-down affordance pills are interactive buttons wired to smooth scroll handlers', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { resolve } = await import('node:path');
+  const appVue = readFileSync(resolve(import.meta.dirname, '../app/app.vue'), 'utf8');
+  const sheetVue = readFileSync(resolve(import.meta.dirname, '../app/components/NexusSheet.vue'), 'utf8');
+  const css = readFileSync(resolve(import.meta.dirname, '../app/assets/nexus.css'), 'utf8');
+
+  assert.match(appVue, /<button[^>]+class="scroll-affordance-pill"[^>]+@click="scrollHomeDown"/);
+  assert.match(appVue, /<button[^>]+class="scroll-affordance-pill"[^>]+@click="scrollMessagesToBottom"/);
+  assert.match(sheetVue, /<button[\s\S]*?class="scroll-affordance-pill"[\s\S]*?@click="scrollDown"/);
+  assert.match(css, /\.scroll-affordance-hint\.visible\s+\.scroll-affordance-pill\s*\{[\s\S]*?pointer-events:\s*auto/);
+});

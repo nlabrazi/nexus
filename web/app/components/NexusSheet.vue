@@ -32,12 +32,17 @@
     <div
       class="scroll-affordance-hint"
       :class="{ visible: canScrollDown }"
-      aria-hidden="true"
     >
-      <span class="scroll-affordance-pill">
+      <button
+        type="button"
+        class="scroll-affordance-pill"
+        :tabindex="canScrollDown ? 0 : -1"
+        aria-label="Défiler vers le bas"
+        @click="scrollDown"
+      >
         <span>Défiler</span>
         <NexusIcon name="chevron" class="scroll-chevron-down" />
-      </span>
+      </button>
     </div>
   </dialog>
 </template>
@@ -65,6 +70,20 @@ function updateScrollState() {
   }
   canScrollUp.value = el.scrollTop > 8;
   canScrollDown.value = el.scrollHeight - el.scrollTop - el.clientHeight > 10;
+}
+
+function scrollDown() {
+  const el = sheetBodyRef.value;
+  if (!el) return;
+  const step = Math.max(220, Math.round(el.clientHeight * 0.65));
+  const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
+  const targetTop = remaining <= step * 1.25 ? el.scrollHeight : el.scrollTop + step;
+  if (typeof el.scrollTo === "function") {
+    el.scrollTo({ top: targetTop, behavior: "smooth" });
+  } else {
+    el.scrollTop = targetTop;
+  }
+  setTimeout(updateScrollState, 260);
 }
 
 function close() {

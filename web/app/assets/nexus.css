@@ -2712,9 +2712,9 @@ body {
    HOME SCREEN (CYBER HERO & A/B SELECTION CARDS)
    ========================================================================== */
 .home-screen {
-  justify-content: center;
+  justify-content: safe center;
   align-items: center;
-  padding: 24px 20px calc(24px + var(--safe-bottom));
+  padding: 24px 20px calc(52px + var(--safe-bottom));
   overflow-y: auto;
   gap: 28px;
 }
@@ -2722,6 +2722,12 @@ body {
 .home-hero {
   text-align: center;
   max-width: 520px;
+  margin-top: auto;
+}
+
+.home-cards-container:last-child,
+.home-resume-container {
+  margin-bottom: auto;
 }
 
 .cyber-scan-tag {
@@ -3721,7 +3727,7 @@ dialog[open].sheet {
   );
 }
 
-/* Non-interactive scroll-down affordance hint pill */
+/* Interactive scroll-down affordance pill button */
 .scroll-affordance-hint {
   position: absolute;
   left: 0;
@@ -3731,13 +3737,15 @@ dialog[open].sheet {
   justify-content: center;
   align-items: center;
   pointer-events: none;
+  visibility: hidden;
   opacity: 0;
   transform: translateY(6px);
-  transition: opacity 0.22s ease, transform 0.22s ease;
+  transition: visibility 0.22s, opacity 0.22s ease, transform 0.22s ease;
   z-index: 25;
 }
 
 .scroll-affordance-hint.visible {
+  visibility: visible;
   opacity: 1;
   transform: translateY(0);
 }
@@ -3754,7 +3762,7 @@ dialog[open].sheet {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 11px;
+  padding: 5px 13px;
   border-radius: 999px;
   font-family: var(--font-mono);
   font-size: 10px;
@@ -3762,16 +3770,41 @@ dialog[open].sheet {
   letter-spacing: 0.6px;
   text-transform: uppercase;
   color: var(--accent);
-  background: rgba(8, 14, 22, 0.9);
-  border: 1px solid rgba(0, 240, 255, 0.35);
+  background: rgba(8, 14, 22, 0.92);
+  border: 1px solid rgba(0, 240, 255, 0.42);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45), 0 0 10px rgba(0, 240, 255, 0.18);
   backdrop-filter: blur(8px);
+  pointer-events: none;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+.scroll-affordance-hint.visible .scroll-affordance-pill {
+  pointer-events: auto;
+}
+
+.scroll-affordance-pill:hover {
+  border-color: var(--accent);
+  background: rgba(10, 20, 32, 0.96);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55), 0 0 14px rgba(0, 240, 255, 0.35);
+  transform: translateY(-1px);
+}
+
+.scroll-affordance-pill:active {
+  transform: scale(0.95);
 }
 
 .nexus-app.theme-brain .scroll-affordance-pill {
   color: #c084fc;
-  border-color: rgba(168, 85, 247, 0.4);
+  border-color: rgba(168, 85, 247, 0.45);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45), 0 0 10px rgba(168, 85, 247, 0.22);
+}
+
+.nexus-app.theme-brain .scroll-affordance-pill:hover {
+  border-color: #c084fc;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55), 0 0 14px rgba(168, 85, 247, 0.4);
 }
 
 .scroll-chevron-down {
