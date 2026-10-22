@@ -1253,6 +1253,21 @@ function resizeComposer() {
   textarea.style.height = `${Math.min(textarea.scrollHeight, 140)}px`;
 }
 
+// Voice / Backend Voice Status
+const voiceBackendStatus = ref<{
+  available: boolean;
+  engine?: string;
+  provider?: string;
+  language?: string;
+  tts?: {
+    provider?: "fish" | "system";
+    fishAudioAvailable?: boolean;
+    hasApiKey?: boolean;
+    referenceId?: string;
+    model?: string;
+  };
+} | null>(null);
+
 // TTS State
 const ttsEnabled = ref<boolean>(true);
 const autoSpeak = ref(true);
@@ -2017,19 +2032,6 @@ const isListening = ref<boolean>(false);
 const isProcessingAudio = ref<boolean>(false);
 const interimTranscript = ref<string>("");
 const autoSendVoice = ref<boolean>(true);
-const voiceBackendStatus = ref<{
-  available: boolean;
-  engine?: string;
-  provider?: string;
-  language?: string;
-  tts?: {
-    provider?: "fish" | "system";
-    fishAudioAvailable?: boolean;
-    hasApiKey?: boolean;
-    referenceId?: string;
-    model?: string;
-  };
-} | null>(null);
 const isNativeApp = computed(() => Capacitor.isNativePlatform());
 
 let recognitionInstance: any = null;
