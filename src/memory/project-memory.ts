@@ -101,11 +101,17 @@ export class ProjectMemory {
   }
 
   recordDecision(rootPath: string, input: DecisionRecordInput): ProjectDecision {
-    const title = input.title.trim();
+    const unwrapped = unwrapDecisionPayload(
+      input.title,
+      input.decision,
+      input.context,
+      input.status
+    );
+    const title = unwrapped.title.trim();
     if (!title) {
       throw new Error('Le titre de la décision ne peut pas être vide.');
     }
-    const decisionText = input.decision.trim();
+    const decisionText = unwrapped.decision.trim();
     if (!decisionText) {
       throw new Error('Le corps de la décision ne peut pas être vide.');
     }
@@ -113,8 +119,8 @@ export class ProjectMemory {
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
     const id = `dec-${now.getTime().toString(36)}-${randomUUID().slice(0, 4)}`;
-    const status: ProjectDecision['status'] = input.status ?? 'accepted';
-    const context = input.context?.trim();
+    const status: ProjectDecision['status'] = unwrapped.status ?? 'accepted';
+    const context = unwrapped.context?.trim();
 
     const decision: ProjectDecision = {
       id,
@@ -229,14 +235,42 @@ export class ProjectMemory {
     }
   }
 
+  extractFreeformNotes(markdown: string): string {
+    if (!markdown?.trim()) {
+      return '';
+    }
+    const withoutStructured = markdown.replace(
+      /###\s+\[\d{4}-\d{2}-\d{2}\]\s+[^\n]+[\s\S]*?(?=(?:###\s+\[\d{4}-\d{2}-\d{2}\]|$))/g,
+      ''
+    );
+    const boilerplateLines = new Set(
+      INITIAL_HEADER.split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+    );
+    const remainingLines = withoutStructured
+      .split('\n')
+      .filter((line) => !boilerplateLines.has(line.trim()));
+    return remainingLines.join('\n').trim();
+  }
+
   formatActiveDecisions(rootPath: string, maxDecisions = 8, maxChars = 2000): string {
+    const rawContent = this.readMemory(rootPath);
+    const freeform = this.extractFreeformNotes(rawContent);
     const decisions = this.listDecisions(rootPath).filter((d) => d.status === 'accepted');
-    if (decisions.length === 0) {
+    if (decisions.length === 0 && !freeform) {
       return '';
     }
     const selected = decisions.slice(-maxDecisions);
     const formattedLines: string[] = [];
     let currentLength = 0;
+
+    if (freeform) {
+      const clippedNotes =
+        freeform.length > maxChars ? `${freeform.slice(0, maxChars)}…` : freeform;
+      formattedLines.push(clippedNotes);
+      currentLength += clippedNotes.length + 1;
+    }
 
     for (const d of selected) {
       const line = `• [${d.date}] ${d.title} : ${d.decision}${d.context ? ` (Contexte: ${d.context})` : ''}`;
@@ -335,21 +369,98 @@ export class ProjectMemory {
             ? 'deprecated'
             : 'accepted';
 
-      const decision = decisionMatch ? decisionMatch[1].trim() : body.trim();
-      const context = contextMatch ? contextMatch[1].trim() : undefined;
+      const rawDecision = decisionMatch ? decisionMatch[1].trim() : body.trim();
+      const rawContext = contextMatch ? contextMatch[1].trim() : undefined;
+      const unwrapped = unwrapDecisionPayload(title, rawDecision, rawContext, status);
 
       decisions.push({
         id,
         date,
-        title,
-        decision,
-        context,
-        status,
+        title: unwrapped.title,
+        decision: unwrapped.decision,
+        context: unwrapped.context,
+        status: unwrapped.status ?? status,
       });
     }
 
     return decisions;
   }
+}
+
+function unwrapDecisionPayload(
+  rawTitle: string,
+  rawDecision: string,
+  rawContext?: string,
+  rawStatus?: ProjectDecision['status']
+): DecisionRecordInput {
+  let currentTitle = rawTitle;
+  let currentDecision = rawDecision;
+  let currentContext = rawContext;
+  let currentStatus = rawStatus;
+
+  for (let depth = 0; depth < 3; depth++) {
+    const trimmed = currentDecision.trim();
+    if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
+      break;
+    }
+    try {
+      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      if (!parsed || typeof parsed !== 'object') {
+        break;
+      }
+      if (parsed.text && typeof parsed.text === 'object' && !Array.isArray(parsed.text)) {
+        const inner = parsed.text as Record<string, unknown>;
+        if (typeof inner.title === 'string' && inner.title.trim()) {
+          currentTitle = inner.title.trim();
+        }
+        if (typeof inner.context === 'string' && inner.context.trim()) {
+          currentContext = inner.context.trim();
+        }
+        if (
+          inner.status === 'superseded' ||
+          inner.status === 'deprecated' ||
+          inner.status === 'accepted'
+        ) {
+          currentStatus = inner.status;
+        }
+        if (typeof inner.decision === 'string' && inner.decision.trim()) {
+          currentDecision = inner.decision.trim();
+          continue;
+        }
+      }
+      if (typeof parsed.text === 'string' && parsed.text.trim()) {
+        currentDecision = parsed.text.trim();
+        continue;
+      }
+      if (typeof parsed.decision === 'string' && parsed.decision.trim()) {
+        if (typeof parsed.title === 'string' && parsed.title.trim()) {
+          currentTitle = parsed.title.trim();
+        }
+        if (typeof parsed.context === 'string' && parsed.context.trim()) {
+          currentContext = parsed.context.trim();
+        }
+        if (
+          parsed.status === 'superseded' ||
+          parsed.status === 'deprecated' ||
+          parsed.status === 'accepted'
+        ) {
+          currentStatus = parsed.status;
+        }
+        currentDecision = parsed.decision.trim();
+        continue;
+      }
+      break;
+    } catch {
+      break;
+    }
+  }
+
+  return {
+    title: currentTitle,
+    decision: currentDecision,
+    context: currentContext,
+    status: currentStatus,
+  };
 }
 
 function formatDecisionMarkdown(d: ProjectDecision): string {

@@ -6,6 +6,7 @@ import { suite, test } from 'node:test';
 import { ProjectMemory } from '../../memory/project-memory';
 import { CodingAgentTools } from '../../conversational/tools';
 import { ConversationalService } from '../../conversational/service';
+import { parseBrainDecision } from '../../conversational/brain-decision';
 
 suite('Project Decision Memory', () => {
   test('returns empty snapshot and hasMemory=false when memory.md is absent', () => {
@@ -286,6 +287,68 @@ suite('Project Decision Memory', () => {
       // Does not double augment
       const double = memory.augmentPrompt(augmented, tempDir);
       assert.equal(double, augmented);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('injects free-form architectural notes from setRawMemory into context and augmentPrompt', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-freeform-mem-test-'));
+    try {
+      const memory = new ProjectMemory();
+      memory.setRawMemory(
+        tempDir,
+        'Architecture Nuxt 3 + Daemon Node.js.\nPrivilégier Upstash Redis pour la synchronisation.'
+      );
+
+      const formatted = memory.formatActiveDecisions(tempDir);
+      assert.match(formatted, /Architecture Nuxt 3/);
+      assert.match(formatted, /Upstash Redis/);
+
+      const ctx = memory.buildAgentContext(tempDir);
+      assert.equal(ctx.hasContext, true);
+      assert.match(ctx.decisionsSummary, /Architecture Nuxt 3/);
+
+      const augmented = memory.augmentPrompt('Corrige la route API', tempDir);
+      assert.match(augmented, /Architecture Nuxt 3/);
+      assert.match(augmented, /Corrige la route API/);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('unwraps nested JSON record_decision payloads and parses tool decisions with object text', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-unwrap-dec-test-'));
+    try {
+      const memory = new ProjectMemory();
+      const recorded = memory.recordDecision(tempDir, {
+        title: 'Décision technique',
+        decision: JSON.stringify({
+          action: 'record_decision',
+          text: {
+            title: 'Analyse du projet Nexus',
+            decision: 'Garder le repo nlabrazi en mémoire',
+            context: 'Projet Nexus',
+          },
+        }),
+      });
+
+      assert.equal(recorded.title, 'Analyse du projet Nexus');
+      assert.equal(recorded.decision, 'Garder le repo nlabrazi en mémoire');
+      assert.equal(recorded.context, 'Projet Nexus');
+
+      const parsedGetMem = parseBrainDecision('{"action":"get_project_memory","text":""}', true);
+      assert.deepEqual(parsedGetMem, { action: 'get_project_memory', text: '' });
+
+      const parsedRecordObj = parseBrainDecision(
+        '{"action":"record_decision","text":{"title":"Choix Redis","decision":"Utiliser Upstash"}}',
+        true
+      );
+      assert.equal(parsedRecordObj.action, 'record_decision');
+      assert.deepEqual(JSON.parse(parsedRecordObj.text), {
+        title: 'Choix Redis',
+        decision: 'Utiliser Upstash',
+      });
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

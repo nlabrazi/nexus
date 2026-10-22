@@ -441,7 +441,7 @@ export class NexusDaemonServer extends EventEmitter {
       online: true,
       capabilities: {
         filesystem: true,
-        backends: ['codex', 'antigravity', 'brain'],
+        backends: ['codex', 'antigravity', 'claude', 'brain'],
         workspaceGuard: true,
       },
       projects: this.scanProjects(),
@@ -797,9 +797,16 @@ export class NexusDaemonServer extends EventEmitter {
         const projectPath = url.searchParams.get('path')
           ? this.jail.resolveSafePath(url.searchParams.get('path')!)
           : this.activeProject.path;
+        const mem = this.runtime.getProjectMemory();
         const snapshot = this.runtime.getProjectMemorySnapshot(projectPath);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(snapshot));
+        res.end(
+          JSON.stringify({
+            ...snapshot,
+            projectPreferences: mem.readProjectPreferencesOnly(projectPath),
+            memory: snapshot.rawContent,
+          })
+        );
         return;
       }
 
@@ -808,10 +815,38 @@ export class NexusDaemonServer extends EventEmitter {
         const projectPath = body.projectPath
           ? this.jail.resolveSafePath(String(body.projectPath))
           : this.activeProject.path;
-        if (typeof body.rawContent === 'string') {
-          this.runtime.getProjectMemory().setRawMemory(projectPath, body.rawContent);
+        const mem = this.runtime.getProjectMemory();
+        const rawPref =
+          typeof body.projectPreferences === 'string'
+            ? body.projectPreferences
+            : typeof body.preferences === 'string'
+              ? body.preferences
+              : undefined;
+        const rawMem =
+          typeof body.rawContent === 'string'
+            ? body.rawContent
+            : typeof body.projectMemory === 'string'
+              ? body.projectMemory
+              : typeof body.memory === 'string'
+                ? body.memory
+                : undefined;
+
+        if (rawPref !== undefined || rawMem !== undefined) {
+          if (rawPref !== undefined) {
+            mem.setPreferences(projectPath, rawPref);
+          }
+          if (rawMem !== undefined) {
+            mem.setRawMemory(projectPath, rawMem);
+          }
+          const snapshot = this.runtime.getProjectMemorySnapshot(projectPath);
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(this.runtime.getProjectMemorySnapshot(projectPath)));
+          res.end(
+            JSON.stringify({
+              ...snapshot,
+              projectPreferences: mem.readProjectPreferencesOnly(projectPath),
+              memory: snapshot.rawContent,
+            })
+          );
           return;
         }
         const decision = this.runtime.recordProjectDecision(
@@ -1465,14 +1500,28 @@ export class NexusDaemonServer extends EventEmitter {
         return `✅ **Persona global mis à jour dans Upstash** :\n\n${argText}`;
       }
       const current = mem.readGlobalPersona();
-      return `### 🧠 Persona Global (Upstash)\n\n${current || '*(Aucun persona défini)*'}\n\n*Astuce : modifiez-le dans Paramètres → Persona & Mémoire ou via \`/persona <directives>\`.*`;
+      const projPref = mem.readProjectPreferencesOnly(targetPath);
+      const projSection = projPref
+        ? `\n\n### 📁 Directives du projet (\`${basename(targetPath)}\`)\n\n${projPref}`
+        : '';
+      return `### 🧠 Persona Global (Upstash)\n\n${current || '*(Aucun persona défini)*'}${projSection}\n\n*Astuce : modifiez-le dans Paramètres → Persona & Mémoire ou via \`/persona <directives>\`.*`;
     }
 
     if (cmd === '/memory') {
       const mem = this.runtime.getProjectMemory();
+      if (argText) {
+        const recorded = this.runtime.recordProjectDecision(
+          {
+            title: 'Décision architecturale',
+            decision: argText,
+          },
+          targetPath
+        );
+        return `✅ **Décision enregistrée dans la mémoire de \`${basename(targetPath)}\`** :\n- **${recorded.title}** : ${recorded.decision}`;
+      }
       const formatted = mem.formatActiveDecisions(targetPath);
       return formatted
-        ? `### 🗂️ Décisions Architecturales (\`${basename(targetPath)}\`)\n\n${formatted}`
+        ? `### 🗂️ Mémoire & Décisions (\`${basename(targetPath)}\`)\n\n${formatted}`
         : `Aucune décision architecturale enregistrée pour \`${basename(targetPath)}\`.`;
     }
 

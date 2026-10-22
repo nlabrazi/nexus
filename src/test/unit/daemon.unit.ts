@@ -183,6 +183,69 @@ suite('NexusDaemonServer unified secure daemon', () => {
     assert.ok(Array.isArray(list));
   });
 
+  test('POST and GET /api/persona and /api/projects/memory persist persona, project preferences and memory coherently', async () => {
+    const postRes = await fetch(`http://127.0.0.1:${port}/api/persona`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer valid-token-123',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        projectPath: projectDir,
+        persona: 'Développeur Senior TypeScript',
+        projectPreferences: 'Toujours utiliser Biome et Node test runner',
+        projectMemory: 'Architecture unifiée autour de NexusDaemonServer.',
+      }),
+    });
+    assert.equal(postRes.status, 200);
+    const postData = (await postRes.json()) as {
+      status: string;
+      persona: string;
+      projectPreferences: string;
+      projectMemory: string;
+    };
+    assert.equal(postData.status, 'ok');
+    assert.equal(postData.persona, 'Développeur Senior TypeScript');
+    assert.equal(postData.projectPreferences, 'Toujours utiliser Biome et Node test runner');
+    assert.match(postData.projectMemory, /NexusDaemonServer/);
+
+    const getRes = await fetch(
+      `http://127.0.0.1:${port}/api/persona?path=${encodeURIComponent(projectDir)}`,
+      {
+        headers: { Authorization: 'Bearer valid-token-123' },
+      }
+    );
+    assert.equal(getRes.status, 200);
+    const getData = (await getRes.json()) as {
+      persona: string;
+      projectPreferences: string;
+      projectMemory: string;
+    };
+    assert.equal(getData.persona, 'Développeur Senior TypeScript');
+    assert.equal(getData.projectPreferences, 'Toujours utiliser Biome et Node test runner');
+    assert.match(getData.projectMemory, /NexusDaemonServer/);
+
+    const memRes = await fetch(`http://127.0.0.1:${port}/api/projects/memory`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer valid-token-123',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        projectPath: projectDir,
+        preferences: 'Directive mise à jour via /api/projects/memory',
+        memory: 'Mémoire mise à jour via /api/projects/memory',
+      }),
+    });
+    assert.equal(memRes.status, 200);
+    const memData = (await memRes.json()) as {
+      projectPreferences: string;
+      memory: string;
+    };
+    assert.equal(memData.projectPreferences, 'Directive mise à jour via /api/projects/memory');
+    assert.match(memData.memory, /Mémoire mise à jour via \/api\/projects\/memory/);
+  });
+
   test('stops daemon server and cleans up', async () => {
     await daemon.stop();
     rmSync(sandbox, { recursive: true, force: true });

@@ -1344,18 +1344,14 @@ async function fetchPersonaAndMemory() {
   try {
     const base = coreUrl.value.replace(/\/+$/, "");
     const headers = getRequestHeaders();
-    const [personaRes, memRes] = await Promise.all([
-      fetch(`${base}/api/persona`, { headers }),
-      fetch(`${base}/api/projects/memory`, { headers }),
-    ]);
+    const activePath = primaryNode.value?.activeProject?.path;
+    const query = activePath ? `?path=${encodeURIComponent(activePath)}` : "";
+    const personaRes = await fetch(`${base}/api/persona${query}`, { headers });
     if (personaRes.ok) {
       const pData = await personaRes.json();
-      personaInput.value = pData.persona || "";
-    }
-    if (memRes.ok) {
-      const mData = await memRes.json();
-      projectPreferencesInput.value = mData.projectPreferences || "";
-      projectMemoryInput.value = mData.memory || "";
+      personaInput.value = pData.persona ?? "";
+      projectPreferencesInput.value = pData.projectPreferences ?? "";
+      projectMemoryInput.value = pData.projectMemory ?? "";
     }
   } catch (err) {
     console.warn("[Persona] Échec du chargement Persona/Mémoire:", err);
@@ -1374,22 +1370,28 @@ async function savePersonaAndMemory() {
       ...getRequestHeaders(),
       "Content-Type": "application/json",
     };
-    const [pRes, mRes] = await Promise.all([
-      fetch(`${base}/api/persona`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ persona: personaInput.value }),
+    const activePath = primaryNode.value?.activeProject?.path;
+    const pRes = await fetch(`${base}/api/persona`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        projectPath: activePath || undefined,
+        persona: personaInput.value,
+        projectPreferences: projectPreferencesInput.value,
+        projectMemory: projectMemoryInput.value,
       }),
-      fetch(`${base}/api/projects/memory`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          preferences: projectPreferencesInput.value,
-          memory: projectMemoryInput.value,
-        }),
-      }),
-    ]);
-    if (pRes.ok && mRes.ok) {
+    });
+    if (pRes.ok) {
+      const saved = await pRes.json().catch(() => null);
+      if (saved && typeof saved === "object") {
+        if (typeof saved.persona === "string") personaInput.value = saved.persona;
+        if (typeof saved.projectPreferences === "string") {
+          projectPreferencesInput.value = saved.projectPreferences;
+        }
+        if (typeof saved.projectMemory === "string") {
+          projectMemoryInput.value = saved.projectMemory;
+        }
+      }
       personaStatusMsg.value = "✓ Sauvegardé et synchronisé sur Upstash";
       triggerHaptic("success");
     } else {
@@ -2349,7 +2351,7 @@ watch([coreUrl, authToken, () => primaryNode.value?.nodeId], () => {
   dashboardError.value = '';
   if ((showSettings.value || activeTab.value === 'agent') && isNodeReady.value) void fetchDashboard();
 });
-watch([showSettings, settingsSection, isNodeReady, activeTab], ([settings, section, ready, view]) => {
+watch([showSettings, settingsSection, isNodeReady, activeTab, () => primaryNode.value?.activeProject?.path], ([settings, section, ready, view]) => {
   if (!ready) return;
   if ((settings && section === 'quotas') || view === 'agent') void fetchDashboard();
   if (settings && section === 'persona') void fetchPersonaAndMemory();

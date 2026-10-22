@@ -104,7 +104,14 @@ export class ConversationalService implements ConversationalAgent {
           } else if (decision.action === 'record_decision') {
             let parsedInput: DecisionRecordInput;
             try {
-              const obj = JSON.parse(decision.text);
+              const rawObj = JSON.parse(decision.text);
+              const obj =
+                rawObj &&
+                typeof rawObj === 'object' &&
+                rawObj.text &&
+                typeof rawObj.text === 'object'
+                  ? rawObj.text
+                  : rawObj;
               if (
                 typeof obj === 'object' &&
                 obj !== null &&
