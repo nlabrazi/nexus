@@ -137,3 +137,4 @@ test('selecting system provider bypasses Fish Audio and uses local backup direct
   assert.equal(f.fallbackSpoken.length, 1);
   assert.equal(f.fallbackSpoken[0].text, 'Lecture directe locale.');
 });
+
