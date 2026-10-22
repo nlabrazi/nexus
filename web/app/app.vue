@@ -1137,7 +1137,7 @@ const speechRate = ref(1);
 const speechVoice = ref("");
 const ttsProvider = ref<"fish" | "system">("fish");
 const fishReferenceId = ref("");
-const fishModel = ref("s2.1-pro");
+const fishModel = ref("s2.1-pro-free");
 const fishApiKeyInput = ref("");
 const isSavingFishConfig = ref(false);
 const fishStatusMsg = ref("");
@@ -1195,7 +1195,7 @@ async function synthesizeFishSpeech(
       text: chunkText,
       referenceId: normalizeFishReferenceId(opts.referenceId || fishReferenceId.value) || undefined,
       rate: opts.rate ?? speechRate.value,
-      model: opts.model || fishModel.value || "s2.1-pro",
+      model: opts.model || fishModel.value || "s2.1-pro-free",
     }),
   });
   const data = await res.json().catch(() => ({}));
@@ -1226,7 +1226,7 @@ async function saveFishVoiceConfig() {
       body: JSON.stringify({
         ttsProvider: ttsProvider.value,
         referenceId: fishReferenceId.value,
-        model: fishModel.value || "s2.1-pro",
+        model: fishModel.value || "s2.1-pro-free",
         ...(fishApiKeyInput.value.trim() ? { apiKey: fishApiKeyInput.value.trim() } : {}),
       }),
     });

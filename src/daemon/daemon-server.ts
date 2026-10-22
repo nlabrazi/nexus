@@ -218,7 +218,7 @@ export class NexusDaemonServer extends EventEmitter {
         process.env.FISHAUDIO_REFERENCE_ID ||
         ''
     );
-    const model = (stored.fishModel || process.env.FISH_MODEL || 's2.1-pro').trim();
+    const model = (stored.fishModel || process.env.FISH_MODEL || 's2.1-pro-free').trim();
     const ttsProvider: 'fish' | 'system' =
       stored.ttsProvider ?? (apiKey || referenceId ? 'fish' : 'system');
 
@@ -1025,21 +1025,15 @@ export class NexusDaemonServer extends EventEmitter {
           (typeof body.model === 'string' && body.model.trim()) ||
           stored.fishModel ||
           process.env.FISH_MODEL ||
-          's2.1-pro'
+          's2.1-pro-free'
         ).trim();
         const speed = Number.isFinite(Number(body.rate))
           ? Math.min(2.0, Math.max(0.5, Number(body.rate)))
           : 1.0;
 
         const fishEndpoint = process.env.FISH_API_URL || 'https://api.fish.audio/v1/tts';
-        const fishRes = await fetch(fishEndpoint, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-            model,
-          },
-          body: JSON.stringify({
+        const buildPayload = () =>
+          JSON.stringify({
             text,
             ...(referenceId ? { reference_id: referenceId } : {}),
             format: 'mp3',
@@ -1050,8 +1044,32 @@ export class NexusDaemonServer extends EventEmitter {
               speed,
               volume: 0,
             },
-          }),
+          });
+
+        let activeModel = model;
+        let fishRes = await fetch(fishEndpoint, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            model: activeModel,
+          },
+          body: buildPayload(),
         });
+
+        // Auto-fallback from paid tier to free tier if account has no paid credits
+        if (fishRes.status === 402 && activeModel !== 's2.1-pro-free') {
+          activeModel = 's2.1-pro-free';
+          fishRes = await fetch(fishEndpoint, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+              model: activeModel,
+            },
+            body: buildPayload(),
+          });
+        }
 
         if (!fishRes.ok) {
           const errText = await fishRes.text().catch(() => '');
