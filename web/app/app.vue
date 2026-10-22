@@ -489,10 +489,145 @@
         <div v-show="settingsSection === 'voice'" class="settings-section-body">
           <p v-if="!ttsAvailable" style="color: var(--muted-light); font-size: 13px;">La lecture vocale n'est pas disponible sur cet appareil.</p>
           <template v-else>
-            <label class="switch-field">
-              <span>Activer la synthèse vocale (TTS)<small>Permet à Nexus de vous répondre à haute voix.</small></span>
+            <!-- A. Interrupteur principal TTS -->
+            <label class="switch-field" style="margin-bottom: 14px;">
+              <span>Activer la synthèse vocale (TTS)<small>Permet à Nexus de vous répondre à voix haute.</small></span>
               <input v-model="ttsEnabled" type="checkbox" role="switch" />
             </label>
+
+            <!-- B. Cartes de sélection du moteur vocal actif -->
+            <div class="sheet-section-title" style="margin-top: 10px;">MOTEUR VOCAL ACTIF</div>
+            <div class="agent-sheet-list" style="margin-bottom: 14px;">
+              <!-- Carte 1 : Fish Audio (Cloud) -->
+              <button type="button" class="agent-card-row voice-provider-card"
+                :class="{ selected: ttsProvider === 'fish' }"
+                :disabled="!ttsEnabled"
+                @click="setTtsProvider('fish')">
+                <div class="agent-card-icon">
+                  <NexusIcon name="sparkles" />
+                </div>
+                <div class="agent-card-info">
+                  <div class="agent-card-name" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                    <span>Fish Audio (Voix IA / Clonée)</span>
+                    <span v-if="ttsProvider === 'fish'" class="project-badge-active" style="padding: 2px 6px; font-size: 10px;">ACTIF</span>
+                  </div>
+                  <div class="agent-card-desc" style="margin-top: 2px;">
+                    {{ selectedFishVoiceLabel }} — repli automatique sur voix locale en cas de coupure
+                  </div>
+                </div>
+                <span v-if="ttsProvider === 'fish'" class="agent-selected-badge">
+                  <NexusIcon name="check" />
+                </span>
+              </button>
+
+              <!-- Carte 2 : Voix de l'appareil (Locale) -->
+              <button type="button" class="agent-card-row voice-provider-card"
+                :class="{ selected: ttsProvider === 'system' }"
+                :disabled="!ttsEnabled"
+                @click="setTtsProvider('system')">
+                <div class="agent-card-icon">
+                  <NexusIcon name="speaker" />
+                </div>
+                <div class="agent-card-info">
+                  <div class="agent-card-name" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                    <span>Voix de l'appareil (Système)</span>
+                    <span v-if="ttsProvider === 'system'" class="project-badge-active" style="padding: 2px 6px; font-size: 10px;">ACTIF</span>
+                  </div>
+                  <div class="agent-card-desc" style="margin-top: 2px;">
+                    {{ selectedSystemVoiceLabel }} — 100 % hors-ligne sur cet appareil
+                  </div>
+                </div>
+                <span v-if="ttsProvider === 'system'" class="agent-selected-badge">
+                  <NexusIcon name="check" />
+                </span>
+              </button>
+            </div>
+
+            <!-- C1. Panneau de configuration dédié Fish Audio -->
+            <div v-if="ttsProvider === 'fish'" class="voice-config-box" style="margin-bottom: 14px; padding: 14px; border-radius: 10px; background: rgba(0, 240, 255, 0.04); border: 1px solid rgba(0, 240, 255, 0.25);">
+              <div class="sheet-section-title" style="margin-bottom: 10px; color: #00f0ff;">
+                RÉGLAGES FISH AUDIO
+              </div>
+
+              <!-- Bannière de confirmation de la voix active côté serveur -->
+              <div v-if="voiceBackendStatus?.tts?.referenceId" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 6px; background: rgba(0, 240, 255, 0.08); border: 1px solid rgba(0, 240, 255, 0.2); margin-bottom: 12px;">
+                <span style="font-size: 11.5px; color: var(--text-bright); display: flex; align-items: center; gap: 6px;">
+                  <NexusIcon name="check" style="width: 14px; height: 14px; color: #00f0ff;" />
+                  <span>Voix du serveur (<code>.env</code>) : <code>{{ voiceBackendStatus.tts.referenceId }}</code></span>
+                </span>
+                <span style="font-size: 10.5px; color: #00f0ff; font-family: var(--font-mono);">{{ voiceBackendStatus?.tts?.model || 's2.1-pro-free' }}</span>
+              </div>
+
+              <div class="field" style="margin-bottom: 10px;">
+                <label for="fish-reference-id">ID ou lien de la voix (<code>reference_id</code>)</label>
+                <input id="fish-reference-id" v-model="fishReferenceId" :disabled="!ttsEnabled" type="text"
+                  autocapitalize="none" spellcheck="false"
+                  :placeholder="voiceBackendStatus?.tts?.referenceId ? voiceBackendStatus.tts.referenceId : 'Collez votre reference_id ou lien fish.audio...'" />
+                <small style="color: var(--muted-light); font-size: 11px;">
+                  Modifiez l'ID ici si vous voulez changer de voix. Laissez vide pour utiliser la voix par défaut du fichier <code>.env</code>.
+                </small>
+              </div>
+
+              <div class="field" style="margin-bottom: 10px;">
+                <label for="fish-api-key">
+                  Clé API Fish Audio (<code>FISH_API_KEY</code>)
+                  <span v-if="voiceBackendStatus?.tts?.hasApiKey" style="color: #00f0ff; font-size: 11px; margin-left: 6px;">✓ Configurée sur le serveur (.env)</span>
+                </label>
+                <input id="fish-api-key" v-model="fishApiKeyInput" :disabled="!ttsEnabled" type="password"
+                  autocomplete="off" spellcheck="false"
+                  :placeholder="voiceBackendStatus?.tts?.hasApiKey ? 'Déjà configurée dans .env sur le PC' : 'Collez votre clé API Fish Audio ou renseignez FISH_API_KEY dans .env'" />
+              </div>
+
+              <p v-if="fishStatusMsg" style="font-size: 12px; color: #00f0ff; margin: 6px 0;">
+                {{ fishStatusMsg }}
+              </p>
+              <button type="button" class="button secondary full-width" :disabled="!ttsEnabled || isSavingFishConfig" @click="saveFishVoiceConfig">
+                <span>{{ isSavingFishConfig ? "Synchronisation…" : "💾 Enregistrer la voix Fish Audio" }}</span>
+              </button>
+
+              <!-- Sous-champ voix de secours locale -->
+              <div class="field" style="margin-top: 14px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+                <label for="speech-voice-backup" style="font-size: 12px; color: var(--muted-light);">
+                  Voix de secours (backup local automatique si Fish Audio est hors-ligne) :
+                </label>
+                <select id="speech-voice-backup" v-model="speechVoice" :disabled="!ttsEnabled">
+                  <option value="">Automatique · français de France (recommandé)</option>
+                  <option v-if="speechVoice && !speechVoices.some(voice => voice.voiceURI === speechVoice)" :value="speechVoice">Voix enregistrée indisponible — choix automatique</option>
+                  <option v-for="voice in speechVoices" :key="voice.voiceURI" :value="voice.voiceURI">{{ voice.name }} · {{ voice.lang }} · {{ voice.localService ? "sur l'appareil" : "en ligne" }}</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- C2. Panneau de configuration dédié Voix Système -->
+            <div v-else class="voice-config-box" style="margin-bottom: 14px; padding: 14px; border-radius: 10px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--line);">
+              <div class="sheet-section-title" style="margin-bottom: 8px;">CHOIX DE LA VOIX SYSTÈME</div>
+              <div class="field">
+                <label for="speech-voice-system">Voix locale installée sur l'appareil</label>
+                <select id="speech-voice-system" v-model="speechVoice" :disabled="!ttsEnabled">
+                  <option value="">Automatique · français de France</option>
+                  <option v-if="speechVoice && !speechVoices.some(voice => voice.voiceURI === speechVoice)" :value="speechVoice">Voix enregistrée indisponible — choix automatique</option>
+                  <option v-for="voice in speechVoices" :key="voice.voiceURI" :value="voice.voiceURI">{{ voice.name }} · {{ voice.lang }} · {{ voice.localService ? "sur l'appareil" : "en ligne" }}</option>
+                </select>
+                <small style="color: var(--muted-light); font-size: 11px;">
+                  Cette voix est générée directement par le moteur vocal de votre téléphone ou ordinateur sans appel réseau.
+                </small>
+              </div>
+            </div>
+
+            <!-- D. Ajustement de vitesse & Test sonore -->
+            <div class="sheet-section-title" style="margin-top: 14px;">AJUSTEMENT & TEST</div>
+            <div class="field">
+              <label for="speech-rate">Vitesse d'élocution : {{ speechRate.toFixed(1) }}×</label>
+              <input id="speech-rate" v-model.number="speechRate" :disabled="!ttsEnabled" type="range" min="0.8" max="1.3" step="0.1" />
+            </div>
+
+            <button type="button" class="button secondary full-width" :disabled="!ttsEnabled" @click="speakMessage(ttsProvider === 'fish' ? 'Bonjour. Nexus utilise votre voix Fish Audio personnalisée, avec repli automatique sur votre voix locale.' : 'Bonjour. Nexus utilise la voix système de votre appareil.')">
+              <NexusIcon :name="isSpeaking ? 'stop' : 'speaker'" />
+              <span>{{ isSpeaking ? "Arrêter la lecture" : (ttsProvider === 'fish' ? "Tester la voix Fish Audio" : "Tester la voix système") }}</span>
+            </button>
+
+            <!-- E. Options de comportement du chat -->
+            <div class="sheet-section-title" style="margin-top: 18px;">OPTIONS DU CHAT</div>
             <label class="switch-field">
               <span>Lire aussi les réponses aux messages écrits</span>
               <input v-model="autoSpeak" :disabled="!ttsEnabled" type="checkbox" role="switch" />
@@ -501,59 +636,6 @@
               <span>Envoyer automatiquement après la dictée<small>Désactivez pour relire avant l'envoi.</small></span>
               <input v-model="autoSendVoice" type="checkbox" role="switch" />
             </label>
-            <div class="field">
-              <label for="tts-provider">Moteur vocal principal</label>
-              <select id="tts-provider" v-model="ttsProvider" :disabled="!ttsEnabled">
-                <option value="fish">Fish Audio (Voix custom / clonée) + Backup local</option>
-                <option value="system">Voix système uniquement (Appareil / Navigateur)</option>
-              </select>
-            </div>
-            <div v-if="ttsProvider === 'fish'" class="settings-details-box" style="margin: 8px 0 12px; padding: 12px; border-radius: 8px; background: rgba(0, 240, 255, 0.04); border: 1px solid var(--line);">
-              <div class="sheet-section-title" style="margin-bottom: 8px;">CONFIGURATION FISH AUDIO (AVEC BACKUP LOCAL)</div>
-              <div class="field" style="margin-bottom: 10px;">
-                <label for="fish-reference-id">
-                  Voix Fish Audio (<code>reference_id</code> ou URL <code>fish.audio</code>)
-                  <span v-if="voiceBackendStatus?.tts?.referenceId" style="color: #00f0ff; font-size: 11px; margin-left: 6px;">✓ Active sur le serveur</span>
-                </label>
-                <input id="fish-reference-id" v-model="fishReferenceId" :disabled="!ttsEnabled" type="text"
-                  autocapitalize="none" spellcheck="false"
-                  :placeholder="voiceBackendStatus?.tts?.referenceId ? `Configurée sur le serveur (${voiceBackendStatus.tts.referenceId})` : 'Collez un reference_id ou un lien fish.audio...'" />
-                <small style="color: var(--muted-light); font-size: 11px;">
-                  {{ voiceBackendStatus?.tts?.referenceId ? `Voix chargée depuis le serveur (.env) : ${voiceBackendStatus.tts.referenceId}` : "Collez l'ID de la voix repérée (ou laissez vide pour utiliser FISH_REFERENCE_ID du .env)." }}
-                </small>
-              </div>
-              <div class="field" style="margin-bottom: 10px;">
-                <label for="fish-api-key">
-                  Clé API Fish Audio (<code>FISH_API_KEY</code>)
-                  <span v-if="voiceBackendStatus?.tts?.hasApiKey" style="color: #00f0ff; font-size: 11px; margin-left: 6px;">✓ Active sur le serveur</span>
-                </label>
-                <input id="fish-api-key" v-model="fishApiKeyInput" :disabled="!ttsEnabled" type="password"
-                  autocomplete="off" spellcheck="false"
-                  :placeholder="voiceBackendStatus?.tts?.hasApiKey ? 'Déjà configurée sur le serveur (laisser vide pour conserver)' : 'Collez votre clé API Fish Audio ou renseignez FISH_API_KEY dans .env'" />
-              </div>
-              <p v-if="fishStatusMsg" style="font-size: 12px; color: #00f0ff; margin: 6px 0;">
-                {{ fishStatusMsg }}
-              </p>
-              <button type="button" class="button secondary full-width" :disabled="!ttsEnabled || isSavingFishConfig" @click="saveFishVoiceConfig">
-                <span>{{ isSavingFishConfig ? "Enregistrement…" : "💾 Enregistrer la voix Fish Audio" }}</span>
-              </button>
-            </div>
-            <div class="field">
-              <label for="speech-voice">{{ ttsProvider === 'fish' ? 'Voix locale de secours (Backup appareil)' : 'Voix de lecture' }}</label>
-              <select id="speech-voice" v-model="speechVoice" :disabled="!ttsEnabled">
-                <option value="">Automatique · français de France</option>
-                <option v-if="speechVoice && !speechVoices.some(voice => voice.voiceURI === speechVoice)" :value="speechVoice">Voix enregistrée indisponible — choix automatique</option>
-                <option v-for="voice in speechVoices" :key="voice.voiceURI" :value="voice.voiceURI">{{ voice.name }} · {{ voice.lang }} · {{ voice.localService ? "sur l'appareil" : "en ligne" }}</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="speech-rate">Vitesse d'élocution : {{ speechRate.toFixed(1) }}×</label>
-              <input id="speech-rate" v-model.number="speechRate" :disabled="!ttsEnabled" type="range" min="0.8" max="1.3" step="0.1" />
-            </div>
-            <button type="button" class="button secondary" :disabled="!ttsEnabled" @click="speakMessage('Bonjour. Nexus est opérationnel et prêt à exécuter vos tâches.')">
-              <NexusIcon name="speaker" />
-              <span>Tester la voix de synthèse</span>
-            </button>
           </template>
         </div>
 
@@ -1148,6 +1230,25 @@ const speechVoices = ref<SpeechSynthesisVoice[]>([]);
 
 function refreshSpeechVoices() {
   speechVoices.value = window.speechSynthesis.getVoices();
+}
+
+const selectedSystemVoiceLabel = computed(() => {
+  if (!speechVoice.value) return "Automatique · français de France";
+  const found = speechVoices.value.find((v) => v.voiceURI === speechVoice.value);
+  if (found) return `${found.name} (${found.lang})`;
+  return speechVoice.value;
+});
+
+const selectedFishVoiceLabel = computed(() => {
+  const ref = fishReferenceId.value || voiceBackendStatus.value?.tts?.referenceId;
+  if (ref) return `Voix personnalisée (${ref.slice(0, 10)}…)`;
+  return "Non configurée (renseignez reference_id)";
+});
+
+function setTtsProvider(provider: "fish" | "system") {
+  ttsProvider.value = provider;
+  stopSpeaking();
+  void triggerHaptic("release");
 }
 
 watch([ttsEnabled, autoSpeak, speechRate, speechVoice, ttsProvider, fishReferenceId, fishModel], () => {
