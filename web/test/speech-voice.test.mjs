@@ -23,6 +23,7 @@ test('native playback keeps adjacent sentences in one passage without changing t
   const long = `${text} `.repeat(45).trim();
   const chunks = splitNativeSpeechText(long);
   assert.ok(chunks.length > 1);
+  assert.ok(chunks[0].length <= 320, 'first chunk is kept short to reduce initial TTS latency');
   assert.ok(chunks.every((chunk) => chunk.length <= 1200));
   assert.equal(chunks.join(' '), long);
 });

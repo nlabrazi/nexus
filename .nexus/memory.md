@@ -5,7 +5,8 @@ Nexus Brain et les agents s'y réfèrent pour conserver le contexte technique d'
 
 ## Décisions
 
-### [2026-09-28] Décision technique
+### [2026-09-28] Analyse du projet Nexus
 - **ID** : `dec-muld8lro-2527`
 - **Statut** : accepté
-- **Décision** : {"action":"record_decision","text":{"title":"Analyse du projet Nexus","decision":"Garder le repo nlabrazi en mémoire","context":"Projet Nexus"}}
+- **Décision** : Garder le repo nlabrazi en mémoire
+- **Contexte** : Projet Nexus

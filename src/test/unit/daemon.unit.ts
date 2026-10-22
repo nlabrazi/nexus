@@ -183,6 +183,107 @@ suite('NexusDaemonServer unified secure daemon', () => {
     assert.ok(Array.isArray(list));
   });
 
+  test('POST and GET /api/persona and /api/projects/memory persist persona, project preferences and memory coherently', async () => {
+    const postRes = await fetch(`http://127.0.0.1:${port}/api/persona`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer valid-token-123',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        projectPath: projectDir,
+        persona: 'Développeur Senior TypeScript',
+        projectPreferences: 'Toujours utiliser Biome et Node test runner',
+        projectMemory: 'Architecture unifiée autour de NexusDaemonServer.',
+      }),
+    });
+    assert.equal(postRes.status, 200);
+    const postData = (await postRes.json()) as {
+      status: string;
+      persona: string;
+      projectPreferences: string;
+      projectMemory: string;
+    };
+    assert.equal(postData.status, 'ok');
+    assert.equal(postData.persona, 'Développeur Senior TypeScript');
+    assert.equal(postData.projectPreferences, 'Toujours utiliser Biome et Node test runner');
+    assert.match(postData.projectMemory, /NexusDaemonServer/);
+
+    const getRes = await fetch(
+      `http://127.0.0.1:${port}/api/persona?path=${encodeURIComponent(projectDir)}`,
+      {
+        headers: { Authorization: 'Bearer valid-token-123' },
+      }
+    );
+    assert.equal(getRes.status, 200);
+    const getData = (await getRes.json()) as {
+      persona: string;
+      projectPreferences: string;
+      projectMemory: string;
+    };
+    assert.equal(getData.persona, 'Développeur Senior TypeScript');
+    assert.equal(getData.projectPreferences, 'Toujours utiliser Biome et Node test runner');
+    assert.match(getData.projectMemory, /NexusDaemonServer/);
+
+    const memRes = await fetch(`http://127.0.0.1:${port}/api/projects/memory`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer valid-token-123',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        projectPath: projectDir,
+        preferences: 'Directive mise à jour via /api/projects/memory',
+        memory: 'Mémoire mise à jour via /api/projects/memory',
+      }),
+    });
+    assert.equal(memRes.status, 200);
+    const memData = (await memRes.json()) as {
+      projectPreferences: string;
+      memory: string;
+    };
+    assert.equal(memData.projectPreferences, 'Directive mise à jour via /api/projects/memory');
+    assert.match(memData.memory, /Mémoire mise à jour via \/api\/projects\/memory/);
+  });
+
+  test('POST /api/voice/config and /api/voice/Status manage Fish Audio configuration with URL normalization', async () => {
+    const cfgRes = await fetch(`http://127.0.0.1:${port}/api/voice/config`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer valid-token-123',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ttsProvider: 'fish',
+        referenceId: 'https://fish.audio/m/802e3bc2b27e49c2995d23ef70e6ac89/',
+        model: 's2.1-pro',
+      }),
+    });
+    assert.equal(cfgRes.status, 200);
+    const cfgData = (await cfgRes.json()) as {
+      tts: {
+        provider: string;
+        referenceId: string;
+        model: string;
+        backupProvider: string;
+      };
+    };
+    assert.equal(cfgData.tts.provider, 'fish');
+    assert.equal(cfgData.tts.referenceId, '802e3bc2b27e49c2995d23ef70e6ac89');
+    assert.equal(cfgData.tts.model, 's2.1-pro');
+    assert.equal(cfgData.tts.backupProvider, 'system');
+
+    const synthWithoutKey = await fetch(`http://127.0.0.1:${port}/api/voice/synthesize`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer valid-token-123',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ text: 'Bonjour Nexus' }),
+    });
+    assert.equal(synthWithoutKey.status, 503);
+  });
+
   test('stops daemon server and cleans up', async () => {
     await daemon.stop();
     rmSync(sandbox, { recursive: true, force: true });

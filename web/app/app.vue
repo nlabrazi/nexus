@@ -143,13 +143,6 @@
               <NexusIcon name="chevron" />
             </button>
           </div>
-
-          <div class="scroll-affordance-hint home-scroll-hint" :class="{ visible: canScrollHomeDown }" aria-hidden="true">
-            <span class="scroll-affordance-pill">
-              <span>Défiler</span>
-              <NexusIcon name="chevron" class="scroll-chevron-down" />
-            </span>
-          </div>
         </main>
 
         <!-- 2. WORKSPACE SCREEN (Chat + Inline STT Mic) -->
@@ -218,11 +211,11 @@
             </div>
           </div>
 
-          <div class="scroll-affordance-hint workspace-scroll-hint" :class="{ visible: canScrollMessagesDown }" aria-hidden="true">
-            <span class="scroll-affordance-pill">
+          <div class="scroll-affordance-hint workspace-scroll-hint" :class="{ visible: canScrollMessagesDown }">
+            <button type="button" class="scroll-affordance-pill" :tabindex="canScrollMessagesDown ? 0 : -1" aria-label="Défiler vers le bas de la discussion" @click="scrollMessagesToBottom">
               <span>Défiler vers le bas</span>
               <NexusIcon name="chevron" class="scroll-chevron-down" />
-            </span>
+            </button>
           </div>
 
           <!-- Centered STT Mic & Composer Dock -->
@@ -312,6 +305,13 @@
           </div>
         </main>
       </Transition>
+
+      <div v-if="currentView === 'home'" class="scroll-affordance-hint home-scroll-hint" :class="{ visible: canScrollHomeDown }">
+        <button type="button" class="scroll-affordance-pill" :tabindex="canScrollHomeDown ? 0 : -1" aria-label="Défiler vers le bas" @click="scrollHomeDown">
+          <span>Défiler</span>
+          <NexusIcon name="chevron" class="scroll-chevron-down" />
+        </button>
+      </div>
     </div>
 
 
@@ -489,10 +489,183 @@
         <div v-show="settingsSection === 'voice'" class="settings-section-body">
           <p v-if="!ttsAvailable" style="color: var(--muted-light); font-size: 13px;">La lecture vocale n'est pas disponible sur cet appareil.</p>
           <template v-else>
-            <label class="switch-field">
-              <span>Activer la synthèse vocale (TTS)<small>Permet à Nexus de vous répondre à haute voix.</small></span>
+            <!-- A. Interrupteur principal TTS -->
+            <label class="switch-field" style="margin-bottom: 14px;">
+              <span>Activer la synthèse vocale (TTS)<small>Permet à Nexus de vous répondre à voix haute.</small></span>
               <input v-model="ttsEnabled" type="checkbox" role="switch" />
             </label>
+
+            <!-- B. Cartes de sélection du moteur vocal actif -->
+            <div class="sheet-section-title" style="margin-top: 10px;">MOTEUR VOCAL ACTIF</div>
+            <div class="agent-sheet-list" style="margin-bottom: 14px;">
+              <!-- Carte 1 : Fish Audio (Cloud) -->
+              <button type="button" class="agent-card-row voice-provider-card"
+                :class="{ selected: ttsProvider === 'fish' }"
+                :disabled="!ttsEnabled"
+                @click="setTtsProvider('fish')">
+                <div class="agent-card-icon">
+                  <NexusIcon name="sparkles" />
+                </div>
+                <div class="agent-card-info">
+                  <div class="agent-card-name" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                    <span>Fish Audio (Voix IA / Clonée)</span>
+                    <span v-if="ttsProvider === 'fish'" class="project-badge-active" style="padding: 2px 6px; font-size: 10px;">ACTIF</span>
+                  </div>
+                  <div class="agent-card-desc" style="margin-top: 2px;">
+                    {{ selectedFishVoiceLabel }} — repli automatique sur voix locale en cas de coupure
+                  </div>
+                </div>
+                <span v-if="ttsProvider === 'fish'" class="agent-selected-badge">
+                  <NexusIcon name="check" />
+                </span>
+              </button>
+
+              <!-- Carte 2 : Voix de l'appareil (Locale) -->
+              <button type="button" class="agent-card-row voice-provider-card"
+                :class="{ selected: ttsProvider === 'system' }"
+                :disabled="!ttsEnabled"
+                @click="setTtsProvider('system')">
+                <div class="agent-card-icon">
+                  <NexusIcon name="speaker" />
+                </div>
+                <div class="agent-card-info">
+                  <div class="agent-card-name" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                    <span>Voix de l'appareil (Système)</span>
+                    <span v-if="ttsProvider === 'system'" class="project-badge-active" style="padding: 2px 6px; font-size: 10px;">ACTIF</span>
+                  </div>
+                  <div class="agent-card-desc" style="margin-top: 2px;">
+                    {{ selectedSystemVoiceLabel }} — 100 % hors-ligne sur cet appareil
+                  </div>
+                </div>
+                <span v-if="ttsProvider === 'system'" class="agent-selected-badge">
+                  <NexusIcon name="check" />
+                </span>
+              </button>
+            </div>
+
+            <!-- C1. Panneau de configuration dédié Fish Audio -->
+            <div v-if="ttsProvider === 'fish'" class="voice-config-box" style="margin-bottom: 14px; padding: 14px; border-radius: 10px; background: rgba(0, 240, 255, 0.04); border: 1px solid rgba(0, 240, 255, 0.25);">
+              <div class="sheet-section-title" style="margin-bottom: 12px; color: #00f0ff; display: flex; align-items: center; justify-content: space-between;">
+                <span>RÉGLAGES FISH AUDIO</span>
+                <span v-if="voiceBackendStatus?.tts?.model" style="font-size: 11px; color: var(--muted); font-family: var(--font-mono); font-weight: normal;">
+                  {{ voiceBackendStatus.tts.model }}
+                </span>
+              </div>
+
+              <!-- Champ unique et éditable pour la voix Fish Audio -->
+              <div class="field" style="margin-bottom: 0;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                  <label for="fish-reference-id" style="margin-bottom: 0; font-size: 13px; font-weight: 500; color: var(--text-bright);">
+                    Voix active (ID ou lien)
+                  </label>
+                  <button
+                    type="button"
+                    class="button ghost small"
+                    style="padding: 3px 8px; font-size: 11.5px; display: inline-flex; align-items: center; gap: 5px; height: 26px; border-radius: 6px; border: 1px solid rgba(0, 240, 255, 0.3); color: #00f0ff;"
+                    :title="isEditingFishVoice ? 'Annuler la modification' : 'Modifier la voix'"
+                    @click="toggleEditFishVoice"
+                  >
+                    <NexusIcon :name="isEditingFishVoice ? 'close' : 'edit'" style="width: 13px; height: 13px;" />
+                    <span>{{ isEditingFishVoice ? "Annuler" : "Modifier" }}</span>
+                  </button>
+                </div>
+
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <input
+                    id="fish-reference-id"
+                    ref="fishReferenceInputRef"
+                    v-model="fishReferenceDraft"
+                    :readonly="!isEditingFishVoice"
+                    :disabled="!ttsEnabled"
+                    type="text"
+                    autocapitalize="none"
+                    spellcheck="false"
+                    :style="isEditingFishVoice ? 'border-color: #00f0ff; background: rgba(0, 240, 255, 0.08); font-family: var(--font-mono);' : 'background: rgba(255, 255, 255, 0.04); font-family: var(--font-mono); cursor: pointer; color: var(--text-bright);'"
+                    :placeholder="effectiveFishVoiceId ? effectiveFishVoiceId : 'Collez un ID ou lien fish.audio…'"
+                    @click="onFishInputClick"
+                    @keydown.enter.prevent="saveFishVoiceConfig"
+                  />
+                  <button
+                    v-if="isEditingFishVoice"
+                    type="button"
+                    class="button primary"
+                    style="flex-shrink: 0; padding: 0 12px; height: 38px; display: inline-flex; align-items: center; gap: 6px;"
+                    :disabled="!ttsEnabled || isSavingFishConfig"
+                    @click="saveFishVoiceConfig"
+                  >
+                    <NexusIcon name="check" style="width: 14px; height: 14px;" />
+                    <span>{{ isSavingFishConfig ? "…" : "OK" }}</span>
+                  </button>
+                </div>
+
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px; font-size: 11px;">
+                  <span style="color: var(--muted-light); display: inline-flex; align-items: center; gap: 5px;">
+                    <NexusIcon v-if="voiceBackendStatus?.tts?.hasApiKey" name="check" style="width: 12px; height: 12px; color: #00f0ff;" />
+                    <span>{{ fishVoiceSourceNote }}</span>
+                  </span>
+                </div>
+
+                <!-- Option clé API repliée en mode édition uniquement -->
+                <div v-if="isEditingFishVoice" style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(255, 255, 255, 0.1);">
+                  <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <button
+                      type="button"
+                      class="button ghost small"
+                      style="font-size: 11px; color: var(--muted); padding: 2px 0;"
+                      @click="showCustomApiKey = !showCustomApiKey"
+                    >
+                      <span>{{ showCustomApiKey ? '▲ Masquer clé API' : '▼ Clé API spécifique (optionnel)' }}</span>
+                    </button>
+                  </div>
+                  <input
+                    v-if="showCustomApiKey"
+                    id="fish-api-key"
+                    v-model="fishApiKeyInput"
+                    type="password"
+                    autocomplete="off"
+                    spellcheck="false"
+                    style="margin-top: 6px; font-size: 11px;"
+                    :placeholder="voiceBackendStatus?.tts?.hasApiKey ? 'Clé configurée dans .env (laisser vide pour conserver)' : 'Collez votre clé API Fish Audio…'"
+                  />
+                </div>
+              </div>
+
+              <!-- Message de statut / feedback -->
+              <p v-if="fishStatusMsg" style="font-size: 12px; color: #00f0ff; margin: 8px 0 0 0;">
+                {{ fishStatusMsg }}
+              </p>
+            </div>
+
+            <!-- C2. Panneau de configuration dédié Voix Système -->
+            <div v-else class="voice-config-box" style="margin-bottom: 14px; padding: 14px; border-radius: 10px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--line);">
+              <div class="sheet-section-title" style="margin-bottom: 8px;">CHOIX DE LA VOIX SYSTÈME</div>
+              <div class="field">
+                <label for="speech-voice-system">Voix locale installée sur l'appareil</label>
+                <select id="speech-voice-system" v-model="speechVoice" :disabled="!ttsEnabled">
+                  <option value="">Automatique · français de France</option>
+                  <option v-if="speechVoice && !speechVoices.some(voice => voice.voiceURI === speechVoice)" :value="speechVoice">Voix enregistrée indisponible — choix automatique</option>
+                  <option v-for="voice in speechVoices" :key="voice.voiceURI" :value="voice.voiceURI">{{ voice.name }} · {{ voice.lang }} · {{ voice.localService ? "sur l'appareil" : "en ligne" }}</option>
+                </select>
+                <small style="color: var(--muted-light); font-size: 11px;">
+                  Cette voix est générée directement par le moteur vocal de votre téléphone ou ordinateur sans appel réseau.
+                </small>
+              </div>
+            </div>
+
+            <!-- D. Ajustement de vitesse & Test sonore -->
+            <div class="sheet-section-title" style="margin-top: 14px;">AJUSTEMENT & TEST</div>
+            <div class="field">
+              <label for="speech-rate">Vitesse d'élocution : {{ speechRate.toFixed(1) }}×</label>
+              <input id="speech-rate" v-model.number="speechRate" :disabled="!ttsEnabled" type="range" min="0.8" max="1.3" step="0.1" />
+            </div>
+
+            <button type="button" class="button secondary full-width" :disabled="!ttsEnabled" @click="speakMessage(ttsProvider === 'fish' ? 'Bonjour. Nexus utilise votre voix Fish Audio personnalisée, avec repli automatique sur votre voix locale.' : 'Bonjour. Nexus utilise la voix système de votre appareil.')">
+              <NexusIcon :name="isSpeaking ? 'stop' : 'speaker'" />
+              <span>{{ isSpeaking ? "Arrêter la lecture" : (ttsProvider === 'fish' ? "Tester la voix Fish Audio" : "Tester la voix système") }}</span>
+            </button>
+
+            <!-- E. Options de comportement du chat -->
+            <div class="sheet-section-title" style="margin-top: 18px;">OPTIONS DU CHAT</div>
             <label class="switch-field">
               <span>Lire aussi les réponses aux messages écrits</span>
               <input v-model="autoSpeak" :disabled="!ttsEnabled" type="checkbox" role="switch" />
@@ -501,22 +674,6 @@
               <span>Envoyer automatiquement après la dictée<small>Désactivez pour relire avant l'envoi.</small></span>
               <input v-model="autoSendVoice" type="checkbox" role="switch" />
             </label>
-            <div class="field">
-              <label for="speech-voice">Voix de lecture</label>
-              <select id="speech-voice" v-model="speechVoice" :disabled="!ttsEnabled">
-                <option value="">Automatique · français de France</option>
-                <option v-if="speechVoice && !speechVoices.some(voice => voice.voiceURI === speechVoice)" :value="speechVoice">Voix enregistrée indisponible — choix automatique</option>
-                <option v-for="voice in speechVoices" :key="voice.voiceURI" :value="voice.voiceURI">{{ voice.name }} · {{ voice.lang }} · {{ voice.localService ? "sur l'appareil" : "en ligne" }}</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="speech-rate">Vitesse d'élocution : {{ speechRate.toFixed(1) }}×</label>
-              <input id="speech-rate" v-model.number="speechRate" :disabled="!ttsEnabled" type="range" min="0.8" max="1.3" step="0.1" />
-            </div>
-            <button type="button" class="button secondary" :disabled="!ttsEnabled" @click="speakMessage('Bonjour. Nexus est opérationnel et prêt à exécuter vos tâches.')">
-              <NexusIcon name="speaker" />
-              <span>Tester la voix de synthèse</span>
-            </button>
           </template>
         </div>
 
@@ -789,6 +946,7 @@ import type { RuntimeDashboard } from "../../src/runtime/dashboard-types";
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
 import { TextToSpeech } from "@capacitor-community/text-to-speech";
 import { createNativeSpeechPlayback } from "./utils/native-speech-playback.mjs";
+import { createFishSpeechPlayback, normalizeFishReferenceId } from "./utils/fish-speech-playback.mjs";
 import { shouldSpeakReply } from "./utils/voice-reply.mjs";
 import { createSpeechPlayback } from "./utils/speech-playback.mjs";
 import { cleanTextForSpeech } from "./utils/speech-text.mjs";
@@ -933,6 +1091,10 @@ function leaveMode() {
   slideDirection.value = "backward";
   currentView.value = "home";
   triggerHaptic("light");
+  nextTick(() => {
+    updateHomeScrollState();
+    setTimeout(updateHomeScrollState, 350);
+  });
 }
 
 function toggleWorkspaceMode() {
@@ -1057,6 +1219,33 @@ function updateHomeScrollState() {
   canScrollHomeDown.value = el.scrollHeight - el.scrollTop - el.clientHeight > 14;
 }
 
+function scrollHomeDown() {
+  const el = homeScrollRef.value;
+  if (!el) return;
+  void triggerHaptic("release");
+  const step = Math.max(240, Math.round(el.clientHeight * 0.7));
+  const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
+  const targetTop = remaining <= step * 1.25 ? el.scrollHeight : el.scrollTop + step;
+  if (typeof el.scrollTo === "function") {
+    el.scrollTo({ top: targetTop, behavior: "smooth" });
+  } else {
+    el.scrollTop = targetTop;
+  }
+  setTimeout(updateHomeScrollState, 260);
+}
+
+function scrollMessagesToBottom() {
+  const el = messagesScrollRef.value;
+  if (!el) return;
+  void triggerHaptic("release");
+  if (typeof el.scrollTo === "function") {
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  } else {
+    el.scrollTop = el.scrollHeight;
+  }
+  setTimeout(updateMessagesScrollState, 260);
+}
+
 function resizeComposer() {
   const textarea = chatTextareaRef.value;
   if (!textarea) return;
@@ -1064,23 +1253,127 @@ function resizeComposer() {
   textarea.style.height = `${Math.min(textarea.scrollHeight, 140)}px`;
 }
 
+// Voice / Backend Voice Status
+const voiceBackendStatus = ref<{
+  available: boolean;
+  engine?: string;
+  provider?: string;
+  language?: string;
+  tts?: {
+    provider?: "fish" | "system";
+    fishAudioAvailable?: boolean;
+    hasApiKey?: boolean;
+    referenceId?: string;
+    model?: string;
+  };
+} | null>(null);
+
 // TTS State
 const ttsEnabled = ref<boolean>(true);
 const autoSpeak = ref(true);
 const speechRate = ref(1);
 const speechVoice = ref("");
+const ttsProvider = ref<"fish" | "system">("fish");
+const fishReferenceId = ref("");
+const fishModel = ref("s2.1-pro-free");
+const fishApiKeyInput = ref("");
+const isSavingFishConfig = ref(false);
+const fishStatusMsg = ref("");
+const isEditingFishVoice = ref(false);
+const showCustomApiKey = ref(false);
+const fishReferenceDraft = ref("");
+const fishReferenceInputRef = ref<HTMLInputElement | null>(null);
 const speechVoices = ref<SpeechSynthesisVoice[]>([]);
 
 function refreshSpeechVoices() {
   speechVoices.value = window.speechSynthesis.getVoices();
 }
 
-watch([ttsEnabled, autoSpeak, speechRate, speechVoice], () => {
+const effectiveFishVoiceId = computed(() => {
+  return (
+    normalizeFishReferenceId(fishReferenceId.value) ||
+    normalizeFishReferenceId(voiceBackendStatus.value?.tts?.referenceId) ||
+    ""
+  );
+});
+
+const fishVoiceSourceNote = computed(() => {
+  const hasKey = voiceBackendStatus.value?.tts?.hasApiKey;
+  const keyNote = hasKey ? "Clé API active (.env)" : "Clé API non détectée";
+  if (fishReferenceId.value.trim()) {
+    return `${keyNote} · Voix personnalisée active`;
+  }
+  if (voiceBackendStatus.value?.tts?.referenceId) {
+    return `${keyNote} · Voix active du fichier .env`;
+  }
+  return `${keyNote} · Aucune voix configurée`;
+});
+
+function toggleEditFishVoice() {
+  if (isEditingFishVoice.value) {
+    isEditingFishVoice.value = false;
+    fishReferenceDraft.value = effectiveFishVoiceId.value;
+  } else {
+    fishReferenceDraft.value = effectiveFishVoiceId.value;
+    isEditingFishVoice.value = true;
+    nextTick(() => {
+      fishReferenceInputRef.value?.focus();
+      fishReferenceInputRef.value?.select();
+    });
+  }
+}
+
+function onFishInputClick() {
+  if (!isEditingFishVoice.value) {
+    toggleEditFishVoice();
+  }
+}
+
+watch(
+  effectiveFishVoiceId,
+  (newVal) => {
+    if (!isEditingFishVoice.value) {
+      fishReferenceDraft.value = newVal;
+    }
+  },
+  { immediate: true }
+);
+
+const selectedSystemVoiceLabel = computed(() => {
+  if (!speechVoice.value) return "Automatique · français de France";
+  const found = speechVoices.value.find((v) => v.voiceURI === speechVoice.value);
+  if (found) return `${found.name} (${found.lang})`;
+  return speechVoice.value;
+});
+
+const selectedFishVoiceLabel = computed(() => {
+  const ref = effectiveFishVoiceId.value;
+  if (ref) return `Voix personnalisée (${ref.slice(0, 10)}…)`;
+  return "Non configurée (cliquez pour choisir une voix)";
+});
+
+function setTtsProvider(provider: "fish" | "system") {
+  ttsProvider.value = provider;
+  stopSpeaking();
+  void triggerHaptic("release");
+}
+
+watch([ttsEnabled, autoSpeak, speechRate, speechVoice, ttsProvider, fishReferenceId, fishModel], () => {
   if (!ttsEnabled.value) { stopSpeaking(); speechError.value = ""; }
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem("nexus_tts_enabled", String(ttsEnabled.value));
-    localStorage.setItem("nexus_tts_preferences", JSON.stringify({ autoSpeak: autoSpeak.value, rate: speechRate.value, voice: speechVoice.value }));
+    localStorage.setItem(
+      "nexus_tts_preferences",
+      JSON.stringify({
+        autoSpeak: autoSpeak.value,
+        rate: speechRate.value,
+        voice: speechVoice.value,
+        provider: ttsProvider.value,
+        fishReferenceId: normalizeFishReferenceId(fishReferenceId.value),
+        fishModel: fishModel.value,
+      })
+    );
   } catch { /* Preferences remain usable for this session when storage is unavailable. */ }
 });
 const isSpeaking = ref<boolean>(false);
@@ -1088,7 +1381,91 @@ const currentSpeakingId = ref<string | null>(null);
 
 const speechError = ref("");
 const ttsAvailable = ref(false);
-let speechPlayback: ReturnType<typeof createSpeechPlayback> | ReturnType<typeof createNativeSpeechPlayback> | undefined;
+let speechPlayback:
+  | ReturnType<typeof createSpeechPlayback>
+  | ReturnType<typeof createNativeSpeechPlayback>
+  | ReturnType<typeof createFishSpeechPlayback>
+  | undefined;
+
+async function synthesizeFishSpeech(
+  chunkText: string,
+  opts: { referenceId?: string; rate?: number; model?: string } = {}
+): Promise<string> {
+  if (!coreUrl.value) {
+    throw new Error("Serveur Nexus non configuré");
+  }
+  const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/voice/synthesize`;
+  const headers = {
+    ...getRequestHeaders(),
+    "Content-Type": "application/json",
+  };
+  const res = await fetch(targetUrl, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      text: chunkText,
+      referenceId: normalizeFishReferenceId(opts.referenceId || effectiveFishVoiceId.value) || undefined,
+      rate: opts.rate ?? speechRate.value,
+      model: opts.model || fishModel.value || "s2.1-pro-free",
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.audioBase64) {
+    throw new Error(data?.error || `Erreur HTTP ${res.status}`);
+  }
+  const mimeType = data.mimeType || "audio/mpeg";
+  return `data:${mimeType};base64,${data.audioBase64}`;
+}
+
+async function saveFishVoiceConfig() {
+  const cleanDraft = normalizeFishReferenceId(fishReferenceDraft.value);
+  fishReferenceId.value = cleanDraft;
+  fishReferenceDraft.value = cleanDraft;
+  fishStatusMsg.value = "";
+  if (!coreUrl.value) {
+    fishStatusMsg.value = "✓ Préférence enregistrée localement (connectez le serveur pour synchroniser).";
+    isEditingFishVoice.value = false;
+    return;
+  }
+  isSavingFishConfig.value = true;
+  try {
+    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/voice/config`;
+    const headers = {
+      ...getRequestHeaders(),
+      "Content-Type": "application/json",
+    };
+    const res = await fetch(targetUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        ttsProvider: ttsProvider.value,
+        referenceId: cleanDraft,
+        model: fishModel.value || "s2.1-pro-free",
+        ...(fishApiKeyInput.value.trim() ? { apiKey: fishApiKeyInput.value.trim() } : {}),
+      }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      voiceBackendStatus.value = updated;
+      if (updated?.tts?.referenceId !== undefined) {
+        fishReferenceId.value = normalizeFishReferenceId(updated.tts.referenceId);
+        fishReferenceDraft.value = fishReferenceId.value;
+      }
+      fishApiKeyInput.value = "";
+      showCustomApiKey.value = false;
+      isEditingFishVoice.value = false;
+      fishStatusMsg.value = "✓ Voix Fish Audio enregistrée";
+      void triggerHaptic("success");
+    } else {
+      fishStatusMsg.value = "⚠ Impossible d'enregistrer sur le serveur.";
+    }
+  } catch {
+    fishStatusMsg.value = "✓ Sauvegardé localement sur cet appareil.";
+    isEditingFishVoice.value = false;
+  } finally {
+    isSavingFishConfig.value = false;
+  }
+}
 
 function stopSpeaking() {
   return speechPlayback?.stop();
@@ -1102,7 +1479,19 @@ function speakMessage(text: string, messageId?: string) {
     return;
   }
   const clean = cleanTextForSpeech(text);
-  if (clean) speechPlayback.speak(clean, messageId, { rate: speechRate.value, voiceURI: speechVoice.value });
+  const useFish =
+    ttsProvider.value === "fish" &&
+    Boolean(effectiveFishVoiceId.value || voiceBackendStatus.value?.tts?.fishAudioAvailable);
+  if (clean) {
+    speechPlayback.speak(clean, messageId, {
+      rate: speechRate.value,
+      voiceURI: speechVoice.value,
+      provider: useFish ? "fish" : "system",
+      fishEnabled: useFish,
+      fishReferenceId: normalizeFishReferenceId(effectiveFishVoiceId.value),
+      fishModel: fishModel.value,
+    });
+  }
 }
 
 function toggleSpeakMessage(msg: ChatMessage) {
@@ -1313,18 +1702,14 @@ async function fetchPersonaAndMemory() {
   try {
     const base = coreUrl.value.replace(/\/+$/, "");
     const headers = getRequestHeaders();
-    const [personaRes, memRes] = await Promise.all([
-      fetch(`${base}/api/persona`, { headers }),
-      fetch(`${base}/api/projects/memory`, { headers }),
-    ]);
+    const activePath = primaryNode.value?.activeProject?.path;
+    const query = activePath ? `?path=${encodeURIComponent(activePath)}` : "";
+    const personaRes = await fetch(`${base}/api/persona${query}`, { headers });
     if (personaRes.ok) {
       const pData = await personaRes.json();
-      personaInput.value = pData.persona || "";
-    }
-    if (memRes.ok) {
-      const mData = await memRes.json();
-      projectPreferencesInput.value = mData.projectPreferences || "";
-      projectMemoryInput.value = mData.memory || "";
+      personaInput.value = pData.persona ?? "";
+      projectPreferencesInput.value = pData.projectPreferences ?? "";
+      projectMemoryInput.value = pData.projectMemory ?? "";
     }
   } catch (err) {
     console.warn("[Persona] Échec du chargement Persona/Mémoire:", err);
@@ -1343,22 +1728,28 @@ async function savePersonaAndMemory() {
       ...getRequestHeaders(),
       "Content-Type": "application/json",
     };
-    const [pRes, mRes] = await Promise.all([
-      fetch(`${base}/api/persona`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ persona: personaInput.value }),
+    const activePath = primaryNode.value?.activeProject?.path;
+    const pRes = await fetch(`${base}/api/persona`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        projectPath: activePath || undefined,
+        persona: personaInput.value,
+        projectPreferences: projectPreferencesInput.value,
+        projectMemory: projectMemoryInput.value,
       }),
-      fetch(`${base}/api/projects/memory`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          preferences: projectPreferencesInput.value,
-          memory: projectMemoryInput.value,
-        }),
-      }),
-    ]);
-    if (pRes.ok && mRes.ok) {
+    });
+    if (pRes.ok) {
+      const saved = await pRes.json().catch(() => null);
+      if (saved && typeof saved === "object") {
+        if (typeof saved.persona === "string") personaInput.value = saved.persona;
+        if (typeof saved.projectPreferences === "string") {
+          projectPreferencesInput.value = saved.projectPreferences;
+        }
+        if (typeof saved.projectMemory === "string") {
+          projectMemoryInput.value = saved.projectMemory;
+        }
+      }
       personaStatusMsg.value = "✓ Sauvegardé et synchronisé sur Upstash";
       triggerHaptic("success");
     } else {
@@ -1530,6 +1921,8 @@ function syncViewport() {
     "--app-height",
     `${window.visualViewport?.height || window.innerHeight}px`,
   );
+  updateHomeScrollState();
+  updateMessagesScrollState();
 }
 
 // Activity & Tasks State
@@ -1639,11 +2032,6 @@ const isListening = ref<boolean>(false);
 const isProcessingAudio = ref<boolean>(false);
 const interimTranscript = ref<string>("");
 const autoSendVoice = ref<boolean>(true);
-const voiceBackendStatus = ref<{
-  available: boolean;
-  engine?: string;
-  language?: string;
-} | null>(null);
 const isNativeApp = computed(() => Capacitor.isNativePlatform());
 
 let recognitionInstance: any = null;
@@ -1655,6 +2043,7 @@ let isPressingMic = false;
 let clickToggleActive = false;
 let nativeSpeechActive = false;
 let nativeRecorderActive = false;
+let nativeSpeechStopTimer: ReturnType<typeof setTimeout> | null = null;
 
 // WebSocket Real-Time Stream State
 let wsInstance: WebSocket | null = null;
@@ -1933,26 +2322,48 @@ onMounted(async () => {
     onState: (speaking: boolean, id: string | null) => { isSpeaking.value = speaking; currentSpeakingId.value = id; },
     onError: (message: string) => { speechError.value = message; },
   };
+  let fallbackSpeechPlayback:
+    | ReturnType<typeof createSpeechPlayback>
+    | ReturnType<typeof createNativeSpeechPlayback>
+    | undefined;
   if (Capacitor.isNativePlatform()) {
-    ttsAvailable.value = Capacitor.isPluginAvailable("TextToSpeech");
-    if (ttsAvailable.value) {
-      speechPlayback = createNativeSpeechPlayback(TextToSpeech, speechCallbacks);
+    const nativeTtsAvailable = Capacitor.isPluginAvailable("TextToSpeech");
+    if (nativeTtsAvailable) {
+      fallbackSpeechPlayback = createNativeSpeechPlayback(TextToSpeech, speechCallbacks);
       void TextToSpeech.getSupportedVoices().then(({ voices }) => { speechVoices.value = voices; }).catch(() => {
         speechError.value = "Vérifiez le moteur vocal et la voix française dans les paramètres Android.";
       });
     }
   } else {
-    ttsAvailable.value = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
-    if (ttsAvailable.value) {
+    const webTtsAvailable = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+    if (webTtsAvailable) {
       refreshSpeechVoices();
       window.speechSynthesis.addEventListener("voiceschanged", refreshSpeechVoices);
-      speechPlayback = createSpeechPlayback(window.speechSynthesis,
+      fallbackSpeechPlayback = createSpeechPlayback(window.speechSynthesis,
         (text: string) => new SpeechSynthesisUtterance(text), speechCallbacks);
     }
   }
+  ttsAvailable.value = Boolean(fallbackSpeechPlayback) || typeof Audio !== "undefined";
+  if (ttsAvailable.value) {
+    speechPlayback = createFishSpeechPlayback({
+      synthesize: synthesizeFishSpeech,
+      createAudio: (src: string) => new Audio(src),
+      fallbackPlayer: fallbackSpeechPlayback,
+      callbacks: speechCallbacks,
+    });
+  }
   if (typeof window !== "undefined") {
     syncViewport();
+    window.addEventListener("resize", syncViewport);
     window.visualViewport?.addEventListener("resize", syncViewport);
+    nextTick(() => {
+      updateHomeScrollState();
+      updateMessagesScrollState();
+      setTimeout(() => {
+        updateHomeScrollState();
+        updateMessagesScrollState();
+      }, 120);
+    });
     const savedUrl = localStorage.getItem("nexus_core_url");
     const savedToken = localStorage.getItem("nexus_auth_token") || "";
     const savedTab = localStorage.getItem("nexus_active_tab") as
@@ -2078,6 +2489,9 @@ onMounted(async () => {
         if (typeof preferences.autoSpeak === "boolean") autoSpeak.value = preferences.autoSpeak;
         if (typeof preferences.rate === "number" && preferences.rate >= 0.8 && preferences.rate <= 1.3) speechRate.value = preferences.rate;
         if (typeof preferences.voice === "string") speechVoice.value = preferences.voice;
+        if (preferences.provider === "fish" || preferences.provider === "system") ttsProvider.value = preferences.provider;
+        if (typeof preferences.fishReferenceId === "string") fishReferenceId.value = normalizeFishReferenceId(preferences.fishReferenceId);
+        if (typeof preferences.fishModel === "string" && preferences.fishModel.trim()) fishModel.value = preferences.fishModel.trim();
       }
     } catch { /* Ignore malformed saved preferences. */ }
 
@@ -2146,6 +2560,7 @@ function handleVisibilityChange() {
 }
 
 onUnmounted(() => {
+  window.removeEventListener("resize", syncViewport);
   window.visualViewport?.removeEventListener("resize", syncViewport);
   document.removeEventListener("visibilitychange", handleVisibilityChange);
   document.documentElement.style.removeProperty("--app-height");
@@ -2306,7 +2721,7 @@ watch([coreUrl, authToken, () => primaryNode.value?.nodeId], () => {
   dashboardError.value = '';
   if ((showSettings.value || activeTab.value === 'agent') && isNodeReady.value) void fetchDashboard();
 });
-watch([showSettings, settingsSection, isNodeReady, activeTab], ([settings, section, ready, view]) => {
+watch([showSettings, settingsSection, isNodeReady, activeTab, () => primaryNode.value?.activeProject?.path], ([settings, section, ready, view]) => {
   if (!ready) return;
   if ((settings && section === 'quotas') || view === 'agent') void fetchDashboard();
   if (settings && section === 'persona') void fetchPersonaAndMemory();
@@ -3007,7 +3422,16 @@ async function fetchVoiceStatus() {
       headers: getRequestHeaders(),
     });
     if (res.ok) {
-      voiceBackendStatus.value = await res.json();
+      const status = await res.json();
+      voiceBackendStatus.value = status;
+      if (status?.tts) {
+        if (status.tts.referenceId && !fishReferenceId.value) {
+          fishReferenceId.value = normalizeFishReferenceId(status.tts.referenceId);
+        }
+        if (status.tts.model && !fishModel.value) {
+          fishModel.value = status.tts.model;
+        }
+      }
     }
   } catch {
     // Non-blocking
@@ -3049,73 +3473,28 @@ function appendTranscript(text: string) {
   interimTranscript.value = "";
 }
 
-async function runNativeSpeechPopup() {
-  await stopSpeaking();
-  try {
-    const avail = await SpeechRecognition.available();
-    if (!avail.available) {
-      console.warn("SpeechRecognition unavailable");
-      errorMessage.value =
-        "Reconnaissance vocale non disponible sur cet appareil.";
-      return;
-    }
-    const perm = await SpeechRecognition.checkPermissions();
-    if (perm.speechRecognition !== "granted") {
-      const req = await SpeechRecognition.requestPermissions();
-      if (req.speechRecognition !== "granted") {
-        errorMessage.value =
-          "Autorisation du micro requise pour la commande vocale.";
-        return;
-      }
-    }
-    await triggerHaptic("press");
-    isListening.value = true;
-    errorMessage.value = "";
-    const result = await SpeechRecognition.start({
-      language: "fr-FR",
-      maxResults: 3,
-      prompt: "Dicter un message",
-      popup: true,
-      partialResults: false,
-    });
-    await triggerHaptic("success");
-    if (result?.matches && result.matches.length > 0) {
-      const text = result.matches[0]?.trim() || "";
-      if (text) {
-        appendTranscript(text);
-        if (autoSendVoice.value && isNodeReady.value) {
-          setTimeout(() => {
-            submitMessage();
-          }, 300);
-        }
-      }
-    }
-  } catch (err: any) {
-    console.warn("SpeechRecognition popup error:", err);
-    await triggerHaptic("cancel");
-  } finally {
-    isListening.value = false;
-    isPressingMic = false;
+async function stopNativeSpeechRecognition(settleMs = 0) {
+  if (nativeSpeechStopTimer) {
+    clearTimeout(nativeSpeechStopTimer);
+    nativeSpeechStopTimer = null;
   }
+  try {
+    // SpeechRecognition.stop() in @capacitor-community/speech-recognition Android
+    // does not resolve its PluginCall; bound it with a short settle window so
+    // onResults -> partialResults can fire before listeners are removed.
+    await Promise.race([
+      SpeechRecognition.stop().catch(() => {}),
+      new Promise<void>((resolve) => setTimeout(resolve, Math.max(80, settleMs))),
+    ]);
+  } catch { }
+  try {
+    await SpeechRecognition.removeAllListeners();
+  } catch { }
 }
 
 async function handleMicClick() {
-  if (isSending.value) return;
+  if (isSending.value || isProcessingAudio.value) return;
 
-  if (Capacitor.isNativePlatform()) {
-    if (isListening.value) {
-      try {
-        await SpeechRecognition.stop();
-        await SpeechRecognition.removeAllListeners();
-      } catch { }
-      isListening.value = false;
-      return;
-    }
-    await runNativeSpeechPopup();
-    return;
-  }
-
-  // Web Browser fallback
   if (isListening.value) {
     clickToggleActive = false;
     await stopPushToTalk();
@@ -3181,15 +3560,20 @@ async function onMicPointerCancel(e: PointerEvent) {
 
 async function startPushToTalk() {
   await stopSpeaking();
-  if (!isNodeReady.value || isSending.value) return;
+  if (isSending.value || isProcessingAudio.value) return;
 
+  if (nativeSpeechStopTimer) {
+    clearTimeout(nativeSpeechStopTimer);
+    nativeSpeechStopTimer = null;
+  }
   speechRecordingStart = Date.now();
   interimTranscript.value = "";
+  errorMessage.value = "";
   isListening.value = true;
   await triggerHaptic("press");
 
   if (Capacitor.isNativePlatform()) {
-    // 1. Tenter la reconnaissance vocale native on-device
+    // 1. Reconnaissance vocale native inline (sans popup système Google)
     let speechAvailable = false;
     try {
       const avail = await SpeechRecognition.available();
@@ -3214,7 +3598,24 @@ async function startPushToTalk() {
           "partialResults",
           (data: { matches: string[] }) => {
             if (data.matches && data.matches.length > 0) {
-              interimTranscript.value = data.matches[0] || "";
+              const candidate = data.matches[0]?.trim() || "";
+              if (candidate) {
+                interimTranscript.value = candidate;
+              }
+            }
+          },
+        );
+        await SpeechRecognition.addListener(
+          "listeningState",
+          (state: { status: "started" | "stopped" }) => {
+            if (state.status === "stopped" && isListening.value && nativeSpeechActive) {
+              if (nativeSpeechStopTimer) clearTimeout(nativeSpeechStopTimer);
+              nativeSpeechStopTimer = setTimeout(() => {
+                nativeSpeechStopTimer = null;
+                if (isListening.value && nativeSpeechActive) {
+                  void stopPushToTalk();
+                }
+              }, 240);
             }
           },
         );
@@ -3227,20 +3628,22 @@ async function startPushToTalk() {
         return;
       } catch (err) {
         console.warn(
-          "SpeechRecognition.start failed, will use popup on tap or recorder:",
+          "SpeechRecognition.start inline failed, fallback to VoiceRecorder:",
           err,
         );
         nativeSpeechActive = false;
       }
     }
 
-    // 2. Fallback vers enregistreur audio natif
+    // 2. Fallback vers enregistreur audio natif + transcription Whisper serveur
     try {
       const perm = await VoiceRecorder.hasAudioRecordingPermission();
       if (!perm.value) {
         const req = await VoiceRecorder.requestAudioRecordingPermission();
         if (!req.value) {
           isListening.value = false;
+          errorMessage.value =
+            "Autorisation du micro requise pour la dictée vocale.";
           return;
         }
       }
@@ -3251,6 +3654,8 @@ async function startPushToTalk() {
       console.warn("VoiceRecorder.startRecording failed:", err);
       nativeRecorderActive = false;
       isListening.value = false;
+      errorMessage.value =
+        "Reconnaissance vocale non disponible sur cet appareil.";
       return;
     }
   }
@@ -3295,21 +3700,17 @@ async function stopPushToTalk() {
 
   const durationMs = Date.now() - speechRecordingStart;
   isPressingMic = false;
+  clickToggleActive = false;
   isListening.value = false;
   await triggerHaptic("release");
 
   if (Capacitor.isNativePlatform()) {
     if (nativeSpeechActive) {
       try {
-        await SpeechRecognition.stop();
-        await SpeechRecognition.removeAllListeners();
+        await stopNativeSpeechRecognition(220);
         const text = interimTranscript.value.trim();
         if (text) {
           appendTranscript(text);
-        } else if (durationMs < 600) {
-          // Si rien n'a été capté pendant un court maintien, ouvrir la popup de reconnaissance vocale Google
-          await runNativeSpeechPopup();
-          return;
         }
       } catch (err) {
         console.warn("SpeechRecognition.stop failed:", err);
@@ -3325,7 +3726,7 @@ async function stopPushToTalk() {
       isProcessingAudio.value = true;
       try {
         const result = await VoiceRecorder.stopRecording();
-        if (result.value?.recordDataBase64 && durationMs > 300) {
+        if (result.value?.recordDataBase64 && durationMs > 250) {
           await transcribeNativeAudio(
             result.value.recordDataBase64,
             result.value.mimeType || "audio/aac",
@@ -3341,21 +3742,44 @@ async function stopPushToTalk() {
 
     if (
       autoSendVoice.value &&
+      isNodeReady.value &&
       inputPrompt.value.trim().length > 0 &&
-      durationMs > 400
+      durationMs > 250
     ) {
-      setTimeout(() => {
-        submitMessage();
-      }, 250);
+      await submitMessage();
     }
     return;
   }
 
-  // Web Browser fallback
+  // Web Browser fallback: attendre la fin de reconnaissance pour capter le dernier segment
   if (recognitionInstance) {
-    try {
-      recognitionInstance.stop();
-    } catch { }
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      const prevOnEnd = recognitionInstance.onend;
+      recognitionInstance.onend = (ev: any) => {
+        recognitionInstance.onend = prevOnEnd;
+        if (typeof prevOnEnd === "function") prevOnEnd(ev);
+        done();
+      };
+      setTimeout(() => {
+        recognitionInstance.onend = prevOnEnd;
+        done();
+      }, 240);
+      try {
+        recognitionInstance.stop();
+      } catch {
+        recognitionInstance.onend = prevOnEnd;
+        done();
+      }
+    });
+    if (interimTranscript.value.trim()) {
+      appendTranscript(interimTranscript.value.trim());
+    }
   }
 
   if (mediaRecorderInstance && mediaRecorderInstance.state !== "inactive") {
@@ -3391,12 +3815,11 @@ async function stopPushToTalk() {
 
   if (
     autoSendVoice.value &&
+    isNodeReady.value &&
     inputPrompt.value.trim().length > 0 &&
-    durationMs > 400
+    durationMs > 250
   ) {
-    setTimeout(() => {
-      submitMessage();
-    }, 250);
+    await submitMessage();
   }
 }
 
@@ -3427,24 +3850,21 @@ async function transcribeNativeAudio(base64: string, mimeType: string) {
   }
 }
 
+async function blobToBase64(blob: Blob): Promise<string> {
+  const buffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
 async function transcribeAudioBlob(blob: Blob) {
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/voice/transcribe`;
-    const headers = getRequestHeaders();
-    headers["Content-Type"] = blob.type || "audio/webm";
-
-    const res = await fetch(targetUrl, {
-      method: "POST",
-      headers,
-      body: blob,
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      if (data.text) {
-        appendTranscript(data.text);
-      }
-    }
+    const base64 = await blobToBase64(blob);
+    await transcribeNativeAudio(base64, blob.type || "audio/webm");
   } catch (err) {
     console.warn("Backend transcription failed:", err);
   }
@@ -3459,10 +3879,7 @@ async function cancelVoiceRecording() {
 
   if (Capacitor.isNativePlatform()) {
     if (nativeSpeechActive) {
-      try {
-        await SpeechRecognition.stop();
-        await SpeechRecognition.removeAllListeners();
-      } catch { }
+      await stopNativeSpeechRecognition(80);
       nativeSpeechActive = false;
     }
     if (nativeRecorderActive) {
