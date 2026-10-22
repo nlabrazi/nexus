@@ -502,7 +502,41 @@
               <input v-model="autoSendVoice" type="checkbox" role="switch" />
             </label>
             <div class="field">
-              <label for="speech-voice">Voix de lecture</label>
+              <label for="tts-provider">Moteur vocal principal</label>
+              <select id="tts-provider" v-model="ttsProvider" :disabled="!ttsEnabled">
+                <option value="fish">Fish Audio (Voix custom / clonée) + Backup local</option>
+                <option value="system">Voix système uniquement (Appareil / Navigateur)</option>
+              </select>
+            </div>
+            <div v-if="ttsProvider === 'fish'" class="settings-details-box" style="margin: 8px 0 12px; padding: 12px; border-radius: 8px; background: rgba(0, 240, 255, 0.04); border: 1px solid var(--line);">
+              <div class="sheet-section-title" style="margin-bottom: 8px;">CONFIGURATION FISH AUDIO (AVEC BACKUP LOCAL)</div>
+              <div class="field" style="margin-bottom: 10px;">
+                <label for="fish-reference-id">Voix Fish Audio (<code>reference_id</code> ou URL <code>fish.audio</code>)</label>
+                <input id="fish-reference-id" v-model="fishReferenceId" :disabled="!ttsEnabled" type="text"
+                  autocapitalize="none" spellcheck="false"
+                  placeholder="Ex: 802e3bc2b27e49c2995d23ef70e6ac89 ou https://fish.audio/m/..." />
+                <small style="color: var(--muted-light); font-size: 11px;">
+                  Collez l'ID de la voix repérée (ou le lien complet de la page Fish Audio). En cas d'indisponibilité réseau, la voix locale prendra le relais.
+                </small>
+              </div>
+              <div class="field" style="margin-bottom: 10px;">
+                <label for="fish-api-key">
+                  Clé API Fish Audio (<code>FISH_API_KEY</code>)
+                  <span v-if="voiceBackendStatus?.tts?.hasApiKey" style="color: #00f0ff; font-size: 11px; margin-left: 6px;">✓ Active sur le serveur</span>
+                </label>
+                <input id="fish-api-key" v-model="fishApiKeyInput" :disabled="!ttsEnabled" type="password"
+                  autocomplete="off" spellcheck="false"
+                  :placeholder="voiceBackendStatus?.tts?.hasApiKey ? 'Déjà configurée sur le serveur (laisser vide pour conserver)' : 'Collez votre clé API Fish Audio ou renseignez FISH_API_KEY dans .env'" />
+              </div>
+              <p v-if="fishStatusMsg" style="font-size: 12px; color: #00f0ff; margin: 6px 0;">
+                {{ fishStatusMsg }}
+              </p>
+              <button type="button" class="button secondary full-width" :disabled="!ttsEnabled || isSavingFishConfig" @click="saveFishVoiceConfig">
+                <span>{{ isSavingFishConfig ? "Enregistrement…" : "💾 Enregistrer la voix Fish Audio" }}</span>
+              </button>
+            </div>
+            <div class="field">
+              <label for="speech-voice">{{ ttsProvider === 'fish' ? 'Voix locale de secours (Backup appareil)' : 'Voix de lecture' }}</label>
               <select id="speech-voice" v-model="speechVoice" :disabled="!ttsEnabled">
                 <option value="">Automatique · français de France</option>
                 <option v-if="speechVoice && !speechVoices.some(voice => voice.voiceURI === speechVoice)" :value="speechVoice">Voix enregistrée indisponible — choix automatique</option>
@@ -789,6 +823,7 @@ import type { RuntimeDashboard } from "../../src/runtime/dashboard-types";
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
 import { TextToSpeech } from "@capacitor-community/text-to-speech";
 import { createNativeSpeechPlayback } from "./utils/native-speech-playback.mjs";
+import { createFishSpeechPlayback, normalizeFishReferenceId } from "./utils/fish-speech-playback.mjs";
 import { shouldSpeakReply } from "./utils/voice-reply.mjs";
 import { createSpeechPlayback } from "./utils/speech-playback.mjs";
 import { cleanTextForSpeech } from "./utils/speech-text.mjs";
@@ -1100,18 +1135,34 @@ const ttsEnabled = ref<boolean>(true);
 const autoSpeak = ref(true);
 const speechRate = ref(1);
 const speechVoice = ref("");
+const ttsProvider = ref<"fish" | "system">("fish");
+const fishReferenceId = ref("");
+const fishModel = ref("s2.1-pro");
+const fishApiKeyInput = ref("");
+const isSavingFishConfig = ref(false);
+const fishStatusMsg = ref("");
 const speechVoices = ref<SpeechSynthesisVoice[]>([]);
 
 function refreshSpeechVoices() {
   speechVoices.value = window.speechSynthesis.getVoices();
 }
 
-watch([ttsEnabled, autoSpeak, speechRate, speechVoice], () => {
+watch([ttsEnabled, autoSpeak, speechRate, speechVoice, ttsProvider, fishReferenceId, fishModel], () => {
   if (!ttsEnabled.value) { stopSpeaking(); speechError.value = ""; }
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem("nexus_tts_enabled", String(ttsEnabled.value));
-    localStorage.setItem("nexus_tts_preferences", JSON.stringify({ autoSpeak: autoSpeak.value, rate: speechRate.value, voice: speechVoice.value }));
+    localStorage.setItem(
+      "nexus_tts_preferences",
+      JSON.stringify({
+        autoSpeak: autoSpeak.value,
+        rate: speechRate.value,
+        voice: speechVoice.value,
+        provider: ttsProvider.value,
+        fishReferenceId: normalizeFishReferenceId(fishReferenceId.value),
+        fishModel: fishModel.value,
+      })
+    );
   } catch { /* Preferences remain usable for this session when storage is unavailable. */ }
 });
 const isSpeaking = ref<boolean>(false);
@@ -1119,7 +1170,86 @@ const currentSpeakingId = ref<string | null>(null);
 
 const speechError = ref("");
 const ttsAvailable = ref(false);
-let speechPlayback: ReturnType<typeof createSpeechPlayback> | ReturnType<typeof createNativeSpeechPlayback> | undefined;
+let speechPlayback:
+  | ReturnType<typeof createSpeechPlayback>
+  | ReturnType<typeof createNativeSpeechPlayback>
+  | ReturnType<typeof createFishSpeechPlayback>
+  | undefined;
+
+async function synthesizeFishSpeech(
+  chunkText: string,
+  opts: { referenceId?: string; rate?: number; model?: string } = {}
+): Promise<string> {
+  if (!coreUrl.value) {
+    throw new Error("Serveur Nexus non configuré");
+  }
+  const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/voice/synthesize`;
+  const headers = {
+    ...getRequestHeaders(),
+    "Content-Type": "application/json",
+  };
+  const res = await fetch(targetUrl, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      text: chunkText,
+      referenceId: normalizeFishReferenceId(opts.referenceId || fishReferenceId.value) || undefined,
+      rate: opts.rate ?? speechRate.value,
+      model: opts.model || fishModel.value || "s2.1-pro",
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.audioBase64) {
+    throw new Error(data?.error || `Erreur HTTP ${res.status}`);
+  }
+  const mimeType = data.mimeType || "audio/mpeg";
+  return `data:${mimeType};base64,${data.audioBase64}`;
+}
+
+async function saveFishVoiceConfig() {
+  fishReferenceId.value = normalizeFishReferenceId(fishReferenceId.value);
+  fishStatusMsg.value = "";
+  if (!coreUrl.value) {
+    fishStatusMsg.value = "✓ Préférence enregistrée localement (connectez le serveur pour synchroniser).";
+    return;
+  }
+  isSavingFishConfig.value = true;
+  try {
+    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/voice/config`;
+    const headers = {
+      ...getRequestHeaders(),
+      "Content-Type": "application/json",
+    };
+    const res = await fetch(targetUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        ttsProvider: ttsProvider.value,
+        referenceId: fishReferenceId.value,
+        model: fishModel.value || "s2.1-pro",
+        ...(fishApiKeyInput.value.trim() ? { apiKey: fishApiKeyInput.value.trim() } : {}),
+      }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      voiceBackendStatus.value = updated;
+      if (updated?.tts?.referenceId !== undefined) {
+        fishReferenceId.value = updated.tts.referenceId;
+      }
+      fishApiKeyInput.value = "";
+      fishStatusMsg.value = updated?.tts?.hasApiKey
+        ? "✓ Voix Fish Audio synchronisée (avec backup système actif)"
+        : "✓ ID de voix enregistré (ajoutez FISH_API_KEY dans .env ou ci-dessus pour activer le cloud)";
+      void triggerHaptic("success");
+    } else {
+      fishStatusMsg.value = "⚠ Impossible d'enregistrer sur le daemon.";
+    }
+  } catch {
+    fishStatusMsg.value = "⚠ Serveur Nexus injoignable (sauvegardé localement).";
+  } finally {
+    isSavingFishConfig.value = false;
+  }
+}
 
 function stopSpeaking() {
   return speechPlayback?.stop();
@@ -1133,7 +1263,19 @@ function speakMessage(text: string, messageId?: string) {
     return;
   }
   const clean = cleanTextForSpeech(text);
-  if (clean) speechPlayback.speak(clean, messageId, { rate: speechRate.value, voiceURI: speechVoice.value });
+  const useFish =
+    ttsProvider.value === "fish" &&
+    Boolean(fishReferenceId.value.trim() || voiceBackendStatus.value?.tts?.fishAudioAvailable);
+  if (clean) {
+    speechPlayback.speak(clean, messageId, {
+      rate: speechRate.value,
+      voiceURI: speechVoice.value,
+      provider: useFish ? "fish" : "system",
+      fishEnabled: useFish,
+      fishReferenceId: normalizeFishReferenceId(fishReferenceId.value),
+      fishModel: fishModel.value,
+    });
+  }
 }
 
 function toggleSpeakMessage(msg: ChatMessage) {
@@ -1677,7 +1819,15 @@ const autoSendVoice = ref<boolean>(true);
 const voiceBackendStatus = ref<{
   available: boolean;
   engine?: string;
+  provider?: string;
   language?: string;
+  tts?: {
+    provider?: "fish" | "system";
+    fishAudioAvailable?: boolean;
+    hasApiKey?: boolean;
+    referenceId?: string;
+    model?: string;
+  };
 } | null>(null);
 const isNativeApp = computed(() => Capacitor.isNativePlatform());
 
@@ -1969,22 +2119,35 @@ onMounted(async () => {
     onState: (speaking: boolean, id: string | null) => { isSpeaking.value = speaking; currentSpeakingId.value = id; },
     onError: (message: string) => { speechError.value = message; },
   };
+  let fallbackSpeechPlayback:
+    | ReturnType<typeof createSpeechPlayback>
+    | ReturnType<typeof createNativeSpeechPlayback>
+    | undefined;
   if (Capacitor.isNativePlatform()) {
-    ttsAvailable.value = Capacitor.isPluginAvailable("TextToSpeech");
-    if (ttsAvailable.value) {
-      speechPlayback = createNativeSpeechPlayback(TextToSpeech, speechCallbacks);
+    const nativeTtsAvailable = Capacitor.isPluginAvailable("TextToSpeech");
+    if (nativeTtsAvailable) {
+      fallbackSpeechPlayback = createNativeSpeechPlayback(TextToSpeech, speechCallbacks);
       void TextToSpeech.getSupportedVoices().then(({ voices }) => { speechVoices.value = voices; }).catch(() => {
         speechError.value = "Vérifiez le moteur vocal et la voix française dans les paramètres Android.";
       });
     }
   } else {
-    ttsAvailable.value = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
-    if (ttsAvailable.value) {
+    const webTtsAvailable = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+    if (webTtsAvailable) {
       refreshSpeechVoices();
       window.speechSynthesis.addEventListener("voiceschanged", refreshSpeechVoices);
-      speechPlayback = createSpeechPlayback(window.speechSynthesis,
+      fallbackSpeechPlayback = createSpeechPlayback(window.speechSynthesis,
         (text: string) => new SpeechSynthesisUtterance(text), speechCallbacks);
     }
+  }
+  ttsAvailable.value = Boolean(fallbackSpeechPlayback) || typeof Audio !== "undefined";
+  if (ttsAvailable.value) {
+    speechPlayback = createFishSpeechPlayback({
+      synthesize: synthesizeFishSpeech,
+      createAudio: (src: string) => new Audio(src),
+      fallbackPlayer: fallbackSpeechPlayback,
+      callbacks: speechCallbacks,
+    });
   }
   if (typeof window !== "undefined") {
     syncViewport();
@@ -2123,6 +2286,9 @@ onMounted(async () => {
         if (typeof preferences.autoSpeak === "boolean") autoSpeak.value = preferences.autoSpeak;
         if (typeof preferences.rate === "number" && preferences.rate >= 0.8 && preferences.rate <= 1.3) speechRate.value = preferences.rate;
         if (typeof preferences.voice === "string") speechVoice.value = preferences.voice;
+        if (preferences.provider === "fish" || preferences.provider === "system") ttsProvider.value = preferences.provider;
+        if (typeof preferences.fishReferenceId === "string") fishReferenceId.value = normalizeFishReferenceId(preferences.fishReferenceId);
+        if (typeof preferences.fishModel === "string" && preferences.fishModel.trim()) fishModel.value = preferences.fishModel.trim();
       }
     } catch { /* Ignore malformed saved preferences. */ }
 
@@ -3053,7 +3219,16 @@ async function fetchVoiceStatus() {
       headers: getRequestHeaders(),
     });
     if (res.ok) {
-      voiceBackendStatus.value = await res.json();
+      const status = await res.json();
+      voiceBackendStatus.value = status;
+      if (status?.tts) {
+        if (status.tts.referenceId && !fishReferenceId.value) {
+          fishReferenceId.value = normalizeFishReferenceId(status.tts.referenceId);
+        }
+        if (status.tts.model && !fishModel.value) {
+          fishModel.value = status.tts.model;
+        }
+      }
     }
   } catch {
     // Non-blocking

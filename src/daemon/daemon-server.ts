@@ -72,6 +72,32 @@ export interface DaemonProjectInfo {
   readonly currentBranch?: string;
 }
 
+export interface DaemonVoiceConfig {
+  readonly ttsProvider?: 'fish' | 'system';
+  readonly fishReferenceId?: string;
+  readonly fishModel?: string;
+  readonly fishApiKey?: string;
+}
+
+export function normalizeFishReferenceId(input: string): string {
+  const raw = String(input ?? '').trim();
+  if (!raw) return '';
+  const hexMatch = raw.match(/\b([a-f0-9]{24,64})\b/i);
+  if (hexMatch && (raw.includes('/') || raw.includes('fish.audio'))) {
+    return hexMatch[1];
+  }
+  try {
+    if (/^https?:\/\//i.test(raw)) {
+      const parsed = new URL(raw);
+      const parts = parsed.pathname.split('/').filter(Boolean);
+      return parts.at(-1) ?? '';
+    }
+  } catch {
+    // Keep raw reference_id
+  }
+  return raw;
+}
+
 export interface DaemonServerOptions {
   readonly port?: number;
   readonly host?: string;
@@ -170,6 +196,45 @@ export class NexusDaemonServer extends EventEmitter {
     } catch (err) {
       logger.warn('Daemon', 'persist_tasks_failed', { status: 'failed' }, err);
     }
+  }
+
+  private getStoredVoiceConfig(): DaemonVoiceConfig {
+    try {
+      const saved = this.storage.get('nexus.voice.config');
+      if (saved && typeof saved === 'object') {
+        return saved as DaemonVoiceConfig;
+      }
+    } catch {}
+    return {};
+  }
+
+  private getVoiceStatusPayload() {
+    const stored = this.getStoredVoiceConfig();
+    const envKey = (process.env.FISH_API_KEY || process.env.FISHAUDIO_API_KEY || '').trim();
+    const apiKey = (stored.fishApiKey || envKey).trim();
+    const referenceId = normalizeFishReferenceId(
+      stored.fishReferenceId ||
+        process.env.FISH_REFERENCE_ID ||
+        process.env.FISHAUDIO_REFERENCE_ID ||
+        ''
+    );
+    const model = (stored.fishModel || process.env.FISH_MODEL || 's2.1-pro').trim();
+    const ttsProvider: 'fish' | 'system' =
+      stored.ttsProvider ?? (apiKey || referenceId ? 'fish' : 'system');
+
+    return {
+      available: true,
+      provider: process.env.GROQ_API_KEY ? 'groq-whisper' : 'native-android',
+      language: 'fr',
+      tts: {
+        provider: ttsProvider,
+        fishAudioAvailable: Boolean(apiKey),
+        hasApiKey: Boolean(apiKey),
+        referenceId,
+        model,
+        backupProvider: 'system',
+      },
+    };
   }
 
   getActiveProject(): DaemonProjectInfo {
@@ -873,14 +938,140 @@ export class NexusDaemonServer extends EventEmitter {
         return;
       }
 
-      // 3d. Voice Status & Server-Side STT Fallback (Groq Whisper)
+      // 3d. Voice Status, Fish Audio TTS & Server-Side STT Fallback (Groq Whisper)
       if (pathname === '/api/voice/status' && method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(this.getVoiceStatusPayload()));
+        return;
+      }
+
+      if (pathname === '/api/voice/config' && method === 'POST') {
+        const body = JSON.parse(await this.readRequestBody(req));
+        const current = this.getStoredVoiceConfig();
+        const nextProvider =
+          body.ttsProvider === 'fish' || body.ttsProvider === 'system'
+            ? body.ttsProvider
+            : current.ttsProvider;
+        const rawRef =
+          typeof body.referenceId === 'string'
+            ? body.referenceId
+            : typeof body.fishReferenceId === 'string'
+              ? body.fishReferenceId
+              : undefined;
+        const rawModel =
+          typeof body.model === 'string'
+            ? body.model
+            : typeof body.fishModel === 'string'
+              ? body.fishModel
+              : undefined;
+        const rawKey =
+          typeof body.apiKey === 'string'
+            ? body.apiKey.trim()
+            : typeof body.fishApiKey === 'string'
+              ? body.fishApiKey.trim()
+              : undefined;
+
+        const updated: DaemonVoiceConfig = {
+          ttsProvider: nextProvider,
+          fishReferenceId:
+            rawRef !== undefined ? normalizeFishReferenceId(rawRef) : current.fishReferenceId,
+          fishModel: rawModel !== undefined ? rawModel.trim() || 's2.1-pro' : current.fishModel,
+          fishApiKey:
+            body.clearApiKey === true
+              ? undefined
+              : rawKey !== undefined && rawKey.length > 0
+                ? rawKey
+                : current.fishApiKey,
+        };
+        await this.storage.update('nexus.voice.config', updated);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(this.getVoiceStatusPayload()));
+        return;
+      }
+
+      if (pathname === '/api/voice/synthesize' && method === 'POST') {
+        const body = JSON.parse(await this.readRequestBody(req));
+        const text = typeof body.text === 'string' ? body.text.trim() : '';
+        if (!text) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Texte manquant pour la synthèse vocale.' }));
+          return;
+        }
+        const stored = this.getStoredVoiceConfig();
+        const apiKey = (
+          stored.fishApiKey ||
+          process.env.FISH_API_KEY ||
+          process.env.FISHAUDIO_API_KEY ||
+          ''
+        ).trim();
+        if (!apiKey) {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              error: 'Clé API Fish Audio (FISH_API_KEY) non configurée sur le serveur.',
+            })
+          );
+          return;
+        }
+        const referenceId = normalizeFishReferenceId(
+          typeof body.referenceId === 'string' && body.referenceId.trim()
+            ? body.referenceId
+            : stored.fishReferenceId ||
+                process.env.FISH_REFERENCE_ID ||
+                process.env.FISHAUDIO_REFERENCE_ID ||
+                ''
+        );
+        const model = (
+          (typeof body.model === 'string' && body.model.trim()) ||
+          stored.fishModel ||
+          process.env.FISH_MODEL ||
+          's2.1-pro'
+        ).trim();
+        const speed = Number.isFinite(Number(body.rate))
+          ? Math.min(2.0, Math.max(0.5, Number(body.rate)))
+          : 1.0;
+
+        const fishEndpoint = process.env.FISH_API_URL || 'https://api.fish.audio/v1/tts';
+        const fishRes = await fetch(fishEndpoint, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            model,
+          },
+          body: JSON.stringify({
+            text,
+            ...(referenceId ? { reference_id: referenceId } : {}),
+            format: 'mp3',
+            mp3_bitrate: 128,
+            normalize: true,
+            latency: 'balanced',
+            prosody: {
+              speed,
+              volume: 0,
+            },
+          }),
+        });
+
+        if (!fishRes.ok) {
+          const errText = await fishRes.text().catch(() => '');
+          res.writeHead(502, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              error: `Erreur Fish Audio (${fishRes.status}) : ${errText || fishRes.statusText}`,
+            })
+          );
+          return;
+        }
+
+        const audioBytes = Buffer.from(await fishRes.arrayBuffer());
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(
           JSON.stringify({
-            available: true,
-            provider: process.env.GROQ_API_KEY ? 'groq-whisper' : 'native-android',
-            language: 'fr',
+            audioBase64: audioBytes.toString('base64'),
+            mimeType: 'audio/mpeg',
+            referenceId,
+            model,
           })
         );
         return;
