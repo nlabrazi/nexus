@@ -511,12 +511,15 @@
             <div v-if="ttsProvider === 'fish'" class="settings-details-box" style="margin: 8px 0 12px; padding: 12px; border-radius: 8px; background: rgba(0, 240, 255, 0.04); border: 1px solid var(--line);">
               <div class="sheet-section-title" style="margin-bottom: 8px;">CONFIGURATION FISH AUDIO (AVEC BACKUP LOCAL)</div>
               <div class="field" style="margin-bottom: 10px;">
-                <label for="fish-reference-id">Voix Fish Audio (<code>reference_id</code> ou URL <code>fish.audio</code>)</label>
+                <label for="fish-reference-id">
+                  Voix Fish Audio (<code>reference_id</code> ou URL <code>fish.audio</code>)
+                  <span v-if="voiceBackendStatus?.tts?.referenceId" style="color: #00f0ff; font-size: 11px; margin-left: 6px;">✓ Active sur le serveur</span>
+                </label>
                 <input id="fish-reference-id" v-model="fishReferenceId" :disabled="!ttsEnabled" type="text"
                   autocapitalize="none" spellcheck="false"
-                  placeholder="Ex: 802e3bc2b27e49c2995d23ef70e6ac89 ou https://fish.audio/m/..." />
+                  :placeholder="voiceBackendStatus?.tts?.referenceId ? `Configurée sur le serveur (${voiceBackendStatus.tts.referenceId})` : 'Collez un reference_id ou un lien fish.audio...'" />
                 <small style="color: var(--muted-light); font-size: 11px;">
-                  Collez l'ID de la voix repérée (ou le lien complet de la page Fish Audio). En cas d'indisponibilité réseau, la voix locale prendra le relais.
+                  {{ voiceBackendStatus?.tts?.referenceId ? `Voix chargée depuis le serveur (.env) : ${voiceBackendStatus.tts.referenceId}` : "Collez l'ID de la voix repérée (ou laissez vide pour utiliser FISH_REFERENCE_ID du .env)." }}
                 </small>
               </div>
               <div class="field" style="margin-bottom: 10px;">
