@@ -138,3 +138,41 @@ test('selecting system provider bypasses Fish Audio and uses local backup direct
   assert.equal(f.fallbackSpoken[0].text, 'Lecture directe locale.');
 });
 
+test('Fish Audio UI settings: has single editable reference field with edit pencil and no obsolete backup voice selector', async () => {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const appVueContent = await fs.readFile(
+    path.resolve(process.cwd(), 'app/app.vue'),
+    'utf-8'
+  );
+
+  // Backup voice selector must be completely removed from Fish Audio settings
+  assert.equal(
+    appVueContent.includes('id="speech-voice-backup"'),
+    false,
+    'speech-voice-backup selector should not be present in template'
+  );
+  assert.equal(
+    appVueContent.includes('Voix de secours (backup local automatique'),
+    false,
+    'backup voice label should not be present in Fish Audio settings'
+  );
+
+  // Single editable field with pencil toggle
+  assert.equal(
+    appVueContent.includes('isEditingFishVoice'),
+    true,
+    'app.vue should manage editing state for Fish Audio voice'
+  );
+  assert.equal(
+    appVueContent.includes('toggleEditFishVoice'),
+    true,
+    'app.vue should provide toggleEditFishVoice'
+  );
+  assert.equal(
+    appVueContent.includes('effectiveFishVoiceId'),
+    true,
+    'app.vue should compute effectiveFishVoiceId'
+  );
+});
+

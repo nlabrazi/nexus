@@ -44,6 +44,7 @@ const paths = {
   code: "m16 18 6-6-6-6M8 6l-6 6 6 6",
   speaker: "M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14",
   speakerOff: "M11 5L6 9H2v6h4l5 4V5zM23 9l-6 6M17 9l6 6",
+  edit: "M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z M15 5l4 4",
 } as const;
 defineProps<{ name: keyof typeof paths }>();
 </script>

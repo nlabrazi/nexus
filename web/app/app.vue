@@ -545,57 +545,95 @@
 
             <!-- C1. Panneau de configuration dédié Fish Audio -->
             <div v-if="ttsProvider === 'fish'" class="voice-config-box" style="margin-bottom: 14px; padding: 14px; border-radius: 10px; background: rgba(0, 240, 255, 0.04); border: 1px solid rgba(0, 240, 255, 0.25);">
-              <div class="sheet-section-title" style="margin-bottom: 10px; color: #00f0ff;">
-                RÉGLAGES FISH AUDIO
-              </div>
-
-              <!-- Bannière de confirmation de la voix active côté serveur -->
-              <div v-if="voiceBackendStatus?.tts?.referenceId" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 6px; background: rgba(0, 240, 255, 0.08); border: 1px solid rgba(0, 240, 255, 0.2); margin-bottom: 12px;">
-                <span style="font-size: 11.5px; color: var(--text-bright); display: flex; align-items: center; gap: 6px;">
-                  <NexusIcon name="check" style="width: 14px; height: 14px; color: #00f0ff;" />
-                  <span>Voix du serveur (<code>.env</code>) : <code>{{ voiceBackendStatus.tts.referenceId }}</code></span>
+              <div class="sheet-section-title" style="margin-bottom: 12px; color: #00f0ff; display: flex; align-items: center; justify-content: space-between;">
+                <span>RÉGLAGES FISH AUDIO</span>
+                <span v-if="voiceBackendStatus?.tts?.model" style="font-size: 11px; color: var(--muted); font-family: var(--font-mono); font-weight: normal;">
+                  {{ voiceBackendStatus.tts.model }}
                 </span>
-                <span style="font-size: 10.5px; color: #00f0ff; font-family: var(--font-mono);">{{ voiceBackendStatus?.tts?.model || 's2.1-pro-free' }}</span>
               </div>
 
-              <div class="field" style="margin-bottom: 10px;">
-                <label for="fish-reference-id">ID ou lien de la voix (<code>reference_id</code>)</label>
-                <input id="fish-reference-id" v-model="fishReferenceId" :disabled="!ttsEnabled" type="text"
-                  autocapitalize="none" spellcheck="false"
-                  :placeholder="voiceBackendStatus?.tts?.referenceId ? voiceBackendStatus.tts.referenceId : 'Collez votre reference_id ou lien fish.audio...'" />
-                <small style="color: var(--muted-light); font-size: 11px;">
-                  Modifiez l'ID ici si vous voulez changer de voix. Laissez vide pour utiliser la voix par défaut du fichier <code>.env</code>.
-                </small>
+              <!-- Champ unique et éditable pour la voix Fish Audio -->
+              <div class="field" style="margin-bottom: 0;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                  <label for="fish-reference-id" style="margin-bottom: 0; font-size: 13px; font-weight: 500; color: var(--text-bright);">
+                    Voix active (ID ou lien)
+                  </label>
+                  <button
+                    type="button"
+                    class="button ghost small"
+                    style="padding: 3px 8px; font-size: 11.5px; display: inline-flex; align-items: center; gap: 5px; height: 26px; border-radius: 6px; border: 1px solid rgba(0, 240, 255, 0.3); color: #00f0ff;"
+                    :title="isEditingFishVoice ? 'Annuler la modification' : 'Modifier la voix'"
+                    @click="toggleEditFishVoice"
+                  >
+                    <NexusIcon :name="isEditingFishVoice ? 'close' : 'edit'" style="width: 13px; height: 13px;" />
+                    <span>{{ isEditingFishVoice ? "Annuler" : "Modifier" }}</span>
+                  </button>
+                </div>
+
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <input
+                    id="fish-reference-id"
+                    ref="fishReferenceInputRef"
+                    v-model="fishReferenceDraft"
+                    :readonly="!isEditingFishVoice"
+                    :disabled="!ttsEnabled"
+                    type="text"
+                    autocapitalize="none"
+                    spellcheck="false"
+                    :style="isEditingFishVoice ? 'border-color: #00f0ff; background: rgba(0, 240, 255, 0.08); font-family: var(--font-mono);' : 'background: rgba(255, 255, 255, 0.04); font-family: var(--font-mono); cursor: pointer; color: var(--text-bright);'"
+                    :placeholder="effectiveFishVoiceId ? effectiveFishVoiceId : 'Collez un ID ou lien fish.audio…'"
+                    @click="onFishInputClick"
+                    @keydown.enter.prevent="saveFishVoiceConfig"
+                  />
+                  <button
+                    v-if="isEditingFishVoice"
+                    type="button"
+                    class="button primary"
+                    style="flex-shrink: 0; padding: 0 12px; height: 38px; display: inline-flex; align-items: center; gap: 6px;"
+                    :disabled="!ttsEnabled || isSavingFishConfig"
+                    @click="saveFishVoiceConfig"
+                  >
+                    <NexusIcon name="check" style="width: 14px; height: 14px;" />
+                    <span>{{ isSavingFishConfig ? "…" : "OK" }}</span>
+                  </button>
+                </div>
+
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px; font-size: 11px;">
+                  <span style="color: var(--muted-light); display: inline-flex; align-items: center; gap: 5px;">
+                    <NexusIcon v-if="voiceBackendStatus?.tts?.hasApiKey" name="check" style="width: 12px; height: 12px; color: #00f0ff;" />
+                    <span>{{ fishVoiceSourceNote }}</span>
+                  </span>
+                </div>
+
+                <!-- Option clé API repliée en mode édition uniquement -->
+                <div v-if="isEditingFishVoice" style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(255, 255, 255, 0.1);">
+                  <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <button
+                      type="button"
+                      class="button ghost small"
+                      style="font-size: 11px; color: var(--muted); padding: 2px 0;"
+                      @click="showCustomApiKey = !showCustomApiKey"
+                    >
+                      <span>{{ showCustomApiKey ? '▲ Masquer clé API' : '▼ Clé API spécifique (optionnel)' }}</span>
+                    </button>
+                  </div>
+                  <input
+                    v-if="showCustomApiKey"
+                    id="fish-api-key"
+                    v-model="fishApiKeyInput"
+                    type="password"
+                    autocomplete="off"
+                    spellcheck="false"
+                    style="margin-top: 6px; font-size: 11px;"
+                    :placeholder="voiceBackendStatus?.tts?.hasApiKey ? 'Clé configurée dans .env (laisser vide pour conserver)' : 'Collez votre clé API Fish Audio…'"
+                  />
+                </div>
               </div>
 
-              <div class="field" style="margin-bottom: 10px;">
-                <label for="fish-api-key">
-                  Clé API Fish Audio (<code>FISH_API_KEY</code>)
-                  <span v-if="voiceBackendStatus?.tts?.hasApiKey" style="color: #00f0ff; font-size: 11px; margin-left: 6px;">✓ Configurée sur le serveur (.env)</span>
-                </label>
-                <input id="fish-api-key" v-model="fishApiKeyInput" :disabled="!ttsEnabled" type="password"
-                  autocomplete="off" spellcheck="false"
-                  :placeholder="voiceBackendStatus?.tts?.hasApiKey ? 'Déjà configurée dans .env sur le PC' : 'Collez votre clé API Fish Audio ou renseignez FISH_API_KEY dans .env'" />
-              </div>
-
-              <p v-if="fishStatusMsg" style="font-size: 12px; color: #00f0ff; margin: 6px 0;">
+              <!-- Message de statut / feedback -->
+              <p v-if="fishStatusMsg" style="font-size: 12px; color: #00f0ff; margin: 8px 0 0 0;">
                 {{ fishStatusMsg }}
               </p>
-              <button type="button" class="button secondary full-width" :disabled="!ttsEnabled || isSavingFishConfig" @click="saveFishVoiceConfig">
-                <span>{{ isSavingFishConfig ? "Synchronisation…" : "💾 Enregistrer la voix Fish Audio" }}</span>
-              </button>
-
-              <!-- Sous-champ voix de secours locale -->
-              <div class="field" style="margin-top: 14px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
-                <label for="speech-voice-backup" style="font-size: 12px; color: var(--muted-light);">
-                  Voix de secours (backup local automatique si Fish Audio est hors-ligne) :
-                </label>
-                <select id="speech-voice-backup" v-model="speechVoice" :disabled="!ttsEnabled">
-                  <option value="">Automatique · français de France (recommandé)</option>
-                  <option v-if="speechVoice && !speechVoices.some(voice => voice.voiceURI === speechVoice)" :value="speechVoice">Voix enregistrée indisponible — choix automatique</option>
-                  <option v-for="voice in speechVoices" :key="voice.voiceURI" :value="voice.voiceURI">{{ voice.name }} · {{ voice.lang }} · {{ voice.localService ? "sur l'appareil" : "en ligne" }}</option>
-                </select>
-              </div>
             </div>
 
             <!-- C2. Panneau de configuration dédié Voix Système -->
@@ -1226,11 +1264,65 @@ const fishModel = ref("s2.1-pro-free");
 const fishApiKeyInput = ref("");
 const isSavingFishConfig = ref(false);
 const fishStatusMsg = ref("");
+const isEditingFishVoice = ref(false);
+const showCustomApiKey = ref(false);
+const fishReferenceDraft = ref("");
+const fishReferenceInputRef = ref<HTMLInputElement | null>(null);
 const speechVoices = ref<SpeechSynthesisVoice[]>([]);
 
 function refreshSpeechVoices() {
   speechVoices.value = window.speechSynthesis.getVoices();
 }
+
+const effectiveFishVoiceId = computed(() => {
+  return (
+    normalizeFishReferenceId(fishReferenceId.value) ||
+    normalizeFishReferenceId(voiceBackendStatus.value?.tts?.referenceId) ||
+    ""
+  );
+});
+
+const fishVoiceSourceNote = computed(() => {
+  const hasKey = voiceBackendStatus.value?.tts?.hasApiKey;
+  const keyNote = hasKey ? "Clé API active (.env)" : "Clé API non détectée";
+  if (fishReferenceId.value.trim()) {
+    return `${keyNote} · Voix personnalisée active`;
+  }
+  if (voiceBackendStatus.value?.tts?.referenceId) {
+    return `${keyNote} · Voix active du fichier .env`;
+  }
+  return `${keyNote} · Aucune voix configurée`;
+});
+
+function toggleEditFishVoice() {
+  if (isEditingFishVoice.value) {
+    isEditingFishVoice.value = false;
+    fishReferenceDraft.value = effectiveFishVoiceId.value;
+  } else {
+    fishReferenceDraft.value = effectiveFishVoiceId.value;
+    isEditingFishVoice.value = true;
+    nextTick(() => {
+      fishReferenceInputRef.value?.focus();
+      fishReferenceInputRef.value?.select();
+    });
+  }
+}
+
+function onFishInputClick() {
+  if (!isEditingFishVoice.value) {
+    toggleEditFishVoice();
+  }
+}
+
+watch(
+  effectiveFishVoiceId,
+  (newVal) => {
+    if (!isEditingFishVoice.value) {
+      fishReferenceDraft.value = newVal;
+    }
+  },
+  { immediate: true }
+);
 
 const selectedSystemVoiceLabel = computed(() => {
   if (!speechVoice.value) return "Automatique · français de France";
@@ -1240,9 +1332,9 @@ const selectedSystemVoiceLabel = computed(() => {
 });
 
 const selectedFishVoiceLabel = computed(() => {
-  const ref = fishReferenceId.value || voiceBackendStatus.value?.tts?.referenceId;
+  const ref = effectiveFishVoiceId.value;
   if (ref) return `Voix personnalisée (${ref.slice(0, 10)}…)`;
-  return "Non configurée (renseignez reference_id)";
+  return "Non configurée (cliquez pour choisir une voix)";
 });
 
 function setTtsProvider(provider: "fish" | "system") {
@@ -1297,7 +1389,7 @@ async function synthesizeFishSpeech(
     headers,
     body: JSON.stringify({
       text: chunkText,
-      referenceId: normalizeFishReferenceId(opts.referenceId || fishReferenceId.value) || undefined,
+      referenceId: normalizeFishReferenceId(opts.referenceId || effectiveFishVoiceId.value) || undefined,
       rate: opts.rate ?? speechRate.value,
       model: opts.model || fishModel.value || "s2.1-pro-free",
     }),
@@ -1311,10 +1403,13 @@ async function synthesizeFishSpeech(
 }
 
 async function saveFishVoiceConfig() {
-  fishReferenceId.value = normalizeFishReferenceId(fishReferenceId.value);
+  const cleanDraft = normalizeFishReferenceId(fishReferenceDraft.value);
+  fishReferenceId.value = cleanDraft;
+  fishReferenceDraft.value = cleanDraft;
   fishStatusMsg.value = "";
   if (!coreUrl.value) {
     fishStatusMsg.value = "✓ Préférence enregistrée localement (connectez le serveur pour synchroniser).";
+    isEditingFishVoice.value = false;
     return;
   }
   isSavingFishConfig.value = true;
@@ -1329,7 +1424,7 @@ async function saveFishVoiceConfig() {
       headers,
       body: JSON.stringify({
         ttsProvider: ttsProvider.value,
-        referenceId: fishReferenceId.value,
+        referenceId: cleanDraft,
         model: fishModel.value || "s2.1-pro-free",
         ...(fishApiKeyInput.value.trim() ? { apiKey: fishApiKeyInput.value.trim() } : {}),
       }),
@@ -1338,18 +1433,20 @@ async function saveFishVoiceConfig() {
       const updated = await res.json();
       voiceBackendStatus.value = updated;
       if (updated?.tts?.referenceId !== undefined) {
-        fishReferenceId.value = updated.tts.referenceId;
+        fishReferenceId.value = normalizeFishReferenceId(updated.tts.referenceId);
+        fishReferenceDraft.value = fishReferenceId.value;
       }
       fishApiKeyInput.value = "";
-      fishStatusMsg.value = updated?.tts?.hasApiKey
-        ? "✓ Voix Fish Audio synchronisée (avec backup système actif)"
-        : "✓ ID de voix enregistré (ajoutez FISH_API_KEY dans .env ou ci-dessus pour activer le cloud)";
+      showCustomApiKey.value = false;
+      isEditingFishVoice.value = false;
+      fishStatusMsg.value = "✓ Voix Fish Audio enregistrée";
       void triggerHaptic("success");
     } else {
-      fishStatusMsg.value = "⚠ Impossible d'enregistrer sur le daemon.";
+      fishStatusMsg.value = "⚠ Impossible d'enregistrer sur le serveur.";
     }
   } catch {
-    fishStatusMsg.value = "⚠ Serveur Nexus injoignable (sauvegardé localement).";
+    fishStatusMsg.value = "✓ Sauvegardé localement sur cet appareil.";
+    isEditingFishVoice.value = false;
   } finally {
     isSavingFishConfig.value = false;
   }
@@ -1369,14 +1466,14 @@ function speakMessage(text: string, messageId?: string) {
   const clean = cleanTextForSpeech(text);
   const useFish =
     ttsProvider.value === "fish" &&
-    Boolean(fishReferenceId.value.trim() || voiceBackendStatus.value?.tts?.fishAudioAvailable);
+    Boolean(effectiveFishVoiceId.value || voiceBackendStatus.value?.tts?.fishAudioAvailable);
   if (clean) {
     speechPlayback.speak(clean, messageId, {
       rate: speechRate.value,
       voiceURI: speechVoice.value,
       provider: useFish ? "fish" : "system",
       fishEnabled: useFish,
-      fishReferenceId: normalizeFishReferenceId(fishReferenceId.value),
+      fishReferenceId: normalizeFishReferenceId(effectiveFishVoiceId.value),
       fishModel: fishModel.value,
     });
   }
