@@ -1690,6 +1690,7 @@ let isPressingMic = false;
 let clickToggleActive = false;
 let nativeSpeechActive = false;
 let nativeRecorderActive = false;
+let nativeSpeechStopTimer: ReturnType<typeof setTimeout> | null = null;
 
 // WebSocket Real-Time Stream State
 let wsInstance: WebSocket | null = null;
@@ -3094,73 +3095,28 @@ function appendTranscript(text: string) {
   interimTranscript.value = "";
 }
 
-async function runNativeSpeechPopup() {
-  await stopSpeaking();
-  try {
-    const avail = await SpeechRecognition.available();
-    if (!avail.available) {
-      console.warn("SpeechRecognition unavailable");
-      errorMessage.value =
-        "Reconnaissance vocale non disponible sur cet appareil.";
-      return;
-    }
-    const perm = await SpeechRecognition.checkPermissions();
-    if (perm.speechRecognition !== "granted") {
-      const req = await SpeechRecognition.requestPermissions();
-      if (req.speechRecognition !== "granted") {
-        errorMessage.value =
-          "Autorisation du micro requise pour la commande vocale.";
-        return;
-      }
-    }
-    await triggerHaptic("press");
-    isListening.value = true;
-    errorMessage.value = "";
-    const result = await SpeechRecognition.start({
-      language: "fr-FR",
-      maxResults: 3,
-      prompt: "Dicter un message",
-      popup: true,
-      partialResults: false,
-    });
-    await triggerHaptic("success");
-    if (result?.matches && result.matches.length > 0) {
-      const text = result.matches[0]?.trim() || "";
-      if (text) {
-        appendTranscript(text);
-        if (autoSendVoice.value && isNodeReady.value) {
-          setTimeout(() => {
-            submitMessage();
-          }, 300);
-        }
-      }
-    }
-  } catch (err: any) {
-    console.warn("SpeechRecognition popup error:", err);
-    await triggerHaptic("cancel");
-  } finally {
-    isListening.value = false;
-    isPressingMic = false;
+async function stopNativeSpeechRecognition(settleMs = 0) {
+  if (nativeSpeechStopTimer) {
+    clearTimeout(nativeSpeechStopTimer);
+    nativeSpeechStopTimer = null;
   }
+  try {
+    // SpeechRecognition.stop() in @capacitor-community/speech-recognition Android
+    // does not resolve its PluginCall; bound it with a short settle window so
+    // onResults -> partialResults can fire before listeners are removed.
+    await Promise.race([
+      SpeechRecognition.stop().catch(() => {}),
+      new Promise<void>((resolve) => setTimeout(resolve, Math.max(80, settleMs))),
+    ]);
+  } catch { }
+  try {
+    await SpeechRecognition.removeAllListeners();
+  } catch { }
 }
 
 async function handleMicClick() {
-  if (isSending.value) return;
+  if (isSending.value || isProcessingAudio.value) return;
 
-  if (Capacitor.isNativePlatform()) {
-    if (isListening.value) {
-      try {
-        await SpeechRecognition.stop();
-        await SpeechRecognition.removeAllListeners();
-      } catch { }
-      isListening.value = false;
-      return;
-    }
-    await runNativeSpeechPopup();
-    return;
-  }
-
-  // Web Browser fallback
   if (isListening.value) {
     clickToggleActive = false;
     await stopPushToTalk();
@@ -3226,15 +3182,20 @@ async function onMicPointerCancel(e: PointerEvent) {
 
 async function startPushToTalk() {
   await stopSpeaking();
-  if (!isNodeReady.value || isSending.value) return;
+  if (isSending.value || isProcessingAudio.value) return;
 
+  if (nativeSpeechStopTimer) {
+    clearTimeout(nativeSpeechStopTimer);
+    nativeSpeechStopTimer = null;
+  }
   speechRecordingStart = Date.now();
   interimTranscript.value = "";
+  errorMessage.value = "";
   isListening.value = true;
   await triggerHaptic("press");
 
   if (Capacitor.isNativePlatform()) {
-    // 1. Tenter la reconnaissance vocale native on-device
+    // 1. Reconnaissance vocale native inline (sans popup système Google)
     let speechAvailable = false;
     try {
       const avail = await SpeechRecognition.available();
@@ -3259,7 +3220,24 @@ async function startPushToTalk() {
           "partialResults",
           (data: { matches: string[] }) => {
             if (data.matches && data.matches.length > 0) {
-              interimTranscript.value = data.matches[0] || "";
+              const candidate = data.matches[0]?.trim() || "";
+              if (candidate) {
+                interimTranscript.value = candidate;
+              }
+            }
+          },
+        );
+        await SpeechRecognition.addListener(
+          "listeningState",
+          (state: { status: "started" | "stopped" }) => {
+            if (state.status === "stopped" && isListening.value && nativeSpeechActive) {
+              if (nativeSpeechStopTimer) clearTimeout(nativeSpeechStopTimer);
+              nativeSpeechStopTimer = setTimeout(() => {
+                nativeSpeechStopTimer = null;
+                if (isListening.value && nativeSpeechActive) {
+                  void stopPushToTalk();
+                }
+              }, 240);
             }
           },
         );
@@ -3272,20 +3250,22 @@ async function startPushToTalk() {
         return;
       } catch (err) {
         console.warn(
-          "SpeechRecognition.start failed, will use popup on tap or recorder:",
+          "SpeechRecognition.start inline failed, fallback to VoiceRecorder:",
           err,
         );
         nativeSpeechActive = false;
       }
     }
 
-    // 2. Fallback vers enregistreur audio natif
+    // 2. Fallback vers enregistreur audio natif + transcription Whisper serveur
     try {
       const perm = await VoiceRecorder.hasAudioRecordingPermission();
       if (!perm.value) {
         const req = await VoiceRecorder.requestAudioRecordingPermission();
         if (!req.value) {
           isListening.value = false;
+          errorMessage.value =
+            "Autorisation du micro requise pour la dictée vocale.";
           return;
         }
       }
@@ -3296,6 +3276,8 @@ async function startPushToTalk() {
       console.warn("VoiceRecorder.startRecording failed:", err);
       nativeRecorderActive = false;
       isListening.value = false;
+      errorMessage.value =
+        "Reconnaissance vocale non disponible sur cet appareil.";
       return;
     }
   }
@@ -3340,21 +3322,17 @@ async function stopPushToTalk() {
 
   const durationMs = Date.now() - speechRecordingStart;
   isPressingMic = false;
+  clickToggleActive = false;
   isListening.value = false;
   await triggerHaptic("release");
 
   if (Capacitor.isNativePlatform()) {
     if (nativeSpeechActive) {
       try {
-        await SpeechRecognition.stop();
-        await SpeechRecognition.removeAllListeners();
+        await stopNativeSpeechRecognition(220);
         const text = interimTranscript.value.trim();
         if (text) {
           appendTranscript(text);
-        } else if (durationMs < 600) {
-          // Si rien n'a été capté pendant un court maintien, ouvrir la popup de reconnaissance vocale Google
-          await runNativeSpeechPopup();
-          return;
         }
       } catch (err) {
         console.warn("SpeechRecognition.stop failed:", err);
@@ -3370,7 +3348,7 @@ async function stopPushToTalk() {
       isProcessingAudio.value = true;
       try {
         const result = await VoiceRecorder.stopRecording();
-        if (result.value?.recordDataBase64 && durationMs > 300) {
+        if (result.value?.recordDataBase64 && durationMs > 250) {
           await transcribeNativeAudio(
             result.value.recordDataBase64,
             result.value.mimeType || "audio/aac",
@@ -3386,21 +3364,44 @@ async function stopPushToTalk() {
 
     if (
       autoSendVoice.value &&
+      isNodeReady.value &&
       inputPrompt.value.trim().length > 0 &&
-      durationMs > 400
+      durationMs > 250
     ) {
-      setTimeout(() => {
-        submitMessage();
-      }, 250);
+      await submitMessage();
     }
     return;
   }
 
-  // Web Browser fallback
+  // Web Browser fallback: attendre la fin de reconnaissance pour capter le dernier segment
   if (recognitionInstance) {
-    try {
-      recognitionInstance.stop();
-    } catch { }
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      const prevOnEnd = recognitionInstance.onend;
+      recognitionInstance.onend = (ev: any) => {
+        recognitionInstance.onend = prevOnEnd;
+        if (typeof prevOnEnd === "function") prevOnEnd(ev);
+        done();
+      };
+      setTimeout(() => {
+        recognitionInstance.onend = prevOnEnd;
+        done();
+      }, 240);
+      try {
+        recognitionInstance.stop();
+      } catch {
+        recognitionInstance.onend = prevOnEnd;
+        done();
+      }
+    });
+    if (interimTranscript.value.trim()) {
+      appendTranscript(interimTranscript.value.trim());
+    }
   }
 
   if (mediaRecorderInstance && mediaRecorderInstance.state !== "inactive") {
@@ -3436,12 +3437,11 @@ async function stopPushToTalk() {
 
   if (
     autoSendVoice.value &&
+    isNodeReady.value &&
     inputPrompt.value.trim().length > 0 &&
-    durationMs > 400
+    durationMs > 250
   ) {
-    setTimeout(() => {
-      submitMessage();
-    }, 250);
+    await submitMessage();
   }
 }
 
@@ -3472,24 +3472,21 @@ async function transcribeNativeAudio(base64: string, mimeType: string) {
   }
 }
 
+async function blobToBase64(blob: Blob): Promise<string> {
+  const buffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
 async function transcribeAudioBlob(blob: Blob) {
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/voice/transcribe`;
-    const headers = getRequestHeaders();
-    headers["Content-Type"] = blob.type || "audio/webm";
-
-    const res = await fetch(targetUrl, {
-      method: "POST",
-      headers,
-      body: blob,
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      if (data.text) {
-        appendTranscript(data.text);
-      }
-    }
+    const base64 = await blobToBase64(blob);
+    await transcribeNativeAudio(base64, blob.type || "audio/webm");
   } catch (err) {
     console.warn("Backend transcription failed:", err);
   }
@@ -3504,10 +3501,7 @@ async function cancelVoiceRecording() {
 
   if (Capacitor.isNativePlatform()) {
     if (nativeSpeechActive) {
-      try {
-        await SpeechRecognition.stop();
-        await SpeechRecognition.removeAllListeners();
-      } catch { }
+      await stopNativeSpeechRecognition(80);
       nativeSpeechActive = false;
     }
     if (nativeRecorderActive) {

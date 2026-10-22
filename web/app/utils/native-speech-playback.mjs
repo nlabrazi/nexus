@@ -6,6 +6,7 @@ export function createNativeSpeechPlayback(engine, callbacks, timers = globalThi
   let generation = 0;
   let cancelPending = () => {};
   let stopping = Promise.resolve();
+  let cachedVoices = null;
 
   function stop() {
     generation++;
@@ -33,9 +34,19 @@ export function createNativeSpeechPlayback(engine, callbacks, timers = globalThi
     try {
       await bounded(stopped);
       if (current !== generation) return;
-      const result = await bounded(engine.getSupportedVoices()).catch(() => ({ voices: [] }));
-      if (current !== generation) return;
-      const voices = Array.isArray(result?.voices) ? result.voices : [];
+      let voices = cachedVoices;
+      if (!voices) {
+        const result = await bounded(engine.getSupportedVoices()).catch(() => ({ voices: [] }));
+        if (current !== generation) return;
+        voices = Array.isArray(result?.voices) ? result.voices : [];
+        if (voices.length > 0) cachedVoices = voices;
+      } else {
+        Promise.resolve(engine.getSupportedVoices())
+          .then((res) => {
+            if (Array.isArray(res?.voices) && res.voices.length > 0) cachedVoices = res.voices;
+          })
+          .catch(() => {});
+      }
       let voice = chooseSpeechVoice(voices, options.voiceURI);
       if (voices.length > 0 && voice < 0) throw new Error('missing voice');
       const explicitVoice = voices.some((v) => v.voiceURI === options.voiceURI);

@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { createNativeSpeechPlayback } from '../app/utils/native-speech-playback.mjs';
 import { shouldSpeakReply } from '../app/utils/voice-reply.mjs';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 function setup() {
@@ -107,4 +112,13 @@ test('automatic online France voice falls back to local France when the network 
   assert.equal(f.spoken[1].lang, 'fr-FR');
   f.pending[1].resolve(); await done;
   assert.equal(f.errors.length, 0);
+});
+
+test('mobile voice capture uses inline recognition (popup: false) without Google system popup', () => {
+  const appVue = readFileSync(resolve(__dirname, '../app/app.vue'), 'utf-8');
+  assert.equal(appVue.includes('popup: true'), false);
+  assert.equal(appVue.includes('runNativeSpeechPopup'), false);
+  assert.equal(appVue.includes('popup: false'), true);
+  assert.equal(appVue.includes('stopNativeSpeechRecognition'), true);
+  assert.equal(appVue.includes('"listeningState"'), true);
 });

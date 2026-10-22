@@ -906,13 +906,16 @@ export class NexusDaemonServer extends EventEmitter {
           return;
         }
         const rawBytes = Buffer.from(audioBase64, 'base64');
-        const ext = mimeType.includes('mp4')
-          ? 'm4a'
-          : mimeType.includes('ogg')
-            ? 'ogg'
-            : mimeType.includes('wav')
-              ? 'wav'
-              : 'webm';
+        const ext =
+          mimeType.includes('mp4') || mimeType.includes('m4a') || mimeType.includes('aac')
+            ? 'm4a'
+            : mimeType.includes('mpeg') || mimeType.includes('mp3')
+              ? 'mp3'
+              : mimeType.includes('ogg')
+                ? 'ogg'
+                : mimeType.includes('wav')
+                  ? 'wav'
+                  : 'webm';
         const form = new FormData();
         form.append('file', new Blob([rawBytes], { type: mimeType }), `speech.${ext}`);
         form.append('model', 'whisper-large-v3-turbo');
