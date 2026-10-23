@@ -190,10 +190,16 @@
                 <p v-if="msg.fileSummary" class="file-summary">
                   <NexusIcon name="folder" />{{ msg.fileSummary }}
                 </p>
-                <div v-if="msg.role === 'assistant' && msg.backend === 'brain' && !msg.error" class="handoff-bar" style="margin-top: 10px; display: flex; gap: 8px;">
-                  <button type="button" class="chip-button" style="display: inline-flex; align-items: center; gap: 6px; font-size: 11px; padding: 6px 12px; border-radius: 8px; background: rgba(0, 240, 255, 0.12); color: #00f0ff; border: 1px solid rgba(0, 240, 255, 0.3); cursor: pointer;" @click="handoffToCodingAgent(msg.text)">
-                    <NexusIcon name="cpu" />
-                    <span>Transmettre au code</span>
+                <div v-if="msg.role === 'assistant' && msg.backend === 'brain' && !msg.error" class="handoff-bar" style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+                  <button
+                    type="button"
+                    class="chip-button"
+                    style="display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 500; padding: 6px 12px; border-radius: 8px; background: rgba(0, 240, 255, 0.12); color: #00f0ff; border: 1px solid rgba(0, 240, 255, 0.35); cursor: pointer;"
+                    :title="`Transmettre cette proposition à l'agent de code (${selectedBackendLabel(lastCodingBackend || 'codex')})`"
+                    @click="handoffToCodingAgent(msg.text)"
+                  >
+                    <NexusIcon name="zap" style="width: 13px; height: 13px;" />
+                    <span>🚀 Coder cette proposition ({{ selectedBackendLabel(lastCodingBackend || 'codex') }})</span>
                   </button>
                 </div>
               </article>
@@ -263,6 +269,10 @@
             </div>
 
             <!-- Sleek Cyber Input Form -->
+            <div v-if="handoffNoticeMsg" class="handoff-toast" style="padding: 6px 12px; border-radius: 8px; background: rgba(0, 240, 255, 0.12); border: 1px solid rgba(0, 240, 255, 0.35); color: #00f0ff; font-size: 11.5px; margin-bottom: 8px; text-align: center; display: flex; align-items: center; justify-content: center; gap: 6px;">
+              <NexusIcon name="check" style="width: 13px; height: 13px;" />
+              <span>{{ handoffNoticeMsg }}</span>
+            </div>
             <form class="cyber-composer-form" @submit.prevent="submitMessage">
               <div class="composer-input-row" :class="`mode-${workspaceMode}`">
                 <button type="button" class="composer-mode-tag" :class="workspaceMode"
@@ -953,6 +963,7 @@ import { cleanTextForSpeech } from "./utils/speech-text.mjs";
 import { getAssistantState, assistantStateLabels, getInteractionMessage } from "./utils/assistant-state.mjs";
 import { parseApprovalDetails } from "./utils/approval-parser.mjs";
 import { serializeChatForUpstash, getProjectStorageKey } from "./utils/chat-history.mjs";
+import { formatHandoffPrompt, resolveHandoffBackend } from "./utils/handoff.mjs";
 import { APP_VERSION, APP_BUILD } from "./utils/app-version.mjs";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
@@ -3402,18 +3413,24 @@ function selectedBackendLabel(b?: string): string {
   return "Agent";
 }
 
+const handoffNoticeMsg = ref("");
+
 function handoffToCodingAgent(text: string) {
   workspaceMode.value = "code";
-  if (selectedBackend.value === "brain") {
-    selectedBackend.value = lastCodingBackend.value || "codex";
-  }
-  inputPrompt.value = text;
+  const targetBackend = resolveHandoffBackend(selectedBackend.value, lastCodingBackend.value, "codex");
+  selectedBackend.value = targetBackend;
+  inputPrompt.value = formatHandoffPrompt(text);
   currentView.value = "workspace";
   activeTab.value = "chat";
-  triggerHaptic("medium");
+  handoffNoticeMsg.value = `✓ Proposition transmise à ${selectedBackendLabel(targetBackend)}`;
+  setTimeout(() => {
+    handoffNoticeMsg.value = "";
+  }, 3500);
+  void triggerHaptic("press");
   nextTick(() => {
     resizeComposer();
     chatTextareaRef.value?.focus();
+    scrollToBottom();
   });
 }
 
