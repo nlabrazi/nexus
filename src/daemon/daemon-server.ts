@@ -976,7 +976,9 @@ export class NexusDaemonServer extends EventEmitter {
             backend: typeof m?.backend === 'string' ? m.backend : 'brain',
             text,
             timestamp: typeof m?.timestamp === 'number' ? m.timestamp : Date.now(),
-            ...(typeof m?.fileSummary === 'string' ? { fileSummary: m.fileSummary.slice(0, 500) } : {}),
+            ...(typeof m?.fileSummary === 'string'
+              ? { fileSummary: m.fileSummary.slice(0, 500) }
+              : {}),
             ...(m?.error ? { error: true } : {}),
           };
         });
