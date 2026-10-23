@@ -836,6 +836,193 @@ svg.icon {
   flex: 1;
 }
 
+/* ==========================================================================
+   Collapsible Diff Inspector
+   ========================================================================== */
+
+.diff-inspector-container {
+  margin-top: 10px;
+  background: rgba(10, 20, 30, 0.45);
+  border: 1px solid rgba(0, 240, 255, 0.2);
+  border-radius: 9px;
+  overflow: hidden;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.diff-toggle-bar {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: var(--text-bright);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  cursor: pointer;
+  text-align: left;
+  user-select: none;
+  gap: 8px;
+  transition: background 0.15s ease;
+}
+
+.diff-toggle-bar:hover {
+  background: rgba(0, 240, 255, 0.08);
+}
+
+.diff-toggle-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-summary-title {
+  color: #00f0ff;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-toggle-right {
+  flex-shrink: 0;
+}
+
+.diff-toggle-pill {
+  background: rgba(0, 240, 255, 0.12);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  color: #00f0ff;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  display: inline-block;
+  transition: all 0.15s ease;
+}
+
+.diff-toggle-bar:hover .diff-toggle-pill {
+  background: rgba(0, 240, 255, 0.22);
+  border-color: #00f0ff;
+}
+
+.diff-inspector-body {
+  border-top: 1px solid rgba(0, 240, 255, 0.15);
+  padding: 10px;
+  background: rgba(5, 12, 20, 0.85);
+  max-height: 320px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.diff-loading,
+.diff-fallback-view {
+  padding: 8px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.diff-files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.diff-file-card {
+  background: rgba(15, 25, 38, 0.7);
+  border: 1px solid rgba(130, 197, 223, 0.18);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.diff-file-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  background: rgba(0, 240, 255, 0.05);
+  border-bottom: 1px solid rgba(130, 197, 223, 0.12);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  gap: 8px;
+}
+
+.diff-file-name {
+  color: var(--text-bright);
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.diff-file-badge {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.diff-stat.add {
+  color: #00ff88;
+}
+
+.diff-stat.del {
+  color: #ff3366;
+}
+
+.diff-hunks-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.diff-hunk-header {
+  padding: 3px 8px;
+  background: rgba(130, 197, 223, 0.08);
+  color: rgba(130, 197, 223, 0.7);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  user-select: none;
+}
+
+.diff-code-line {
+  display: flex;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre;
+  padding: 1px 8px;
+}
+
+.diff-code-line.add {
+  background: rgba(0, 255, 136, 0.12);
+  color: #88ffbb;
+}
+
+.diff-code-line.del {
+  background: rgba(255, 51, 102, 0.14);
+  color: #ff99aa;
+}
+
+.diff-code-line.normal {
+  color: rgba(220, 230, 240, 0.65);
+}
+
+.diff-line-marker {
+  width: 14px;
+  flex-shrink: 0;
+  user-select: none;
+  opacity: 0.7;
+}
+
+.diff-line-content {
+  flex: 1;
+}
+
 .busy-indicator {
   width: 8px;
   height: 8px;

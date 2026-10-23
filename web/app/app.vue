@@ -187,9 +187,56 @@
                   </div>
                 </div>
                 <div class="message-content" v-html="renderMarkdown(msg.text)" />
-                <p v-if="msg.fileSummary" class="file-summary">
-                  <NexusIcon name="folder" />{{ msg.fileSummary }}
-                </p>
+                <!-- Collapsible Diff Inspector -->
+                <div v-if="(msg.filesChanged && msg.filesChanged.length > 0) || msg.diff || msg.fileSummary" class="diff-inspector-container">
+                  <button type="button" class="diff-toggle-bar" @click="toggleDiffForMessage(msg)">
+                    <div class="diff-toggle-left">
+                      <NexusIcon name="folder" />
+                      <span class="diff-summary-title">{{ getDiffSummaryLabel(msg) }}</span>
+                    </div>
+                    <div class="diff-toggle-right">
+                      <span class="diff-toggle-pill">
+                        {{ isDiffOpen(msg.id) ? 'Masquer le diff ▲' : 'Voir le diff ▼' }}
+                      </span>
+                    </div>
+                  </button>
+
+                  <div v-if="isDiffOpen(msg.id)" class="diff-inspector-body">
+                    <div v-if="loadingDiffs[msg.id]" class="diff-loading">
+                      <span class="activity-wave"><i /><i /><i /></span>
+                      <span>Chargement du diff…</span>
+                    </div>
+                    <div v-else-if="getParsedDiffForMessage(msg).length === 0" class="diff-fallback-view">
+                      <p v-if="msg.fileSummary" class="diff-fallback-text">{{ msg.fileSummary }}</p>
+                      <p v-else class="diff-fallback-empty">Aucune modification git détectée pour cette tâche.</p>
+                    </div>
+                    <div v-else class="diff-files-list">
+                      <div v-for="file in getParsedDiffForMessage(msg)" :key="file.filePath" class="diff-file-card">
+                        <div class="diff-file-header">
+                          <span class="diff-file-name">{{ file.filePath }}</span>
+                          <span class="diff-file-badge">
+                            <span v-if="file.additions > 0" class="diff-stat add">+{{ file.additions }}</span>
+                            <span v-if="file.deletions > 0" class="diff-stat del">-{{ file.deletions }}</span>
+                          </span>
+                        </div>
+                        <div class="diff-hunks-container">
+                          <div v-for="(hunk, hIdx) in file.hunks" :key="hIdx" class="diff-hunk-block">
+                            <div class="diff-hunk-header">{{ hunk.header }}</div>
+                            <div
+                              v-for="(line, lIdx) in hunk.lines"
+                              :key="lIdx"
+                              class="diff-code-line"
+                              :class="line.type"
+                            >
+                              <span class="diff-line-marker">{{ line.type === 'add' ? '+' : line.type === 'del' ? '-' : ' ' }}</span>
+                              <span class="diff-line-content">{{ line.text }}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
                 <div v-if="msg.role === 'assistant' && msg.backend === 'brain' && !msg.error" class="handoff-bar" style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
                   <button
                     type="button"
@@ -989,6 +1036,7 @@ import { formatHandoffPrompt, resolveHandoffBackend } from "./utils/handoff.mjs"
 import { renderMarkdown } from "./utils/markdown.mjs";
 import { triggerHaptic } from "./utils/haptics.mjs";
 import { createProgressTracker } from "./utils/task-progress.mjs";
+import { parseUnifiedDiff, summarizeDiff } from "./utils/diff-viewer.mjs";
 import { APP_VERSION, APP_BUILD } from "./utils/app-version.mjs";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
@@ -1040,6 +1088,9 @@ interface ChatMessage {
   text: string;
   timestamp: number;
   fileSummary?: string;
+  filesChanged?: readonly string[];
+  diff?: string;
+  taskId?: string;
   error?: boolean;
 }
 
@@ -1230,6 +1281,56 @@ const inFlightProgressSteps = ref(progressTracker.getSteps());
 function toggleProgressExpanded() {
   isProgressExpanded.value = !isProgressExpanded.value;
   triggerHaptic("selection");
+}
+
+const expandedDiffs = ref<Record<string, boolean>>({});
+const diffCache = ref<Record<string, string>>({});
+const loadingDiffs = ref<Record<string, boolean>>({});
+
+function isDiffOpen(id: string): boolean {
+  return Boolean(expandedDiffs.value[id]);
+}
+
+function getParsedDiffForMessage(msg: ChatMessage) {
+  const raw = msg.diff || diffCache.value[msg.id] || "";
+  return parseUnifiedDiff(raw);
+}
+
+function getDiffSummaryLabel(msg: ChatMessage): string {
+  const parsed = getParsedDiffForMessage(msg);
+  if (parsed.length > 0) return summarizeDiff(parsed).label;
+  if (msg.filesChanged && msg.filesChanged.length > 0) {
+    return `${msg.filesChanged.length} fichier${msg.filesChanged.length > 1 ? 's' : ''} modifié${msg.filesChanged.length > 1 ? 's' : ''}`;
+  }
+  return msg.fileSummary || 'Fichiers modifiés';
+}
+
+async function toggleDiffForMessage(msg: ChatMessage) {
+  const currentlyOpen = isDiffOpen(msg.id);
+  expandedDiffs.value[msg.id] = !currentlyOpen;
+  triggerHaptic("selection");
+  if (currentlyOpen) return;
+
+  if (msg.diff || diffCache.value[msg.id]) return;
+
+  if (msg.taskId && coreUrl.value) {
+    loadingDiffs.value[msg.id] = true;
+    try {
+      const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/tasks/${encodeURIComponent(msg.taskId)}/diff`;
+      const res = await fetch(targetUrl, { headers: getRequestHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.diff) {
+          diffCache.value[msg.id] = data.diff;
+          msg.diff = data.diff;
+          saveMessages();
+        }
+      }
+    } catch {
+    } finally {
+      loadingDiffs.value[msg.id] = false;
+    }
+  }
 }
 
 const currentInFlightTaskId = ref<string | null>(null);
@@ -2170,6 +2271,9 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
         if (existingMsg) {
           if (text) existingMsg.text = text;
           existingMsg.fileSummary = payload.fileSummary;
+          existingMsg.filesChanged = payload.filesChanged;
+          existingMsg.diff = payload.diff;
+          existingMsg.taskId = payload.taskId;
           saveMessages();
           scrollToBottom();
           if (
@@ -2190,6 +2294,9 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
             text,
             timestamp: payload.completedAt || Date.now(),
             fileSummary: payload.fileSummary,
+            filesChanged: payload.filesChanged,
+            diff: payload.diff,
+            taskId: payload.taskId,
           };
           messages.value.push(assistantMsg);
           saveMessages();
@@ -3273,6 +3380,9 @@ async function sendPrompt(promptText: string, fromVoice = false) {
         text: replyContent,
         timestamp: Date.now(),
         fileSummary: data.fileSummary,
+        filesChanged: data.filesChanged,
+        diff: data.diff,
+        taskId: generatedTaskId,
       };
 
       messages.value.push(assistantMsg);
