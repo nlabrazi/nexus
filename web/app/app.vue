@@ -964,6 +964,8 @@ import { getAssistantState, assistantStateLabels, getInteractionMessage } from "
 import { parseApprovalDetails } from "./utils/approval-parser.mjs";
 import { serializeChatForUpstash, getProjectStorageKey } from "./utils/chat-history.mjs";
 import { formatHandoffPrompt, resolveHandoffBackend } from "./utils/handoff.mjs";
+import { renderMarkdown } from "./utils/markdown.mjs";
+import { triggerHaptic } from "./utils/haptics.mjs";
 import { APP_VERSION, APP_BUILD } from "./utils/app-version.mjs";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
@@ -3434,36 +3436,6 @@ function handoffToCodingAgent(text: string) {
   });
 }
 
-function renderMarkdown(raw: string): string {
-  if (!raw) return "";
-  let html = raw
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-
-  // Code blocks: ```lang ... ```
-  html = html.replace(
-    /```([a-zA-Z0-9_+-]*)\n([\s\S]*?)```/g,
-    (_match, _lang, code) => {
-      return `<pre class="code-block"><code>${code.trim()}</code></pre>`;
-    },
-  );
-
-  // Inline code: `code`
-  html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
-
-  // Bold: **text**
-  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-
-  // Italics: *text*
-  html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
-
-  // Line breaks
-  html = html.replace(/\n/g, "<br>");
-
-  return html;
-}
-
 function initSpeechRecognition() {
   if (typeof window === "undefined") return;
   const SpeechRecognitionClass =
@@ -3537,29 +3509,6 @@ async function fetchVoiceStatus() {
     }
   } catch {
     // Non-blocking
-  }
-}
-
-async function triggerHaptic(type: "press" | "release" | "cancel" | "success") {
-  if (Capacitor.isNativePlatform()) {
-    try {
-      if (type === "press") {
-        await Haptics.impact({ style: ImpactStyle.Medium });
-      } else if (type === "release") {
-        await Haptics.impact({ style: ImpactStyle.Light });
-      } else if (type === "success") {
-        await Haptics.notification({ type: NotificationType.Success });
-      } else if (type === "cancel") {
-        await Haptics.notification({ type: NotificationType.Warning });
-      }
-      return;
-    } catch { }
-  }
-  if (typeof navigator !== "undefined" && navigator.vibrate) {
-    try {
-      if (type === "press") navigator.vibrate(40);
-      else if (type === "release") navigator.vibrate([20, 30, 20]);
-    } catch { }
   }
 }
 
