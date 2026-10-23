@@ -938,6 +938,72 @@ export class NexusDaemonServer extends EventEmitter {
         return;
       }
 
+      // 3c-bis. Chat History persistence (Upstash Redis backed)
+      if (pathname === '/api/chat/history' && method === 'GET') {
+        const rawProject = url.searchParams.get('project') || url.searchParams.get('path');
+        const projectPath = rawProject
+          ? this.jail.resolveSafePath(rawProject)
+          : this.activeProject.path;
+        const mode = url.searchParams.get('mode') || '';
+        const projKey = basename(projectPath);
+        const suffix = mode && mode !== 'all' ? `:${mode}` : '';
+        const primaryKey = `nexus.chat:${projKey}${suffix}`;
+        const fallbackKey = `nexus.chat:${resolve(projectPath)}${suffix}`;
+        let stored = this.storage.get(primaryKey);
+        if (!stored) {
+          stored = this.storage.get(fallbackKey);
+        }
+        const list = Array.isArray(stored) ? stored : [];
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(list));
+        return;
+      }
+
+      if (pathname === '/api/chat/history' && method === 'POST') {
+        const body = JSON.parse(await this.readRequestBody(req));
+        const rawProject = typeof body.project === 'string' ? body.project : undefined;
+        const projectPath = rawProject
+          ? this.jail.resolveSafePath(rawProject)
+          : this.activeProject.path;
+        const mode = typeof body.mode === 'string' ? body.mode : '';
+        const rawList = Array.isArray(body.messages) ? body.messages : [];
+        // Keep only the most recent 50 messages, and bound text payload per message
+        const bounded = rawList.slice(-50).map((m: any) => {
+          const text = typeof m?.text === 'string' ? m.text.slice(0, 30000) : '';
+          return {
+            id: typeof m?.id === 'string' ? m.id : String(Date.now()),
+            role: m?.role === 'user' ? 'user' : 'assistant',
+            backend: typeof m?.backend === 'string' ? m.backend : 'brain',
+            text,
+            timestamp: typeof m?.timestamp === 'number' ? m.timestamp : Date.now(),
+            ...(typeof m?.fileSummary === 'string' ? { fileSummary: m.fileSummary.slice(0, 500) } : {}),
+            ...(m?.error ? { error: true } : {}),
+          };
+        });
+        const projKey = basename(projectPath);
+        const suffix = mode && mode !== 'all' ? `:${mode}` : '';
+        const key = `nexus.chat:${projKey}${suffix}`;
+        await this.storage.update(key, bounded);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', count: bounded.length }));
+        return;
+      }
+
+      if (pathname === '/api/chat/history' && method === 'DELETE') {
+        const rawProject = url.searchParams.get('project') || url.searchParams.get('path');
+        const projectPath = rawProject
+          ? this.jail.resolveSafePath(rawProject)
+          : this.activeProject.path;
+        const mode = url.searchParams.get('mode') || '';
+        const projKey = basename(projectPath);
+        const suffix = mode && mode !== 'all' ? `:${mode}` : '';
+        const key = `nexus.chat:${projKey}${suffix}`;
+        await this.storage.update(key, []);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', cleared: true }));
+        return;
+      }
+
       // 3d. Voice Status, Fish Audio TTS & Server-Side STT Fallback (Groq Whisper)
       if (pathname === '/api/voice/status' && method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
