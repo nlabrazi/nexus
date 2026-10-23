@@ -1,11 +1,38 @@
+import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { createReadStream, existsSync, readdirSync, statSync } from 'node:fs';
 import { createServer, IncomingMessage, Server as HttpServer, ServerResponse } from 'node:http';
-import { basename, dirname, extname, join, resolve } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { hostname } from 'node:os';
 import type { Duplex } from 'node:stream';
+import { promisify } from 'node:util';
 import { WebSocketServerConnection } from '../core/ws-connection';
+
+const execute = promisify(execFile);
+
+export async function getGitDiff(targetPath: string, files?: readonly string[]): Promise<string> {
+  try {
+    const args = ['diff', '--no-color', '-U2'];
+    if (files && files.length > 0) {
+      args.push('--', ...files.map((f) => (isAbsolute(f) ? relative(targetPath, f) : f)));
+    }
+    const { stdout } = await execute('git', args, { cwd: targetPath, timeout: 5000 });
+    if (!stdout.trim()) {
+      const headArgs = ['diff', '--no-color', '-U2', 'HEAD'];
+      if (files && files.length > 0) {
+        headArgs.push('--', ...files.map((f) => (isAbsolute(f) ? relative(targetPath, f) : f)));
+      }
+      const headRes = await execute('git', headArgs, { cwd: targetPath, timeout: 5000 }).catch(
+        () => ({ stdout: '' })
+      );
+      return (headRes.stdout || '').slice(0, 50_000);
+    }
+    return stdout.slice(0, 50_000);
+  } catch {
+    return '';
+  }
+}
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -62,6 +89,7 @@ export interface DaemonTaskRecord {
   text?: string;
   fileSummary?: string;
   filesChanged?: readonly string[];
+  diff?: string;
   error?: string;
 }
 
@@ -928,6 +956,16 @@ export class NexusDaemonServer extends EventEmitter {
         return;
       }
 
+      if (pathname === '/api/projects/diff' && method === 'GET') {
+        const projectPath = url.searchParams.get('path')
+          ? this.jail.resolveSafePath(url.searchParams.get('path')!)
+          : this.activeProject.path;
+        const diff = await getGitDiff(projectPath);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ path: projectPath, diff }));
+        return;
+      }
+
       if (pathname === '/api/projects/memory' && method === 'DELETE') {
         const projectPath = url.searchParams.get('path')
           ? this.jail.resolveSafePath(url.searchParams.get('path')!)
@@ -1332,6 +1370,24 @@ export class NexusDaemonServer extends EventEmitter {
       }
 
       if (pathname.startsWith('/api/tasks/') && method === 'GET' && !pathname.endsWith('/cancel')) {
+        if (pathname.endsWith('/diff')) {
+          const taskId = pathname.slice('/api/tasks/'.length, -'/diff'.length);
+          const task = this.tasks.get(taskId);
+          if (!task) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: `Tâche non trouvée : ${taskId}` }));
+            return;
+          }
+          let diff = task.diff;
+          if (!diff && task.filesChanged && task.filesChanged.length > 0) {
+            diff = await getGitDiff(task.projectPath || this.activeProject.path, task.filesChanged);
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({ taskId, diff: diff || '', filesChanged: task.filesChanged || [] })
+          );
+          return;
+        }
         const taskId = pathname.slice('/api/tasks/'.length);
         const task = this.tasks.get(taskId);
         if (!task) {
@@ -1455,7 +1511,10 @@ export class NexusDaemonServer extends EventEmitter {
           try {
             this.broadcastWs('task:progress', {
               taskId,
-              message: backend === 'brain' ? 'Nexus Brain réfléchit…' : 'Initialisation de l’agent de code…',
+              message:
+                backend === 'brain'
+                  ? 'Nexus Brain réfléchit…'
+                  : 'Initialisation de l’agent de code…',
               stage: 'starting',
             });
             const slashReply = await this.tryExecuteSlashCommand(
@@ -1494,6 +1553,9 @@ export class NexusDaemonServer extends EventEmitter {
             taskRecord.text = result.text;
             taskRecord.fileSummary = result.fileSummary;
             taskRecord.filesChanged = result.filesChanged;
+            if (result.filesChanged && result.filesChanged.length > 0) {
+              taskRecord.diff = await getGitDiff(targetPath, result.filesChanged);
+            }
             this.persistTasks();
 
             this.broadcastWs('task:completed', { ...taskRecord });

@@ -346,6 +346,43 @@ suite('NexusDaemonServer unified secure daemon', () => {
     assert.equal(synthWithoutKey.status, 503);
   });
 
+  test('GET /api/projects/diff and /api/tasks/:taskId/diff expose git diff safely', async () => {
+    const projDiffRes = await fetch(`http://127.0.0.1:${port}/api/projects/diff`, {
+      headers: { Authorization: 'Bearer valid-token-123' },
+    });
+    assert.equal(projDiffRes.status, 200);
+    const projDiffData = (await projDiffRes.json()) as { path: string; diff: string };
+    assert.ok(typeof projDiffData.diff === 'string');
+
+    // Post a task first to test task diff retrieval
+    const taskPost = await fetch(`http://127.0.0.1:${port}/api/tasks`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer valid-token-123',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        taskId: 'task-diff-test',
+        prompt: '/status',
+        wait: true,
+      }),
+    });
+    assert.equal(taskPost.status, 200);
+
+    const taskDiffRes = await fetch(`http://127.0.0.1:${port}/api/tasks/task-diff-test/diff`, {
+      headers: { Authorization: 'Bearer valid-token-123' },
+    });
+    assert.equal(taskDiffRes.status, 200);
+    const taskDiffData = (await taskDiffRes.json()) as {
+      taskId: string;
+      diff: string;
+      filesChanged: string[];
+    };
+    assert.equal(taskDiffData.taskId, 'task-diff-test');
+    assert.ok(typeof taskDiffData.diff === 'string');
+    assert.ok(Array.isArray(taskDiffData.filesChanged));
+  });
+
   test('stops daemon server and cleans up', async () => {
     await daemon.stop();
     rmSync(sandbox, { recursive: true, force: true });
