@@ -14,7 +14,7 @@ un `.env` existant : ajouter les variables souhaitées en conservant sa configur
 | --- | --- | --- |
 | `CEREBRAS_API_KEY` | `gpt-oss-120b` | `CEREBRAS_MODEL` |
 | `GROQ_API_KEY` | `openai/gpt-oss-120b` | `GROQ_MODEL` |
-| `GEMINI_API_KEY` | `gemini-3.8-flash` | `GEMINI_MODEL` |
+| `GEMINI_API_KEY` | `gemini-3.5-flash-lite` | `GEMINI_MODEL` |
 | `OPENROUTER_API_KEY` | `openrouter/free` | `OPENROUTER_MODEL` |
 
 `GOOGLE_GENAI_API_KEY` reste accepté si `GEMINI_API_KEY` est absente.
