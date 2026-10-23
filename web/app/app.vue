@@ -952,6 +952,7 @@ import { createSpeechPlayback } from "./utils/speech-playback.mjs";
 import { cleanTextForSpeech } from "./utils/speech-text.mjs";
 import { getAssistantState, assistantStateLabels, getInteractionMessage } from "./utils/assistant-state.mjs";
 import { parseApprovalDetails } from "./utils/approval-parser.mjs";
+import { serializeChatForUpstash, getProjectStorageKey } from "./utils/chat-history.mjs";
 import { APP_VERSION, APP_BUILD } from "./utils/app-version.mjs";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
@@ -2535,6 +2536,7 @@ onMounted(async () => {
   fetchTasks(true);
   fetchApprovals(true);
   fetchVoiceStatus();
+  void fetchChatHistoryFromServer();
   fetchModelsForBackend(selectedBackend.value);
   connectWebSocket();
 
@@ -2721,8 +2723,12 @@ watch([coreUrl, authToken, () => primaryNode.value?.nodeId], () => {
   dashboardError.value = '';
   if ((showSettings.value || activeTab.value === 'agent') && isNodeReady.value) void fetchDashboard();
 });
-watch([showSettings, settingsSection, isNodeReady, activeTab, () => primaryNode.value?.activeProject?.path], ([settings, section, ready, view]) => {
+watch([showSettings, settingsSection, isNodeReady, activeTab, () => primaryNode.value?.activeProject?.path], ([settings, section, ready, view, currentProj], [, , , , prevProj]) => {
   if (!ready) return;
+  if (currentProj && currentProj !== prevProj) {
+    loadPersistedMessages(currentProj);
+    void fetchChatHistoryFromServer(currentProj);
+  }
   if ((settings && section === 'quotas') || view === 'agent') void fetchDashboard();
   if (settings && section === 'persona') void fetchPersonaAndMemory();
   if (settings && section === 'agent') void fetchModelsForBackend(selectedBackend.value);
@@ -3256,12 +3262,27 @@ async function sendPrompt(promptText: string, fromVoice = false) {
   }
 }
 
+let syncChatTimer: any = null;
+
 function clearChat() {
   if (confirm("Voulez-vous effacer l’historique de conversation et réinitialiser la session active ?")) {
     messages.value = [];
     lastTaskFailed.value = false;
+    const targetProj =
+      primaryNode.value?.activeProject?.path ||
+      primaryNode.value?.activeProject?.name ||
+      "";
+    const projKey = getProjectStorageKey(targetProj);
     if (typeof window !== "undefined") {
+      localStorage.removeItem(`nexus_chat_${projKey}`);
       localStorage.removeItem("nexus_brain_messages");
+    }
+    if (coreUrl.value) {
+      const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/chat/history${targetProj ? `?project=${encodeURIComponent(targetProj)}` : ""}`;
+      fetch(targetUrl, {
+        method: "DELETE",
+        headers: getRequestHeaders(),
+      }).catch(() => {});
     }
     if (coreUrl.value && isNodeReady.value) {
       const headers = {
@@ -3277,10 +3298,18 @@ function clearChat() {
   }
 }
 
-function loadPersistedMessages() {
+function loadPersistedMessages(projectPath?: string) {
   if (typeof window === "undefined") return;
+  const targetProj =
+    projectPath ||
+    primaryNode.value?.activeProject?.path ||
+    primaryNode.value?.activeProject?.name ||
+    "";
+  const projKey = getProjectStorageKey(targetProj);
   try {
-    const raw = localStorage.getItem("nexus_brain_messages");
+    const raw =
+      localStorage.getItem(`nexus_chat_${projKey}`) ||
+      localStorage.getItem("nexus_brain_messages");
     if (raw) {
       messages.value = JSON.parse(raw);
       scrollToBottom();
@@ -3292,11 +3321,67 @@ function loadPersistedMessages() {
 
 function saveMessages() {
   if (typeof window === "undefined") return;
+  const targetProj =
+    primaryNode.value?.activeProject?.path ||
+    primaryNode.value?.activeProject?.name ||
+    "";
+  const projKey = getProjectStorageKey(targetProj);
+  const trimmed = serializeChatForUpstash(messages.value, 50);
   try {
-    // Keep last 50 messages to preserve memory
-    const trimmed = messages.value.slice(-50);
+    localStorage.setItem(`nexus_chat_${projKey}`, JSON.stringify(trimmed));
     localStorage.setItem("nexus_brain_messages", JSON.stringify(trimmed));
   } catch { }
+
+  if (!coreUrl.value) return;
+  if (syncChatTimer) clearTimeout(syncChatTimer);
+  syncChatTimer = setTimeout(async () => {
+    try {
+      const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/chat/history`;
+      await fetch(targetUrl, {
+        method: "POST",
+        headers: {
+          ...getRequestHeaders(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          project: targetProj,
+          messages: trimmed,
+        }),
+      });
+    } catch {
+      // Non-blocking offline fallback
+    }
+  }, 800);
+}
+
+async function fetchChatHistoryFromServer(projectPath?: string) {
+  if (!coreUrl.value) return;
+  try {
+    const targetProj =
+      projectPath ||
+      primaryNode.value?.activeProject?.path ||
+      primaryNode.value?.activeProject?.name ||
+      "";
+    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/chat/history${targetProj ? `?project=${encodeURIComponent(targetProj)}` : ""}`;
+    const res = await fetch(targetUrl, {
+      method: "GET",
+      headers: getRequestHeaders(),
+    });
+    if (res.ok) {
+      const serverMsgs = (await res.json()) as ChatMessage[];
+      if (Array.isArray(serverMsgs) && serverMsgs.length > 0) {
+        messages.value = serverMsgs;
+        const projKey = getProjectStorageKey(targetProj);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(`nexus_chat_${projKey}`, JSON.stringify(serverMsgs));
+          localStorage.setItem("nexus_brain_messages", JSON.stringify(serverMsgs));
+        }
+        scrollToBottom();
+      }
+    }
+  } catch {
+    // Non-blocking offline fallback
+  }
 }
 
 function scrollToBottom() {
