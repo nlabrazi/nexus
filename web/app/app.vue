@@ -205,15 +205,37 @@
               </article>
             </TransitionGroup>
 
-            <!-- In-flight Task Progress -->
-            <div v-if="isSending" class="task-progress" role="status">
-              <span class="activity-wave" aria-hidden="true"><i /><i /><i /></span><span>{{
-                currentProgressMessage || "En cours…"
-              }}</span><span v-if="inFlightStartedAt" class="elapsed-time">{{ Math.max(0, Math.floor((now - inFlightStartedAt) / 1000)) }} s</span>
-              <button v-if="currentInFlightTaskId" type="button" class="text-button danger"
-                @click="cancelTask(currentInFlightTaskId)">
-                <NexusIcon name="stop" />Arrêter
-              </button>
+            <!-- In-flight Task Progress (Collapsible) -->
+            <div v-if="isSending" class="task-progress-box" role="status" :class="{ expanded: isProgressExpanded }">
+              <div class="task-progress-header" @click="toggleProgressExpanded">
+                <div class="task-progress-main">
+                  <span class="activity-wave" aria-hidden="true"><i /><i /><i /></span>
+                  <span class="task-progress-label">{{ currentProgressMessage || "En cours…" }}</span>
+                  <span v-if="inFlightStartedAt" class="elapsed-time">{{ Math.max(0, Math.floor((now - inFlightStartedAt) / 1000)) }} s</span>
+                </div>
+                <div class="task-progress-actions">
+                  <button type="button" class="progress-toggle-btn" :title="isProgressExpanded ? 'Masquer les étapes' : 'Voir les étapes en direct'">
+                    <span>{{ isProgressExpanded ? 'Détails ▲' : 'Détails ▼' }}</span>
+                  </button>
+                  <button v-if="currentInFlightTaskId" type="button" class="text-button danger progress-cancel-btn"
+                    @click.stop="cancelTask(currentInFlightTaskId)">
+                    <NexusIcon name="stop" />Arrêter
+                  </button>
+                </div>
+              </div>
+
+              <!-- Collapsible live step-by-step disclosure -->
+              <div v-if="isProgressExpanded" class="task-progress-details">
+                <ul class="progress-steps-list">
+                  <li v-for="(step, idx) in inFlightProgressSteps" :key="idx" class="progress-step-item" :class="step.status">
+                    <span class="step-icon">{{ step.icon }}</span>
+                    <span class="step-text">{{ step.text }}</span>
+                  </li>
+                  <li v-if="inFlightProgressSteps.length === 0" class="progress-step-empty">
+                    <span>Initialisation en cours…</span>
+                  </li>
+                </ul>
+              </div>
             </div>
           </div>
 
@@ -966,6 +988,7 @@ import { serializeChatForUpstash, getProjectStorageKey } from "./utils/chat-hist
 import { formatHandoffPrompt, resolveHandoffBackend } from "./utils/handoff.mjs";
 import { renderMarkdown } from "./utils/markdown.mjs";
 import { triggerHaptic } from "./utils/haptics.mjs";
+import { createProgressTracker } from "./utils/task-progress.mjs";
 import { APP_VERSION, APP_BUILD } from "./utils/app-version.mjs";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
@@ -1199,6 +1222,15 @@ const isSending = ref<boolean>(false);
 const inFlightStartedAt = ref<number | null>(null);
 const inFlightBackend = ref<"brain" | "codex" | "antigravity" | null>(null);
 const lastTaskFailed = ref(false);
+
+const isProgressExpanded = ref(false);
+const progressTracker = createProgressTracker();
+const inFlightProgressSteps = ref(progressTracker.getSteps());
+
+function toggleProgressExpanded() {
+  isProgressExpanded.value = !isProgressExpanded.value;
+  triggerHaptic("selection");
+}
 
 const currentInFlightTaskId = ref<string | null>(null);
 const messages = ref<ChatMessage[]>([]);
@@ -2075,6 +2107,9 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
         inFlightStartedAt.value = payload.startedAt || Date.now();
         inFlightBackend.value = payload.backend || selectedBackend.value;
         isSending.value = true;
+        progressTracker.clear();
+        progressTracker.addStep(`Tâche démarrée sur ${selectedBackendLabel(inFlightBackend.value || selectedBackend.value)}`, 'running', '⟳');
+        inFlightProgressSteps.value = progressTracker.getSteps();
       }
       void fetchTasks(true);
       break;
@@ -2087,6 +2122,13 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
         if (existing && payload.filesChanged) {
           existing.filesChanged = payload.filesChanged;
         }
+        if (payload.filesChanged && payload.filesChanged.length) {
+          progressTracker.addStep(`${payload.filesChanged.length} fichier(s) modifiés`, 'running', '📁');
+        }
+        if (payload.message) {
+          progressTracker.addStep(payload.message, 'running', '⚡');
+        }
+        inFlightProgressSteps.value = progressTracker.getSteps();
       }
       break;
     }
@@ -2094,6 +2136,10 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
     case "task:chunk": {
       const payload = data.payload;
       if (payload?.taskId) {
+        if (inFlightProgressSteps.value.length <= 1) {
+          progressTracker.addStep("Rédaction de la réponse en direct…", 'running', '✍');
+          inFlightProgressSteps.value = progressTracker.getSteps();
+        }
         let msg = messages.value.find((m) => m.id === `asst-${payload.taskId}`);
         if (!msg) {
           msg = {
@@ -2115,6 +2161,8 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
     case "task:completed": {
       const payload = data.payload;
       if (payload?.taskId) {
+        progressTracker.complete("Tâche terminée avec succès");
+        inFlightProgressSteps.value = progressTracker.getSteps();
         const text = payload.replyText || payload.text;
         const wasFromVoice = voiceTaskIds.has(payload.taskId) || draftFromVoice.value;
         voiceTaskIds.delete(payload.taskId);
@@ -3179,6 +3227,10 @@ async function sendPrompt(promptText: string, fromVoice = false) {
   scrollToBottom();
 
   isSending.value = true;
+  isProgressExpanded.value = false;
+  progressTracker.clear();
+  progressTracker.addStep(`Initialisation (${selectedBackendLabel(backend)})…`, 'running', '⟳');
+  inFlightProgressSteps.value = progressTracker.getSteps();
   inFlightStartedAt.value = Date.now();
   inFlightBackend.value = backend;
   lastTaskFailed.value = false;
@@ -3263,6 +3315,7 @@ async function sendPrompt(promptText: string, fromVoice = false) {
     if (!keepTrackingInBackground) {
       voiceTaskIds.delete(generatedTaskId);
       isSending.value = false;
+      isProgressExpanded.value = false;
       inFlightStartedAt.value = null;
       inFlightBackend.value = null;
       currentInFlightTaskId.value = null;

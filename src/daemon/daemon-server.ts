@@ -1453,6 +1453,11 @@ export class NexusDaemonServer extends EventEmitter {
 
         const runTask = async (): Promise<DaemonTaskRecord> => {
           try {
+            this.broadcastWs('task:progress', {
+              taskId,
+              message: backend === 'brain' ? 'Nexus Brain réfléchit…' : 'Initialisation de l’agent de code…',
+              stage: 'starting',
+            });
             const slashReply = await this.tryExecuteSlashCommand(
               String(body.prompt),
               backend,
@@ -1474,7 +1479,12 @@ export class NexusDaemonServer extends EventEmitter {
                   },
                   onFilesChanged: (files) => {
                     taskRecord.filesChanged = files;
-                    this.broadcastWs('task:progress', { taskId, filesChanged: files });
+                    this.broadcastWs('task:progress', {
+                      taskId,
+                      filesChanged: files,
+                      message: `${files.length} fichier(s) modifiés`,
+                      stage: 'executing',
+                    });
                   },
                 });
 
