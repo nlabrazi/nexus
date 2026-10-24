@@ -9,6 +9,15 @@
 export function createProgressTracker() {
   const steps = [];
 
+  function settleRunningSteps(status, icon) {
+    for (const s of steps) {
+      if (s.status === 'running') {
+        s.status = status;
+        s.icon = icon;
+      }
+    }
+  }
+
   /**
    * Adds or updates a progress step.
    * Marking a new step as 'running' automatically marks previous running steps as 'done'.
@@ -27,12 +36,7 @@ export function createProgressTracker() {
 
     // Auto-complete previous running step when advancing
     if (status === 'running') {
-      for (const s of steps) {
-        if (s.status === 'running') {
-          s.status = 'done';
-          s.icon = '✓';
-        }
-      }
+      settleRunningSteps('done', '✓');
     }
 
     steps.push({
@@ -52,12 +56,7 @@ export function createProgressTracker() {
    * Marks all in-flight steps as completed.
    */
   function complete(finalText) {
-    for (const s of steps) {
-      if (s.status === 'running') {
-        s.status = 'done';
-        s.icon = '✓';
-      }
-    }
+    settleRunningSteps('done', '✓');
     if (finalText) {
       addStep(finalText, 'done', '✓');
     }
@@ -67,12 +66,7 @@ export function createProgressTracker() {
    * Marks in-flight steps as failed with an optional error description.
    */
   function fail(errorText) {
-    for (const s of steps) {
-      if (s.status === 'running') {
-        s.status = 'failed';
-        s.icon = '✕';
-      }
-    }
+    settleRunningSteps('failed', '✕');
     if (errorText) {
       addStep(errorText, 'failed', '✕');
     }

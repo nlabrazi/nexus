@@ -1229,8 +1229,19 @@ function selectedBackendShortLabel(b?: string): string {
   return "Agent";
 }
 
+function selectedBackendLabel(b?: string): string {
+  if (b === "brain") return "Nexus Brain";
+  if (b === "codex") return "Codex";
+  if (b === "antigravity") return "Antigravity";
+  if (b === "claude") return "Claude Code";
+  return "Agent";
+}
+
 // Core Connection state
 const coreUrl = ref<string>("");
+function apiUrl(path = ""): string {
+  return `${coreUrl.value.replace(/\/+$/, "")}${path}`;
+}
 const coreUrlInput = ref<string>("");
 const authToken = ref<string>("");
 const authTokenInput = ref<string>("");
@@ -1316,7 +1327,7 @@ async function toggleDiffForMessage(msg: ChatMessage) {
   if (msg.taskId && coreUrl.value) {
     loadingDiffs.value[msg.id] = true;
     try {
-      const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/tasks/${encodeURIComponent(msg.taskId)}/diff`;
+      const targetUrl = `${apiUrl()}/api/tasks/${encodeURIComponent(msg.taskId)}/diff`;
       const res = await fetch(targetUrl, { headers: getRequestHeaders() });
       if (res.ok) {
         const data = await res.json();
@@ -1541,7 +1552,7 @@ async function synthesizeFishSpeech(
   if (!coreUrl.value) {
     throw new Error("Serveur Nexus non configuré");
   }
-  const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/voice/synthesize`;
+  const targetUrl = `${apiUrl()}/api/voice/synthesize`;
   const headers = {
     ...getRequestHeaders(),
     "Content-Type": "application/json",
@@ -1576,7 +1587,7 @@ async function saveFishVoiceConfig() {
   }
   isSavingFishConfig.value = true;
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/voice/config`;
+    const targetUrl = `${apiUrl()}/api/voice/config`;
     const headers = {
       ...getRequestHeaders(),
       "Content-Type": "application/json",
@@ -1747,7 +1758,7 @@ const fcmToken = ref<string>("");
 async function sendTokenToDaemon(token: string) {
   if (!coreUrl.value || !token) return;
   try {
-    const rawUrl = coreUrl.value.replace(/\/+$/, "");
+    const rawUrl = apiUrl();
     await fetch(`${rawUrl}/api/push/register`, {
       method: "POST",
       headers: {
@@ -1768,7 +1779,7 @@ async function testFcmPush() {
     return;
   }
   try {
-    const rawUrl = coreUrl.value.replace(/\/+$/, "");
+    const rawUrl = apiUrl();
     const res = await fetch(`${rawUrl}/api/push/test`, {
       method: "POST",
       headers: {
@@ -1847,7 +1858,7 @@ async function fetchPersonaAndMemory() {
   isLoadingPersona.value = true;
   personaStatusMsg.value = "";
   try {
-    const base = coreUrl.value.replace(/\/+$/, "");
+    const base = apiUrl();
     const headers = getRequestHeaders();
     const activePath = primaryNode.value?.activeProject?.path;
     const query = activePath ? `?path=${encodeURIComponent(activePath)}` : "";
@@ -1870,7 +1881,7 @@ async function savePersonaAndMemory() {
   isSavingPersona.value = true;
   personaStatusMsg.value = "";
   try {
-    const base = coreUrl.value.replace(/\/+$/, "");
+    const base = apiUrl();
     const headers = {
       ...getRequestHeaders(),
       "Content-Type": "application/json",
@@ -1937,7 +1948,7 @@ async function fetchDashboard() {
   const timer = setTimeout(() => controller.abort(), 10000);
   try {
     const query = primaryNode.value?.nodeId ? `?nodeId=${encodeURIComponent(primaryNode.value.nodeId)}` : '';
-    const response = await fetch(`${coreUrl.value.replace(/\/+$/, '')}/api/dashboard${query}`, {
+    const response = await fetch(`${apiUrl()}/api/dashboard${query}`, {
       headers: getRequestHeaders(), signal: controller.signal,
     });
     if (!response.ok) throw new Error(response.status === 401 ? 'Renseignez le jeton Nexus dans Voix & connexion pour consulter les quotas.' : response.status === 404 ? 'Mettez à jour Nexus Core et Nexus Desktop pour consulter cet aperçu.' : 'Le poste ne peut pas fournir ses quotas. Réessayez ou vérifiez Nexus Desktop.');
@@ -1958,7 +1969,7 @@ async function fetchModelsForBackend(backend: "brain" | "codex" | "antigravity" 
   isLoadingModels.value = true;
   try {
     const res = await fetch(
-      `${coreUrl.value.replace(/\/+$/, "")}/api/models?backend=${backend}`,
+      `${apiUrl()}/api/models?backend=${backend}`,
       { headers: getRequestHeaders() }
     );
     if (res.ok) {
@@ -2006,7 +2017,7 @@ async function handleSelectModel(modelName: string, effort?: string) {
   try {
     const headers = getRequestHeaders();
     headers["Content-Type"] = "application/json";
-    const res = await fetch(`${coreUrl.value.replace(/\/+$/, "")}/api/models/select`, {
+    const res = await fetch(`${apiUrl()}/api/models/select`, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -2444,7 +2455,7 @@ function connectWebSocket() {
   }
 
   try {
-    const rawUrl = coreUrl.value.replace(/\/+$/, "");
+    const rawUrl = apiUrl();
     const wsBase = rawUrl.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
     const wsTarget = `${wsBase}/ws?token=${encodeURIComponent(authToken.value || "")}`;
 
@@ -2837,7 +2848,7 @@ async function switchProject(projectId: string, nodeId?: string) {
   isSwitchingProject.value = true;
   switchingProjectId.value = projectId;
   try {
-    const res = await fetch(`${coreUrl.value.replace(/\/+$/, "")}/api/filesystem/open`, {
+    const res = await fetch(`${apiUrl()}/api/filesystem/open`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -3032,7 +3043,7 @@ async function fetchStatus(background = false) {
   }
   if (!background) isRefreshing.value = true;
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/status`;
+    const targetUrl = `${apiUrl()}/status`;
     const res = await fetch(targetUrl, {
       method: "GET",
       headers: getRequestHeaders(),
@@ -3060,7 +3071,7 @@ async function fetchTasks(background = false) {
   if (!coreUrl.value) return;
   if (!background) isRefreshingTasks.value = true;
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/tasks`;
+    const targetUrl = `${apiUrl()}/api/tasks`;
     const res = await fetch(targetUrl, {
       method: "GET",
       headers: getRequestHeaders(),
@@ -3167,7 +3178,7 @@ async function fetchTasks(background = false) {
 async function cancelTask(taskId: string) {
   if (!taskId) return;
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/tasks/${encodeURIComponent(taskId)}/cancel`;
+    const targetUrl = `${apiUrl()}/api/tasks/${encodeURIComponent(taskId)}/cancel`;
     const headers = getRequestHeaders();
     headers["Content-Type"] = "application/json";
 
@@ -3188,7 +3199,7 @@ async function fetchApprovals(background = false) {
   if (!coreUrl.value) return;
   if (!background) isRefreshingApprovals.value = true;
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/approvals`;
+    const targetUrl = `${apiUrl()}/api/approvals`;
     const res = await fetch(targetUrl, {
       method: "GET",
       headers: getRequestHeaders(),
@@ -3230,7 +3241,7 @@ async function decideApproval(
   approvalDecidingId.value = approvalId;
 
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/approvals/${encodeURIComponent(approvalId)}/decide`;
+    const targetUrl = `${apiUrl()}/api/approvals/${encodeURIComponent(approvalId)}/decide`;
     const headers = getRequestHeaders();
     headers["Content-Type"] = "application/json";
 
@@ -3344,7 +3355,7 @@ async function sendPrompt(promptText: string, fromVoice = false) {
   let keepTrackingInBackground = false;
 
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/tasks`;
+    const targetUrl = `${apiUrl()}/api/tasks`;
     const headers = getRequestHeaders();
     headers["Content-Type"] = "application/json";
 
@@ -3454,7 +3465,7 @@ function clearChat() {
       localStorage.removeItem("nexus_brain_messages");
     }
     if (coreUrl.value) {
-      const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/chat/history${targetProj ? `?project=${encodeURIComponent(targetProj)}` : ""}`;
+      const targetUrl = `${apiUrl()}/api/chat/history${targetProj ? `?project=${encodeURIComponent(targetProj)}` : ""}`;
       fetch(targetUrl, {
         method: "DELETE",
         headers: getRequestHeaders(),
@@ -3465,7 +3476,7 @@ function clearChat() {
         ...getRequestHeaders(),
         "Content-Type": "application/json",
       };
-      fetch(`${coreUrl.value.replace(/\/+$/, "")}/api/sessions/reset`, {
+      fetch(`${apiUrl()}/api/sessions/reset`, {
         method: "POST",
         headers,
         body: JSON.stringify({ backend: selectedBackend.value }),
@@ -3512,7 +3523,7 @@ function saveMessages() {
   if (syncChatTimer) clearTimeout(syncChatTimer);
   syncChatTimer = setTimeout(async () => {
     try {
-      const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/chat/history`;
+      const targetUrl = `${apiUrl()}/api/chat/history`;
       await fetch(targetUrl, {
         method: "POST",
         headers: {
@@ -3538,7 +3549,7 @@ async function fetchChatHistoryFromServer(projectPath?: string) {
       primaryNode.value?.activeProject?.path ||
       primaryNode.value?.activeProject?.name ||
       "";
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/chat/history${targetProj ? `?project=${encodeURIComponent(targetProj)}` : ""}`;
+    const targetUrl = `${apiUrl()}/api/chat/history${targetProj ? `?project=${encodeURIComponent(targetProj)}` : ""}`;
     const res = await fetch(targetUrl, {
       method: "GET",
       headers: getRequestHeaders(),
@@ -3568,14 +3579,6 @@ function scrollToBottom() {
     updateMessagesScrollState();
     updateHomeScrollState();
   });
-}
-
-function selectedBackendLabel(b?: string): string {
-  if (b === "brain") return "Nexus Brain";
-  if (b === "codex") return "Codex";
-  if (b === "antigravity") return "Antigravity";
-  if (b === "claude") return "Claude Code";
-  return "Agent";
 }
 
 const handoffNoticeMsg = ref("");
@@ -3653,7 +3656,7 @@ function initSpeechRecognition() {
 async function fetchVoiceStatus() {
   if (!coreUrl.value) return;
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/voice/status`;
+    const targetUrl = `${apiUrl()}/api/voice/status`;
     const res = await fetch(targetUrl, {
       method: "GET",
       headers: getRequestHeaders(),
@@ -4039,7 +4042,7 @@ async function stopPushToTalk() {
 
 async function transcribeNativeAudio(base64: string, mimeType: string) {
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/voice/transcribe`;
+    const targetUrl = `${apiUrl()}/api/voice/transcribe`;
     const headers = {
       ...getRequestHeaders(),
       "Content-Type": "application/json",

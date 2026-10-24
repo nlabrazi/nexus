@@ -34,28 +34,7 @@ export function parseUnifiedDiff(rawDiff) {
       filePath = parts[parts.length - 1] || 'fichier';
     }
 
-    let additions = 0;
-    let deletions = 0;
-    const hunks = [];
-    let currentHunk = null;
-
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i];
-      if (line.startsWith('@@')) {
-        currentHunk = { header: line.trim(), lines: [] };
-        hunks.push(currentHunk);
-      } else if (currentHunk) {
-        if (line.startsWith('+') && !line.startsWith('+++')) {
-          additions++;
-          currentHunk.lines.push({ type: 'add', text: line.slice(1) });
-        } else if (line.startsWith('-') && !line.startsWith('---')) {
-          deletions++;
-          currentHunk.lines.push({ type: 'del', text: line.slice(1) });
-        } else if (line.startsWith(' ') || line === '') {
-          currentHunk.lines.push({ type: 'normal', text: line.startsWith(' ') ? line.slice(1) : line });
-        }
-      }
-    }
+    const { additions, deletions, hunks } = parseHunks(lines.slice(1));
 
     return {
       filePath,
@@ -66,12 +45,11 @@ export function parseUnifiedDiff(rawDiff) {
   });
 }
 
-function parseSingleDiffStream(raw) {
-  const lines = raw.split('\n');
-  const hunks = [];
-  let currentHunk = null;
+function parseHunks(lines) {
   let additions = 0;
   let deletions = 0;
+  const hunks = [];
+  let currentHunk = null;
 
   for (const line of lines) {
     if (line.startsWith('@@')) {
@@ -89,6 +67,12 @@ function parseSingleDiffStream(raw) {
       }
     }
   }
+
+  return { additions, deletions, hunks };
+}
+
+function parseSingleDiffStream(raw) {
+  const { additions, deletions, hunks } = parseHunks(raw.split('\n'));
 
   if (hunks.length === 0) return [];
 
