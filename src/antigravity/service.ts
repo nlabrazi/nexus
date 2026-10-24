@@ -1,4 +1,5 @@
 import { isAbsolute, resolve } from 'node:path';
+import { AgentService, resolveAndSelectModel } from '../runtime/agent-service';
 import { assertSameWorkspace, WorkspaceIdentity, WorkspaceValidator } from '../workspace/guard';
 import { AntigravityClient, AntigravityClientOptions } from './client';
 import { AntigravityError } from './errors';
@@ -13,7 +14,7 @@ import {
 
 type SessionAction = 'ensure' | 'new' | 'resume';
 
-export class AntigravityService {
+export class AntigravityService implements AgentService {
   private readonly client: AntigravityClient;
   private readonly validateWorkspace?: WorkspaceValidator;
   private readonly persistence?: AntigravitySessionPersistence;
@@ -106,6 +107,18 @@ export class AntigravityService {
 
   async refreshStatus(): Promise<void> {
     // Antigravity telemetry updates are pushed via NDJSON events on stdout
+  }
+
+  getModelMenu(path: string): Promise<ModelMenu> {
+    return this.listModels(path);
+  }
+
+  selectModelChoice(path: string, selection: ModelSelection, context?: string): Promise<void> {
+    return resolveAndSelectModel(this, path, selection, context);
+  }
+
+  getActiveWorkspacePath(): string | undefined {
+    return this.workspacePath;
   }
 
   async withWorkspaceOperation<T>(operation: () => Promise<T>): Promise<T> {

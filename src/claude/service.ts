@@ -1,4 +1,6 @@
 import { resolve } from 'node:path';
+import { AgentService, ModelMenu, ModelSelection } from '../runtime/agent-service';
+import { KeyValueStorage } from '../runtime/types';
 import { ClaudeCodeClient } from './client';
 import {
   ClaudeCodeClientOptions,
@@ -6,9 +8,8 @@ import {
   ClaudeCodeModel,
   ClaudeTelemetrySnapshot,
 } from './types';
-import { KeyValueStorage } from '../runtime/types';
 
-export class ClaudeCodeService {
+export class ClaudeCodeService implements AgentService {
   private readonly client: ClaudeCodeClient;
   private readonly storage?: KeyValueStorage;
   private selectedModel = 'claude-sonnet-4-6';
@@ -118,6 +119,26 @@ export class ClaudeCodeService {
     }
   }
 
+  public async newSession(workspacePath: string): Promise<string> {
+    this.resetSession(workspacePath);
+    return `claude:${Date.now().toString(36)}`;
+  }
+
+  public async resumeSession(workspacePath: string, sessionId: string): Promise<string> {
+    const id = sessionId.trim();
+    if (!id || /\s/.test(id)) {
+      throw new Error('Indiquez un identifiant de session valide : /resume <id>.');
+    }
+    this.sessions.set(resolve(workspacePath), id);
+    if (this.storage) {
+      await this.storage.update(
+        'nexus.claude.sessions',
+        Object.fromEntries(this.sessions.entries())
+      );
+    }
+    return id;
+  }
+
   public async listModels(): Promise<ClaudeCodeModel[]> {
     return [
       {
@@ -164,17 +185,37 @@ export class ClaudeCodeService {
     ];
   }
 
-  public async getModelMenu() {
+  public async getModelMenu(
+    _workspacePath?: string
+  ): Promise<ModelMenu & { current: ModelSelection }> {
     this.loadPersistedState();
     const models = await this.listModels();
+    const current = {
+      model: this.selectedModel,
+      effort: this.selectedEffort,
+    };
     return {
       models,
-      current: {
-        model: this.selectedModel,
-        effort: this.selectedEffort,
-      },
+      current,
+      selected: current,
       context: 'claude-global',
     };
+  }
+
+  public async selectModelChoice(_workspacePath: string, selection: ModelSelection): Promise<void> {
+    await this.selectModel(selection);
+  }
+
+  public getActiveWorkspacePath(): string | undefined {
+    return undefined;
+  }
+
+  public getCurrentSessionId(): string | undefined {
+    return this.client.getStatus().sessionId;
+  }
+
+  public async refreshStatus(): Promise<void> {
+    // Claude Code CLI status is synchronous
   }
 
   public async selectModel(

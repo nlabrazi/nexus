@@ -1,17 +1,7 @@
+import type { AgentModel } from '../runtime/agent-service';
 import { KeyValueStorage } from '../runtime/types';
 
-export interface ClaudeCodeModel {
-  readonly id: string;
-  readonly model: string;
-  readonly displayName: string;
-  readonly description: string;
-  readonly isDefault: boolean;
-  readonly defaultReasoningEffort: string;
-  readonly supportedReasoningEfforts: Array<{
-    reasoningEffort: string;
-    description: string;
-  }>;
-}
+export type ClaudeCodeModel = AgentModel;
 
 export interface ClaudeCodeClientOptions {
   readonly binaryPath?: string;

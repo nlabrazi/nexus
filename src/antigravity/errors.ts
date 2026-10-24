@@ -1,3 +1,5 @@
+import { classifyProcessError, formatTurnTimeoutMessage } from '../runtime/agent-service';
+
 export type AntigravityErrorCode =
   | 'not_installed'
   | 'process_failed'
@@ -78,26 +80,19 @@ export function emptyResponseError(
 }
 
 export function processError(cause: unknown): AntigravityError {
-  if ((cause as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
-    return new AntigravityError(
-      'not_installed',
-      'Antigravity (agy) est introuvable. Vérifiez « agy --version » dans le terminal de VS Code, puis relancez VS Code après installation.',
-      { cause }
-    );
-  }
-  return new AntigravityError(
-    'process_failed',
-    'La connexion au processus Antigravity a été perdue. Vérifiez les modifications éventuelles avant une nouvelle instruction. La session sera reprise si elle est encore disponible.',
-    { cause }
+  const { code, message } = classifyProcessError(
+    'Antigravity',
+    'agy --version',
+    cause,
+    'Antigravity (agy)'
   );
+  return new AntigravityError(code, message, { cause });
 }
 
 export function turnTimeoutError(confirmed: boolean, elapsedSeconds = 120): AntigravityError {
   return new AntigravityError(
     'turn_timeout',
-    confirmed
-      ? `Le délai de ${elapsedSeconds} s est dépassé. Antigravity a confirmé la fin du turn. Vérifiez les modifications éventuelles avant une nouvelle instruction.`
-      : `Le délai de ${elapsedSeconds} s est dépassé et la fin du turn n’a pas été confirmée. Nexus a fermé la connexion et demandé l’arrêt du processus. Vérifiez les commandes et modifications éventuelles avant de continuer.`
+    formatTurnTimeoutMessage('Antigravity', confirmed, elapsedSeconds)
   );
 }
 

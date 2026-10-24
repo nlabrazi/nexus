@@ -1,45 +1,35 @@
+import type {
+  AgentApprovalHandler,
+  AgentApprovalRequest,
+  AgentModel,
+  ApprovalDecision,
+  ModelControls,
+  ModelMenu,
+  ModelSelection,
+  TokenBreakdown,
+  TurnTimeoutHandler,
+  TurnTimeoutRequest,
+} from '../runtime/agent-service';
+
+export type {
+  ApprovalDecision,
+  ModelControls,
+  ModelMenu,
+  ModelSelection,
+  TokenBreakdown,
+  TurnTimeoutHandler,
+  TurnTimeoutRequest,
+};
+export type AntigravityModel = AgentModel;
+export type AntigravityApprovalRequest = AgentApprovalRequest;
+export type AntigravityApprovalHandler = AgentApprovalHandler;
+
 export interface AntigravitySession {
   id: string;
   cwd?: string;
   status?: { type: string };
   model?: string | null;
   reasoningEffort?: string | null;
-}
-
-export interface AntigravityModel {
-  id: string;
-  model: string;
-  displayName: string;
-  description: string;
-  hidden?: boolean;
-  isDefault: boolean;
-  defaultReasoningEffort: string;
-  supportedReasoningEfforts: { reasoningEffort: string; description: string }[];
-}
-
-export interface ModelSelection {
-  model: string;
-  effort: string;
-}
-
-export interface ModelMenu {
-  models: AntigravityModel[];
-  selected?: ModelSelection;
-  context: string;
-}
-
-export interface ModelControls {
-  list(): Promise<ModelMenu>;
-  select(selection: ModelSelection, context: string): Promise<void>;
-}
-
-export interface TokenBreakdown {
-  totalTokens: number;
-  inputTokens: number;
-  cachedInputTokens: number;
-  cacheWriteInputTokens?: number;
-  outputTokens: number;
-  reasoningOutputTokens: number;
 }
 
 export interface ConversationTokenUsage {
@@ -55,24 +45,6 @@ export interface ConversationTelemetry {
   tokenUsage?: ConversationTokenUsage;
   tokenUsageUpdatedAt?: number;
 }
-
-import type { ApprovalDecision, TurnTimeoutRequest, TurnTimeoutHandler } from '../codex/types';
-export type { ApprovalDecision, TurnTimeoutRequest, TurnTimeoutHandler };
-
-export interface AntigravityApprovalRequest {
-  agentName?: string;
-  kind: 'command' | 'fileChange';
-  threadId: string;
-  turnId: string;
-  itemId: string;
-  details: string;
-  expiresAt: number;
-}
-
-export type AntigravityApprovalHandler = (
-  request: AntigravityApprovalRequest,
-  signal: AbortSignal
-) => Promise<ApprovalDecision>;
 
 export interface AntigravityClientStatus {
   processRunning: boolean;
