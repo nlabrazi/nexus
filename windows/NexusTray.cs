@@ -57,24 +57,28 @@ namespace NexusTrayApp
                 "Nexus.lnk"
             );
 
-            // Création de l'icône de notification
+            // Création de l'icône de notification (icône embarquée dans Nexus.exe ou nexus.ico adjacent)
             notifyIcon = new NotifyIcon();
-            string iconPath = Path.Combine(appDir, "nexus.ico");
-            if (File.Exists(iconPath))
+            Icon trayIcon = null;
+            try
             {
-                try
+                trayIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+            }
+            catch { }
+
+            if (trayIcon == null)
+            {
+                string iconPath = Path.Combine(appDir, "nexus.ico");
+                if (File.Exists(iconPath))
                 {
-                    notifyIcon.Icon = new Icon(iconPath);
-                }
-                catch
-                {
-                    notifyIcon.Icon = SystemIcons.Application;
+                    try
+                    {
+                        trayIcon = new Icon(iconPath);
+                    }
+                    catch { }
                 }
             }
-            else
-            {
-                notifyIcon.Icon = SystemIcons.Application;
-            }
+            notifyIcon.Icon = trayIcon ?? SystemIcons.Application;
 
             notifyIcon.Text = "Nexus Agent - En ligne";
             notifyIcon.Visible = true;

@@ -84,14 +84,6 @@ function syncReleaseVersion() {
     fs.writeFileSync(trayCsPath, trayCs);
   }
 
-  const trayPs1Path = path.join(root, 'windows', 'NexusTray.ps1');
-  if (fs.existsSync(trayPs1Path)) {
-    const trayPs1 = fs
-      .readFileSync(trayPs1Path, 'utf8')
-      .replace(/Nexus Agent v[0-9.]+/, `Nexus Agent v${nextVersion}`);
-    fs.writeFileSync(trayPs1Path, trayPs1);
-  }
-
   const daemonCliPath = path.join(root, 'src', 'daemon', 'cli.ts');
   if (fs.existsSync(daemonCliPath)) {
     const daemonCli = fs
