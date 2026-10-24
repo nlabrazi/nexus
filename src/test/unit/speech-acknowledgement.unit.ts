@@ -3,7 +3,7 @@ import { PassThrough } from 'node:stream';
 import { suite, test, TestContext } from 'node:test';
 import childProcess = require('node:child_process');
 import { synthesizeAcknowledgement } from '../../speech/acknowledgement';
-import { SpeechSynthesisError } from '../../speech/synthesis-error';
+import { SpeechSynthesisError } from '../../speech/errors';
 import { isPcmWave, isOggOpus } from '../../speech/audio-validation';
 import { flush } from './helpers';
 

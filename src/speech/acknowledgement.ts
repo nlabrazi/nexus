@@ -1,6 +1,6 @@
 import { logger } from '../logging/logger';
 import { isPcmWave, isOggOpus } from './audio-validation';
-import { SpeechSynthesisError } from './synthesis-error';
+import { SpeechSynthesisError } from './errors';
 import { execFile } from 'node:child_process';
 import { isAbsolute } from 'node:path';
 
