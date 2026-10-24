@@ -281,7 +281,7 @@ suite('NexusDaemonServer unified secure daemon', () => {
       }
     );
     assert.equal(getRes.status, 200);
-    const history = (await getRes.json()) as any[];
+    const history = (await getRes.json()) as Array<{ id: string }>;
     assert.equal(history.length, 50);
     assert.equal(history[0].id, 'msg-10'); // First 10 were dropped by slice(-50)
     assert.equal(history[49].id, 'msg-59');

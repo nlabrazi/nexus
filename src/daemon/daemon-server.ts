@@ -1004,9 +1004,11 @@ export class NexusDaemonServer extends EventEmitter {
           ? this.jail.resolveSafePath(rawProject)
           : this.activeProject.path;
         const mode = typeof body.mode === 'string' ? body.mode : '';
-        const rawList = Array.isArray(body.messages) ? body.messages : [];
+        const rawList: Array<Record<string, unknown>> = Array.isArray(body.messages)
+          ? body.messages
+          : [];
         // Keep only the most recent 50 messages, and bound text payload per message
-        const bounded = rawList.slice(-50).map((m: any) => {
+        const bounded = rawList.slice(-50).map((m) => {
           const text = typeof m?.text === 'string' ? m.text.slice(0, 30000) : '';
           return {
             id: typeof m?.id === 'string' ? m.id : String(Date.now()),

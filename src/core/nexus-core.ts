@@ -1482,6 +1482,9 @@ export class NexusCore extends EventEmitter {
       req.setEncoding('utf8');
       req.on('data', (chunk) => {
         data += chunk;
+        if (data.length > 2 * 1024 * 1024) {
+          reject(new Error('Corps de requête trop volumineux (max 2MB)'));
+        }
       });
       req.on('end', () => resolve(data));
       req.on('error', reject);
@@ -1491,8 +1494,15 @@ export class NexusCore extends EventEmitter {
   private readRequestBodyBuffer(req: IncomingMessage): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
+      let totalLength = 0;
       req.on('data', (chunk) => {
-        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+        const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+        totalLength += buf.length;
+        if (totalLength > 25 * 1024 * 1024) {
+          reject(new Error('Corps de requête trop volumineux (max 25MB)'));
+          return;
+        }
+        chunks.push(buf);
       });
       req.on('end', () => resolve(Buffer.concat(chunks)));
       req.on('error', reject);
