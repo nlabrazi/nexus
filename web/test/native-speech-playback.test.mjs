@@ -116,9 +116,14 @@ test('automatic online France voice falls back to local France when the network 
 
 test('mobile voice capture uses inline recognition (popup: false) without Google system popup', () => {
   const appVue = readFileSync(resolve(__dirname, '../app/app.vue'), 'utf-8');
-  assert.equal(appVue.includes('popup: true'), false);
-  assert.equal(appVue.includes('runNativeSpeechPopup'), false);
-  assert.equal(appVue.includes('popup: false'), true);
-  assert.equal(appVue.includes('stopNativeSpeechRecognition'), true);
-  assert.equal(appVue.includes('"listeningState"'), true);
+  const voiceRecording = readFileSync(
+    resolve(__dirname, '../app/composables/useVoiceRecording.ts'),
+    'utf-8'
+  );
+  const source = `${appVue}\n${voiceRecording}`;
+  assert.equal(source.includes('popup: true'), false);
+  assert.equal(source.includes('runNativeSpeechPopup'), false);
+  assert.equal(source.includes('popup: false'), true);
+  assert.equal(source.includes('stopNativeSpeechRecognition'), true);
+  assert.equal(source.includes('"listeningState"'), true);
 });
