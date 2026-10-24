@@ -14,9 +14,6 @@ services:
       - NEXUS_CORE_PORT=4040
       - NEXUS_CORE_HOST=0.0.0.0
       - NEXUS_CORE_AUTH_TOKENS=${NEXUS_CORE_AUTH_TOKENS:-nexus-dev-secret-token}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
-      - TELEGRAM_ALLOWED_USER_ID=${TELEGRAM_ALLOWED_USER_ID:-}
-      - TELEGRAM_ALLOWED_CHAT_ID=${TELEGRAM_ALLOWED_CHAT_ID:-}
     volumes:
       - nexus-core-data:/home/node/.nexus
     healthcheck:
