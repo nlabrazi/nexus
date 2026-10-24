@@ -18,14 +18,16 @@ export class FcmService {
 
   constructor(options: { serviceAccountPath?: string; storage?: KeyValueStorage }) {
     this.storage = options.storage || null;
-    const candidatePaths = [
-      options.serviceAccountPath,
-      process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
-      path.resolve(process.cwd(), 'firebase-service-account.json'),
-      path.resolve(__dirname, '../firebase-service-account.json'),
-      path.resolve(__dirname, '../../firebase-service-account.json'),
-      path.resolve(os.homedir(), '.nexus/firebase-service-account.json'),
-    ].filter((p): p is string => Boolean(p));
+    const candidatePaths =
+      options.serviceAccountPath !== undefined
+        ? [options.serviceAccountPath].filter((p): p is string => Boolean(p))
+        : [
+            process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
+            path.resolve(process.cwd(), 'firebase-service-account.json'),
+            path.resolve(__dirname, '../firebase-service-account.json'),
+            path.resolve(__dirname, '../../firebase-service-account.json'),
+            path.resolve(os.homedir(), '.nexus/firebase-service-account.json'),
+          ].filter((p): p is string => Boolean(p));
 
     for (const candidate of candidatePaths) {
       if (fs.existsSync(candidate)) {
