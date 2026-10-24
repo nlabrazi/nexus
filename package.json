@@ -23,9 +23,7 @@
   ],
   "main": "./dist/extension.js",
   "bin": {
-    "nexus-daemon": "./dist/daemon.js",
-    "nexus-desktop": "./dist/desktop.js",
-    "nexus-core": "./dist/core.js"
+    "nexus-daemon": "./dist/daemon.js"
   },
   "contributes": {
     "configuration": {
@@ -192,18 +190,12 @@
   },
   "scripts": {
     "daemon": "node dist/daemon.js",
-    "desktop": "node dist/desktop.js",
-    "core": "node dist/core.js",
     "web:dev": "npm --prefix web run dev",
     "web:build": "npm --prefix web run generate",
     "android:sync": "npm --prefix web run cap:sync",
     "android:build": "node scripts/build-android.cjs",
     "android:release": "node scripts/build-android.cjs --bump patch",
     "android:open": "npm --prefix web run cap:open",
-    "docker:build": "docker build -t nexus-core .",
-    "docker:up": "docker compose up -d",
-    "docker:down": "docker compose down",
-    "docker:logs": "docker compose logs -f",
     "dev:prepare": "npm run compile && node scripts/prepare-dev.cjs",
     "vscode:prepublish": "npm run package",
     "compile": "npm run check-types && npm run lint && node esbuild.js",

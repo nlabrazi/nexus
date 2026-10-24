@@ -7,7 +7,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 
 import { hostname } from 'node:os';
 import type { Duplex } from 'node:stream';
 import { promisify } from 'node:util';
-import { WebSocketServerConnection } from '../core/ws-connection';
+import { WebSocketServerConnection } from './ws-connection';
 
 const execute = promisify(execFile);
 
@@ -47,6 +47,10 @@ const MIME_TYPES: Record<string, string> = {
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.webmanifest': 'application/manifest+json',
+  '.txt': 'text/plain; charset=utf-8',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.ttf': 'font/ttf',
 };
 import { logger } from '../logging/logger';
 import { NexusRuntime } from '../runtime/nexus-runtime';
