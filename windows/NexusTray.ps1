@@ -79,10 +79,10 @@ try {
         }
         
         Log-Message "Demarrage du daemon Nexus via WSL..."
-        $nodePath = "/home/kaox/.nvm/versions/node/v24.14.1/bin/node"
-        $daemonJs = "/home/kaox/code/bricolage/nexus/dist/daemon.js"
-        $wslCmd = "tmux kill-session -t nexus-daemon 2>/dev/null || true; " +
-                  "tmux new-session -d -s nexus-daemon '" + $nodePath + " " + $daemonJs + " --host 0.0.0.0 --port " + $port + "'"
+        $wslCmd = "NODE_BIN=`$(command -v node || ls -1d `$HOME/.nvm/versions/node/*/bin/node 2>/dev/null | tail -n 1); " +
+                  "DAEMON_JS=`${NEXUS_DAEMON_JS:-`$(ls -1 `$HOME/code/*/nexus/dist/daemon.js `$HOME/code/nexus/dist/daemon.js 2>/dev/null | head -n 1)}; " +
+                  "tmux kill-session -t nexus-daemon 2>/dev/null || true; " +
+                  "tmux new-session -d -s nexus-daemon `"`$NODE_BIN `$DAEMON_JS --host 0.0.0.0 --port " + $port + "`""
 
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = "wsl.exe"
@@ -184,7 +184,7 @@ try {
     # 4. Menu contextuel
     $contextMenu = New-Object System.Windows.Forms.ContextMenuStrip
 
-    $headerItem = New-Object System.Windows.Forms.ToolStripMenuItem("Nexus Agent v1.0.0")
+    $headerItem = New-Object System.Windows.Forms.ToolStripMenuItem("Nexus Agent v1.3.0")
     $headerItem.Enabled = $false
     $font = New-Object System.Drawing.Font($headerItem.Font.FontFamily, $headerItem.Font.Size, [System.Drawing.FontStyle]::Bold)
     $headerItem.Font = $font

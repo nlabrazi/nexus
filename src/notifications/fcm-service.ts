@@ -22,8 +22,9 @@ export class FcmService {
       options.serviceAccountPath,
       process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
       path.resolve(process.cwd(), 'firebase-service-account.json'),
+      path.resolve(__dirname, '../firebase-service-account.json'),
       path.resolve(__dirname, '../../firebase-service-account.json'),
-      path.resolve(os.homedir(), 'code/bricolage/nexus/firebase-service-account.json'),
+      path.resolve(os.homedir(), '.nexus/firebase-service-account.json'),
     ].filter((p): p is string => Boolean(p));
 
     for (const candidate of candidatePaths) {

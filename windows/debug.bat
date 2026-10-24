@@ -8,7 +8,7 @@ echo.
 
 set "SCRIPT_PATH=%~dp0NexusTray.ps1"
 if not exist "%SCRIPT_PATH%" (
-    set "SCRIPT_PATH=C:\Users\Zref\Nexus\NexusTray.ps1"
+    set "SCRIPT_PATH=%USERPROFILE%\Nexus\NexusTray.ps1"
 )
 
 if not exist "%SCRIPT_PATH%" (
