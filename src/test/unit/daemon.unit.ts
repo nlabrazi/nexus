@@ -246,6 +246,68 @@ suite('NexusDaemonServer unified secure daemon', () => {
     assert.match(memData.memory, /Mémoire mise à jour via \/api\/projects\/memory/);
   });
 
+  test('POST, GET, and DELETE /api/chat/history manage chat history with 50-message bound and Upstash-compatible payload', async () => {
+    // Generate 60 test messages
+    const testMessages = Array.from({ length: 60 }, (_, i) => ({
+      id: `msg-${i}`,
+      role: i % 2 === 0 ? 'user' : 'assistant',
+      backend: 'brain',
+      text: i === 0 ? 'A'.repeat(40000) : `Message numéro ${i}`,
+      timestamp: Date.now() + i * 1000,
+    }));
+
+    // 1. POST history
+    const postRes = await fetch(`http://127.0.0.1:${port}/api/chat/history`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer valid-token-123',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        project: projectDir,
+        messages: testMessages,
+      }),
+    });
+    assert.equal(postRes.status, 200);
+    const postData = (await postRes.json()) as { status: string; count: number };
+    assert.equal(postData.status, 'ok');
+    assert.equal(postData.count, 50); // Bound to last 50 messages
+
+    // 2. GET history
+    const getRes = await fetch(
+      `http://127.0.0.1:${port}/api/chat/history?project=${encodeURIComponent(projectDir)}`,
+      {
+        headers: { Authorization: 'Bearer valid-token-123' },
+      }
+    );
+    assert.equal(getRes.status, 200);
+    const history = (await getRes.json()) as Array<{ id: string }>;
+    assert.equal(history.length, 50);
+    assert.equal(history[0].id, 'msg-10'); // First 10 were dropped by slice(-50)
+    assert.equal(history[49].id, 'msg-59');
+
+    // 3. DELETE history
+    const delRes = await fetch(
+      `http://127.0.0.1:${port}/api/chat/history?project=${encodeURIComponent(projectDir)}`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer valid-token-123' },
+      }
+    );
+    assert.equal(delRes.status, 200);
+
+    // Verify it is now empty
+    const verifyRes = await fetch(
+      `http://127.0.0.1:${port}/api/chat/history?project=${encodeURIComponent(projectDir)}`,
+      {
+        headers: { Authorization: 'Bearer valid-token-123' },
+      }
+    );
+    assert.equal(verifyRes.status, 200);
+    const emptyHistory = await verifyRes.json();
+    assert.deepEqual(emptyHistory, []);
+  });
+
   test('POST /api/voice/config and /api/voice/Status manage Fish Audio configuration with URL normalization', async () => {
     const cfgRes = await fetch(`http://127.0.0.1:${port}/api/voice/config`, {
       method: 'POST',
@@ -282,6 +344,43 @@ suite('NexusDaemonServer unified secure daemon', () => {
       body: JSON.stringify({ text: 'Bonjour Nexus' }),
     });
     assert.equal(synthWithoutKey.status, 503);
+  });
+
+  test('GET /api/projects/diff and /api/tasks/:taskId/diff expose git diff safely', async () => {
+    const projDiffRes = await fetch(`http://127.0.0.1:${port}/api/projects/diff`, {
+      headers: { Authorization: 'Bearer valid-token-123' },
+    });
+    assert.equal(projDiffRes.status, 200);
+    const projDiffData = (await projDiffRes.json()) as { path: string; diff: string };
+    assert.ok(typeof projDiffData.diff === 'string');
+
+    // Post a task first to test task diff retrieval
+    const taskPost = await fetch(`http://127.0.0.1:${port}/api/tasks`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer valid-token-123',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        taskId: 'task-diff-test',
+        prompt: '/status',
+        wait: true,
+      }),
+    });
+    assert.equal(taskPost.status, 200);
+
+    const taskDiffRes = await fetch(`http://127.0.0.1:${port}/api/tasks/task-diff-test/diff`, {
+      headers: { Authorization: 'Bearer valid-token-123' },
+    });
+    assert.equal(taskDiffRes.status, 200);
+    const taskDiffData = (await taskDiffRes.json()) as {
+      taskId: string;
+      diff: string;
+      filesChanged: string[];
+    };
+    assert.equal(taskDiffData.taskId, 'task-diff-test');
+    assert.ok(typeof taskDiffData.diff === 'string');
+    assert.ok(Array.isArray(taskDiffData.filesChanged));
   });
 
   test('stops daemon server and cleans up', async () => {

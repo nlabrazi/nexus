@@ -1,3 +1,5 @@
+import { classifyProcessError, formatTurnTimeoutMessage } from '../runtime/agent-service';
+
 export type CodexErrorCode =
   | 'not_installed'
   | 'process_failed'
@@ -23,26 +25,14 @@ export class CodexError extends Error {
 }
 
 export function processError(cause: unknown): CodexError {
-  if ((cause as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
-    return new CodexError(
-      'not_installed',
-      'Codex est introuvable. Vérifiez « codex --version » dans le terminal de VS Code, puis relancez VS Code après installation.',
-      { cause }
-    );
-  }
-  return new CodexError(
-    'process_failed',
-    'La connexion au processus Codex a été perdue. Vérifiez les modifications éventuelles avant une nouvelle instruction. La session sera reprise si elle est encore disponible.',
-    { cause }
-  );
+  const { code, message } = classifyProcessError('Codex', 'codex --version', cause);
+  return new CodexError(code, message, { cause });
 }
 
 export function turnTimeoutError(confirmed: boolean, elapsedSeconds = 120): CodexError {
   return new CodexError(
     'turn_timeout',
-    confirmed
-      ? `Le délai de ${elapsedSeconds} s est dépassé. Codex a confirmé la fin du turn. Vérifiez les modifications éventuelles avant une nouvelle instruction.`
-      : `Le délai de ${elapsedSeconds} s est dépassé et la fin du turn n’a pas été confirmée. Nexus a fermé la connexion et demandé l’arrêt du processus. Vérifiez les commandes et modifications éventuelles avant de continuer.`
+    formatTurnTimeoutMessage('Codex', confirmed, elapsedSeconds)
   );
 }
 

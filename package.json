@@ -1,7 +1,7 @@
 {
   "name": "nexus",
   "displayName": "Nexus",
-  "description": "Private remote bridge for vscode coding agents",
+  "description": "Private remote bridge for coding agents",
   "version": "1.3.0",
   "publisher": "nabster",
   "icon": "assets/icon.png",
@@ -9,202 +9,18 @@
     "type": "git",
     "url": "https://github.com/nlabrazi/nexus.git"
   },
-  "extensionKind": [
-    "workspace"
-  ],
-  "engines": {
-    "vscode": "^1.137.0"
-  },
-  "categories": [
-    "Other"
-  ],
-  "activationEvents": [
-    "onStartupFinished"
-  ],
-  "main": "./dist/extension.js",
+  "main": "./dist/daemon.js",
   "bin": {
-    "nexus-daemon": "./dist/daemon.js",
-    "nexus-desktop": "./dist/desktop.js",
-    "nexus-core": "./dist/core.js"
-  },
-  "contributes": {
-    "configuration": {
-      "title": "Nexus",
-      "properties": {
-        "nexus.git.protectedBranches": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "default": [
-            "main",
-            "master"
-          ],
-          "scope": "window",
-          "description": "Branches sur lesquelles Nexus refuse de lancer Codex ou Antigravity. Noms exacts, sensibles à la casse. Une liste vide désactive cette protection."
-        },
-        "nexus.defaultBackend": {
-          "type": "string",
-          "enum": [
-            "codex",
-            "antigravity"
-          ],
-          "default": "codex",
-          "scope": "window",
-          "description": "Backend agent par défaut pour les commandes Telegram (/new, /resume, /model)."
-        },
-        "nexus.speech.pythonPath": {
-          "type": "string",
-          "default": "",
-          "scope": "machine",
-          "description": "Chemin absolu vers le Python de l'environnement local contenant faster-whisper. À configurer sur la machine où Nexus s'exécute (WSL/SSH le cas échéant)."
-        },
-        "nexus.speech.modelPath": {
-          "type": "string",
-          "default": "",
-          "scope": "machine",
-          "description": "Chemin absolu vers le modèle faster-whisper déjà téléchargé. La transcription ne télécharge rien."
-        },
-        "nexus.speech.language": {
-          "type": "string",
-          "default": "",
-          "pattern": "^$|^[a-z]{2,3}$",
-          "scope": "machine",
-          "description": "Langue des audios, par exemple fr ou en. Vide : détection automatique."
-        },
-        "nexus.speech.tts.enabled": {
-          "type": "boolean",
-          "default": true,
-          "scope": "machine",
-          "description": "Active l’acquittement vocal Piper de Telegram. Le texte reste envoyé quand la voix est désactivée."
-        },
-        "nexus.speech.tts.speed": {
-          "type": "number",
-          "default": 1,
-          "minimum": 0.8,
-          "maximum": 1.3,
-          "scope": "machine",
-          "description": "Vitesse de la voix Piper : 1 = normale, 0.8 = plus lente, 1.3 = plus rapide."
-        },
-        "nexus.speech.tts.pythonPath": {
-          "type": "string",
-          "default": "",
-          "scope": "machine",
-          "description": "Chemin absolu vers le Python contenant piper-tts pour l'acquittement vocal. À configurer sur la machine où Nexus s'exécute (WSL/SSH le cas échéant)."
-        },
-        "nexus.speech.tts.modelPath": {
-          "type": "string",
-          "default": "",
-          "scope": "machine",
-          "description": "Chemin absolu vers fr_FR-upmc-medium.onnx (voix Jessica). Le fichier .onnx.json doit être à côté. Aucun téléchargement pendant la synthèse."
-        },
-        "nexus.speech.tts.speakerId": {
-          "type": "integer",
-          "default": 1,
-          "minimum": 0,
-          "scope": "machine",
-          "description": "Identifiant de la voix dans le modèle Piper. Avec fr_FR-upmc-medium : 0 = Jessica, 1 = Pierre."
-        },
-        "nexus.antigravity.path": {
-          "type": "string",
-          "default": "",
-          "scope": "machine",
-          "description": "Chemin explicite vers l'exécutable de Gemini Antigravity (agy). Laisser vide pour utiliser agy depuis le PATH."
-        },
-        "nexus.antigravity.sandbox": {
-          "type": "boolean",
-          "default": true,
-          "scope": "resource",
-          "description": "Active le mode sandbox pour Gemini Antigravity (--sandbox)."
-        },
-        "nexus.antigravity.dangerouslySkipPermissions": {
-          "type": "boolean",
-          "default": false,
-          "scope": "resource",
-          "description": "Autorise Antigravity à exécuter sans invite d'approbation (--dangerously-skip-permissions). Déconseillé."
-        }
-      }
-    },
-    "commands": [
-      {
-        "command": "nexus.diagnostics",
-        "title": "Nexus: Diagnostics"
-      },
-      {
-        "command": "nexus.testSpeechToText",
-        "title": "Nexus: Test Local Speech-to-Text"
-      },
-      {
-        "command": "nexus.switchBranch",
-        "title": "Nexus: Switch Branch"
-      },
-      {
-        "command": "nexus.status",
-        "title": "Nexus: Status"
-      },
-      {
-        "command": "nexus.selectBackend",
-        "title": "Nexus: Select Active Backend"
-      },
-      {
-        "command": "nexus.testCodex",
-        "title": "Nexus: Test Codex Connection"
-      },
-      {
-        "command": "nexus.startCodexSession",
-        "title": "Nexus: Start Codex Session"
-      },
-      {
-        "command": "nexus.newCodexSession",
-        "title": "Nexus: New Codex Session"
-      },
-      {
-        "command": "nexus.resumeCodexSession",
-        "title": "Nexus: Resume Codex Session"
-      },
-      {
-        "command": "nexus.testCodexPrompt",
-        "title": "Nexus: Test Codex Prompt"
-      },
-      {
-        "command": "nexus.testAntigravity",
-        "title": "Nexus: Test Antigravity Connection"
-      },
-      {
-        "command": "nexus.startAntigravitySession",
-        "title": "Nexus: Start Antigravity Session"
-      },
-      {
-        "command": "nexus.newAntigravitySession",
-        "title": "Nexus: New Antigravity Session"
-      },
-      {
-        "command": "nexus.resumeAntigravitySession",
-        "title": "Nexus: Resume Antigravity Session"
-      },
-      {
-        "command": "nexus.testAntigravityPrompt",
-        "title": "Nexus: Test Antigravity Prompt"
-      }
-    ]
+    "nexus-daemon": "./dist/daemon.js"
   },
   "scripts": {
     "daemon": "node dist/daemon.js",
-    "desktop": "node dist/desktop.js",
-    "core": "node dist/core.js",
     "web:dev": "npm --prefix web run dev",
     "web:build": "npm --prefix web run generate",
     "android:sync": "npm --prefix web run cap:sync",
     "android:build": "node scripts/build-android.cjs",
     "android:release": "node scripts/build-android.cjs --bump patch",
     "android:open": "npm --prefix web run cap:open",
-    "docker:build": "docker build -t nexus-core .",
-    "docker:up": "docker compose up -d",
-    "docker:down": "docker compose down",
-    "docker:logs": "docker compose logs -f",
-    "dev:prepare": "npm run compile && node scripts/prepare-dev.cjs",
-    "vscode:prepublish": "npm run package",
     "compile": "npm run check-types && npm run lint && node esbuild.js",
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
@@ -218,21 +34,15 @@
     "lint:fix": "biome check --write src",
     "lint:fix:unsafe": "biome check --write --unsafe src",
     "format": "biome format --write src",
-    "test": "vscode-test",
+    "test": "npm run test:unit",
     "test:unit": "npm run compile-tests && node --test --test-isolation=none out/test/unit/*.unit.js"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
-    "@types/mocha": "^10.0.10",
     "@types/node": "24.x",
-    "@types/vscode": "^1.137.0",
-    "@vscode/test-cli": "^0.0.15",
-    "@vscode/test-electron": "^3.0.0",
     "esbuild": "^0.28.1",
-    "eslint": "^10.5.0",
     "npm-run-all": "^4.1.5",
-    "typescript": "^6.0.3",
-    "typescript-eslint": "^8.61.1"
+    "typescript": "^6.0.3"
   },
   "overrides": {
     "diff": "^8.0.4",

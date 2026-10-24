@@ -187,27 +187,60 @@
                   </div>
                 </div>
                 <div class="message-content" v-html="renderMarkdown(msg.text)" />
-                <p v-if="msg.fileSummary" class="file-summary">
-                  <NexusIcon name="folder" />{{ msg.fileSummary }}
-                </p>
-                <div v-if="msg.role === 'assistant' && msg.backend === 'brain' && !msg.error" class="handoff-bar" style="margin-top: 10px; display: flex; gap: 8px;">
-                  <button type="button" class="chip-button" style="display: inline-flex; align-items: center; gap: 6px; font-size: 11px; padding: 6px 12px; border-radius: 8px; background: rgba(0, 240, 255, 0.12); color: #00f0ff; border: 1px solid rgba(0, 240, 255, 0.3); cursor: pointer;" @click="handoffToCodingAgent(msg.text)">
-                    <NexusIcon name="cpu" />
-                    <span>Transmettre au code</span>
+                <NexusDiffInspector
+                  :msg="msg"
+                  :open="isDiffOpen(msg.id)"
+                  :loading="Boolean(loadingDiffs[msg.id])"
+                  :summary-label="getDiffSummaryLabel(msg)"
+                  :parsed-files="getParsedDiffForMessage(msg)"
+                  @toggle="toggleDiffForMessage"
+                />
+                <div v-if="msg.role === 'assistant' && msg.backend === 'brain' && !msg.error" class="handoff-bar" style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+                  <button
+                    type="button"
+                    class="chip-button"
+                    style="display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 500; padding: 6px 12px; border-radius: 8px; background: rgba(0, 240, 255, 0.12); color: #00f0ff; border: 1px solid rgba(0, 240, 255, 0.35); cursor: pointer;"
+                    :title="`Transmettre cette proposition à l'agent de code (${selectedBackendLabel(lastCodingBackend || 'codex')})`"
+                    @click="handoffToCodingAgent(msg.text)"
+                  >
+                    <NexusIcon name="zap" style="width: 13px; height: 13px;" />
+                    <span>🚀 Coder cette proposition ({{ selectedBackendLabel(lastCodingBackend || 'codex') }})</span>
                   </button>
                 </div>
               </article>
             </TransitionGroup>
 
-            <!-- In-flight Task Progress -->
-            <div v-if="isSending" class="task-progress" role="status">
-              <span class="activity-wave" aria-hidden="true"><i /><i /><i /></span><span>{{
-                currentProgressMessage || "En cours…"
-              }}</span><span v-if="inFlightStartedAt" class="elapsed-time">{{ Math.max(0, Math.floor((now - inFlightStartedAt) / 1000)) }} s</span>
-              <button v-if="currentInFlightTaskId" type="button" class="text-button danger"
-                @click="cancelTask(currentInFlightTaskId)">
-                <NexusIcon name="stop" />Arrêter
-              </button>
+            <!-- In-flight Task Progress (Collapsible) -->
+            <div v-if="isSending" class="task-progress-box" role="status" :class="{ expanded: isProgressExpanded }">
+              <div class="task-progress-header" @click="toggleProgressExpanded">
+                <div class="task-progress-main">
+                  <span class="activity-wave" aria-hidden="true"><i /><i /><i /></span>
+                  <span class="task-progress-label">{{ currentProgressMessage || "En cours…" }}</span>
+                  <span v-if="inFlightStartedAt" class="elapsed-time">{{ Math.max(0, Math.floor((now - inFlightStartedAt) / 1000)) }} s</span>
+                </div>
+                <div class="task-progress-actions">
+                  <button type="button" class="progress-toggle-btn" :title="isProgressExpanded ? 'Masquer les étapes' : 'Voir les étapes en direct'">
+                    <span>{{ isProgressExpanded ? 'Détails ▲' : 'Détails ▼' }}</span>
+                  </button>
+                  <button v-if="currentInFlightTaskId" type="button" class="text-button danger progress-cancel-btn"
+                    @click.stop="cancelTask(currentInFlightTaskId)">
+                    <NexusIcon name="stop" />Arrêter
+                  </button>
+                </div>
+              </div>
+
+              <!-- Collapsible live step-by-step disclosure -->
+              <div v-if="isProgressExpanded" class="task-progress-details">
+                <ul class="progress-steps-list">
+                  <li v-for="(step, idx) in inFlightProgressSteps" :key="idx" class="progress-step-item" :class="step.status">
+                    <span class="step-icon">{{ step.icon }}</span>
+                    <span class="step-text">{{ step.text }}</span>
+                  </li>
+                  <li v-if="inFlightProgressSteps.length === 0" class="progress-step-empty">
+                    <span>Initialisation en cours…</span>
+                  </li>
+                </ul>
+              </div>
             </div>
           </div>
 
@@ -263,6 +296,10 @@
             </div>
 
             <!-- Sleek Cyber Input Form -->
+            <div v-if="handoffNoticeMsg" class="handoff-toast" style="padding: 6px 12px; border-radius: 8px; background: rgba(0, 240, 255, 0.12); border: 1px solid rgba(0, 240, 255, 0.35); color: #00f0ff; font-size: 11.5px; margin-bottom: 8px; text-align: center; display: flex; align-items: center; justify-content: center; gap: 6px;">
+              <NexusIcon name="check" style="width: 13px; height: 13px;" />
+              <span>{{ handoffNoticeMsg }}</span>
+            </div>
             <form class="cyber-composer-form" @submit.prevent="submitMessage">
               <div class="composer-input-row" :class="`mode-${workspaceMode}`">
                 <button type="button" class="composer-mode-tag" :class="workspaceMode"
@@ -313,7 +350,6 @@
         </button>
       </div>
     </div>
-
 
     <!-- ALL-IN-ONE SETTINGS SHEET -->
     <NexusSheet v-model="showSettings" title="Paramètres & Configuration">
@@ -393,55 +429,17 @@
 
         <!-- 2. Agent & Modèle -->
         <div v-show="settingsSection === 'agent'" class="settings-section-body">
-          <div class="sheet-section-title">AGENT DE CODE ACTIF</div>
-          <div class="agent-sheet-list">
-            <button v-for="agent in agentOptions" :key="agent.id" type="button" class="agent-card-row"
-              :class="{ selected: selectedBackend === agent.id }" @click="handleSelectBackend(agent.id)">
-              <div class="agent-card-icon">
-                <NexusIcon :name="agent.id === 'brain' ? 'sparkles' : agent.id === 'codex' ? 'zap' : agent.id === 'claude' ? 'cpu' : 'branch'" />
-              </div>
-              <div class="agent-card-info">
-                <div class="agent-card-name">{{ agent.name }}</div>
-                <div class="agent-card-desc">{{ agent.description }}</div>
-              </div>
-              <span v-if="selectedBackend === agent.id" class="agent-selected-badge">
-                <NexusIcon name="check" />
-              </span>
-            </button>
-          </div>
-
-          <div class="sheet-section-title model-section-title" style="margin-top: 14px;">
-            <span>MODÈLE ({{ selectedBackendShortLabel(selectedBackend) }})</span>
-            <span v-if="isLoadingModels" class="model-loading-spinner">Chargement…</span>
-          </div>
-
-          <div v-if="currentBackendModels.length" class="models-sheet-list">
-            <button v-for="m in currentBackendModels" :key="m.id || m.model" type="button" class="model-card-row"
-              :class="{ selected: currentSelectedModel === m.model }" @click="handleSelectModel(m.model)">
-              <div class="model-card-info">
-                <div class="model-card-name">{{ m.displayName || m.model }}</div>
-                <div v-if="m.description" class="model-card-desc">{{ m.description }}</div>
-              </div>
-              <span v-if="currentSelectedModel === m.model" class="agent-selected-badge">
-                <NexusIcon name="check" />
-              </span>
-            </button>
-          </div>
-          <div v-else-if="!isLoadingModels" class="models-empty-note">
-            <span>Modèle par défaut actif ({{ currentSelectedModel || 'automatique' }}).</span>
-          </div>
-
-          <div v-if="currentModelEfforts.length > 1" style="margin-top: 14px;">
-            <div class="sheet-section-title">EFFORT DE RAISONNEMENT</div>
-            <div class="effort-pills-row">
-              <button v-for="eff in currentModelEfforts" :key="eff.reasoningEffort" type="button"
-                class="effort-pill-btn" :class="{ active: currentSelectedEffort === eff.reasoningEffort }"
-                @click="handleSelectModel(currentSelectedModel, eff.reasoningEffort)">
-                <strong>{{ eff.reasoningEffort.toUpperCase() }}</strong>
-                <small v-if="eff.description"> {{ eff.description }}</small>
-              </button>
-            </div>
-          </div>
+          <NexusAgentModelPicker
+            section-title="AGENT DE CODE ACTIF"
+            :selected-backend="selectedBackend"
+            :models="currentBackendModels"
+            :selected-model="currentSelectedModel"
+            :selected-effort="currentSelectedEffort"
+            :efforts="currentModelEfforts"
+            :is-loading-models="isLoadingModels"
+            @select-backend="handleSelectBackend"
+            @select-model="handleSelectModel"
+          />
         </div>
 
         <!-- 2b. Persona & Mémoire (Upstash) -->
@@ -728,7 +726,7 @@
             <article v-for="task in tasks.slice(0, 5)" :key="task.taskId" class="task-row">
               <div class="task-line">
                 <span class="task-status" :class="task.status"><span class="status-dot" />{{ formatTaskStatus(task.status) }}</span>
-                <time>{{ formatRelativeTime(task.createdAt) }}</time>
+                <time>{{ formatRelativeTime(task.createdAt, now) }}</time>
               </div>
               <h4 style="font-size: 13px; margin: 4px 0;">{{ task.prompt }}</h4>
               <div class="task-subline">
@@ -750,86 +748,16 @@
     </NexusSheet>
 
     <!-- APPROVALS SHEET -->
-    <NexusSheet v-model="showApprovalModal" title="Autorisation requise">
-      <div v-if="activeApproval" class="approval-content">
-        <div class="approval-heading">
-          <NexusIcon name="shield" /><span>{{ activeApproval.agentName
-            }}<small>{{ formatApprovalKind(activeApproval.kind) }}</small></span>
-        </div>
-        <div v-if="activeApprovalParsed" class="approval-parsed-body">
-          <p class="approval-reason-banner">
-            {{ activeApproval.summary || activeApprovalParsed.reason }}
-          </p>
-
-          <div v-if="activeApprovalParsed.command" class="approval-parsed-item">
-            <span class="approval-parsed-label">Commande à exécuter :</span>
-            <pre class="approval-code"><code>{{ activeApprovalParsed.command }}</code></pre>
-            <span v-if="activeApprovalParsed.cwd" class="approval-cwd-tag">
-              📁 {{ activeApprovalParsed.cwd }}
-            </span>
-          </div>
-
-          <div v-if="activeApprovalParsed.files && activeApprovalParsed.files.length" class="approval-parsed-item">
-            <span class="approval-parsed-label">
-              {{ activeApprovalParsed.files.length > 1 ? "Fichiers concernés :" : "Fichier concerné :" }}
-            </span>
-            <ul class="approval-files-list">
-              <li v-for="(file, fIdx) in activeApprovalParsed.files" :key="fIdx" class="approval-file-entry">
-                <code>{{ file.path }}</code>
-              </li>
-            </ul>
-          </div>
-
-          <div v-if="activeApprovalParsed.network" class="approval-parsed-item">
-            <span class="approval-parsed-label">Accès réseau :</span>
-            <pre class="approval-code"><code>{{ activeApprovalParsed.network.protocol ? `${activeApprovalParsed.network.protocol}://` : '' }}{{ activeApprovalParsed.network.host }}</code></pre>
-          </div>
-
-          <div v-if="activeApprovalParsed.questions && activeApprovalParsed.questions.length" class="approval-questions">
-            <div v-for="(q, qIdx) in activeApprovalParsed.questions" :key="qIdx" class="question-block">
-              <p class="question-title"><strong>{{ q.question }}</strong></p>
-              <div class="question-options">
-                <button v-for="(opt, optIdx) in q.options" :key="optIdx" type="button" class="button secondary compact-btn"
-                  @click="decideApproval(activeApproval.approvalId, 'accept', opt)">
-                  {{ opt }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-        <p class="approval-expiry" :class="{
-          danger: getApprovalRemainingSeconds(activeApproval.expiresAt) <= 15,
-        }">
-          {{
-            isApprovalExpired(activeApproval.expiresAt)
-              ? "Demande expirée. L’action a été refusée."
-              : `Refus automatique dans ${getApprovalRemainingSeconds(activeApproval.expiresAt)} s.`
-          }}
-        </p>
-        <div v-if="pendingApprovals.length > 1" class="approval-pagination">
-          <button type="button" class="icon-button" :disabled="activeApprovalIndex === 0"
-            aria-label="Demande précédente" @click="activeApprovalIndex--">
-            <NexusIcon name="chevron" class="reversed" />
-          </button><span>{{ activeApprovalIndex + 1 }} / {{ pendingApprovals.length }}</span><button type="button"
-            class="icon-button" :disabled="activeApprovalIndex >= pendingApprovals.length - 1"
-            aria-label="Demande suivante" @click="activeApprovalIndex++">
-            <NexusIcon name="chevron" />
-          </button>
-        </div>
-        <div class="approval-actions">
-          <button type="button" class="button secondary" :disabled="isDecidingApproval || isApprovalExpired(activeApproval.expiresAt)
-            " @click="decideApproval(activeApproval.approvalId, 'decline')">
-            Refuser</button><button type="button" class="button primary" :disabled="isDecidingApproval || isApprovalExpired(activeApproval.expiresAt)
-              " @click="decideApproval(activeApproval.approvalId, 'accept')">
-            {{ isDecidingApproval ? "Envoi…" : "Autoriser" }}
-          </button>
-        </div>
-      </div>
-      <div v-else class="empty-state compact">
-        <NexusIcon name="check" />
-        <h3>Aucune demande en attente</h3>
-      </div>
-    </NexusSheet>
+    <NexusApprovalsSheet
+      v-model="showApprovalModal"
+      v-model:active-index="activeApprovalIndex"
+      :active-approval="activeApproval"
+      :active-approval-parsed="activeApprovalParsed"
+      :pending-count="pendingApprovals.length"
+      :is-deciding="isDecidingApproval"
+      :now="now"
+      @decide="decideApproval"
+    />
 
     <!-- DISCREET APPROVAL DECISION TOAST (Top-Layer Manual Popover, No Backdrop Blur) -->
     <div
@@ -884,57 +812,17 @@
 
     <!-- AGENT & MODEL SELECTOR SHEET -->
     <NexusSheet v-model="showAgentPickerSheet" title="Agent IA & Modèle">
-      <div class="agent-model-sheet">
-        <div class="sheet-section-title">AGENT IA</div>
-        <div class="agent-sheet-list">
-          <button v-for="agent in agentOptions" :key="agent.id" type="button" class="agent-card-row"
-            :class="{ selected: selectedBackend === agent.id }" @click="handleSelectBackend(agent.id)">
-            <div class="agent-card-icon">
-              <NexusIcon :name="agent.id === 'brain' ? 'sparkles' : agent.id === 'codex' ? 'zap' : agent.id === 'claude' ? 'cpu' : 'branch'" />
-            </div>
-            <div class="agent-card-info">
-              <div class="agent-card-name">{{ agent.name }}</div>
-              <div class="agent-card-desc">{{ agent.description }}</div>
-            </div>
-            <span v-if="selectedBackend === agent.id" class="agent-selected-badge">
-              <NexusIcon name="check" />
-            </span>
-          </button>
-        </div>
-
-        <div class="sheet-section-title model-section-title">
-          <span>MODÈLE ({{ selectedBackendShortLabel(selectedBackend) }})</span>
-          <span v-if="isLoadingModels" class="model-loading-spinner">Chargement…</span>
-        </div>
-
-        <div v-if="currentBackendModels.length" class="models-sheet-list">
-          <button v-for="m in currentBackendModels" :key="m.id || m.model" type="button" class="model-card-row"
-            :class="{ selected: currentSelectedModel === m.model }" @click="handleSelectModel(m.model)">
-            <div class="model-card-info">
-              <div class="model-card-name">{{ m.displayName || m.model }}</div>
-              <div v-if="m.description" class="model-card-desc">{{ m.description }}</div>
-            </div>
-            <span v-if="currentSelectedModel === m.model" class="agent-selected-badge">
-              <NexusIcon name="check" />
-            </span>
-          </button>
-        </div>
-        <div v-else-if="!isLoadingModels" class="models-empty-note">
-          <span>Modèle par défaut actif ({{ currentSelectedModel || 'automatique' }}).</span>
-        </div>
-
-        <div v-if="currentModelEfforts.length > 1" style="margin-top: 14px;">
-          <div class="sheet-section-title">EFFORT DE RAISONNEMENT</div>
-          <div class="effort-pills-row">
-            <button v-for="eff in currentModelEfforts" :key="eff.reasoningEffort" type="button"
-              class="effort-pill-btn" :class="{ active: currentSelectedEffort === eff.reasoningEffort }"
-              @click="handleSelectModel(currentSelectedModel, eff.reasoningEffort)">
-              <strong>{{ eff.reasoningEffort.toUpperCase() }}</strong>
-              <small v-if="eff.description"> {{ eff.description }}</small>
-            </button>
-          </div>
-        </div>
-      </div>
+      <NexusAgentModelPicker
+        section-title="AGENT IA"
+        :selected-backend="selectedBackend"
+        :models="currentBackendModels"
+        :selected-model="currentSelectedModel"
+        :selected-effort="currentSelectedEffort"
+        :efforts="currentModelEfforts"
+        :is-loading-models="isLoadingModels"
+        @select-backend="handleSelectBackend"
+        @select-model="handleSelectModel"
+      />
     </NexusSheet>
   </div>
 </template>
@@ -942,116 +830,36 @@
 <script setup lang="ts">
 import NexusFileBrowser from './components/NexusFileBrowser.vue';
 import NexusUsageDashboard from './components/NexusUsageDashboard.vue';
-import type { RuntimeDashboard } from "../../src/runtime/dashboard-types";
+import NexusDiffInspector from './components/NexusDiffInspector.vue';
+import NexusAgentModelPicker from './components/NexusAgentModelPicker.vue';
+import NexusApprovalsSheet from './components/NexusApprovalsSheet.vue';
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
-import { TextToSpeech } from "@capacitor-community/text-to-speech";
-import { createNativeSpeechPlayback } from "./utils/native-speech-playback.mjs";
-import { createFishSpeechPlayback, normalizeFishReferenceId } from "./utils/fish-speech-playback.mjs";
 import { shouldSpeakReply } from "./utils/voice-reply.mjs";
-import { createSpeechPlayback } from "./utils/speech-playback.mjs";
-import { cleanTextForSpeech } from "./utils/speech-text.mjs";
 import { getAssistantState, assistantStateLabels, getInteractionMessage } from "./utils/assistant-state.mjs";
 import { parseApprovalDetails } from "./utils/approval-parser.mjs";
+import { renderMarkdown } from "./utils/markdown.mjs";
+import { triggerHaptic } from "./utils/haptics.mjs";
+import { createProgressTracker } from "./utils/task-progress.mjs";
 import { APP_VERSION, APP_BUILD } from "./utils/app-version.mjs";
-import { Capacitor, registerPlugin } from "@capacitor/core";
-import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
-import { LocalNotifications } from "@capacitor/local-notifications";
-import { PushNotifications } from "@capacitor/push-notifications";
-import { StatusBar, Style } from "@capacitor/status-bar";
-import { VoiceRecorder } from "capacitor-voice-recorder";
-import { SpeechRecognition } from "@capacitor-community/speech-recognition";
-
-interface ConnectedNodeInfo {
-  nodeId: string;
-  nodeName: string;
-  online: boolean;
-  state: "idle" | "busy" | "offline";
-  lastHeartbeat?: number;
-  activeTaskId?: string;
-  activeProject?: {
-    id?: string;
-    name: string;
-    path: string;
-    currentBranch?: string;
-  };
-}
-
-interface ProjectInfo {
-  id?: string;
-  name: string;
-  path: string;
-  nodeId?: string;
-  currentBranch?: string;
-  lastActive?: number;
-  isActive?: boolean;
-}
-
-interface CoreStatusData {
-  uptimeSeconds: number;
-  totalNodes: number;
-  onlineNodes: number;
-  nodes: ConnectedNodeInfo[];
-  projects: ProjectInfo[];
-  activeTasks?: number;
-  pendingApprovals?: number;
-}
-
-interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  backend: "brain" | "codex" | "antigravity" | "claude";
-  text: string;
-  timestamp: number;
-  fileSummary?: string;
-  error?: boolean;
-}
-
-interface RemoteTaskItem {
-  taskId: string;
-  backend: "codex" | "antigravity" | "claude" | "brain";
-  prompt: string;
-  projectId?: string;
-  nodeId: string;
-  status: "pending" | "running" | "completed" | "failed" | "cancelled";
-  stage?: string;
-  progressMessage?: string;
-  activeTool?: string;
-  createdAt: number;
-  startedAt?: number;
-  completedAt?: number;
-  replyText?: string;
-  text?: string;
-  fileSummary?: string;
-  result?: {
-    text?: string;
-    fileSummary?: string;
-    filesChanged?: string[];
-  };
-  error?:
-    | string
-    | {
-        code?: string;
-        message?: string;
-      };
-}
-
-interface PendingApprovalItem {
-  approvalId: string;
-  taskId: string;
-  nodeId: string;
-  agentName: string;
-  kind: "command" | "fileChange" | "consent";
-  toolName?: string;
-  summary?: string;
-  details: string;
-  expiresAt: number;
-  createdAt: number;
-  status: "pending" | "accepted" | "declined" | "cancelled" | "timed_out";
-  decidedAt?: number;
-  decidedBy?: string;
-  decision?: "accept" | "decline";
-  cancelReason?: string;
-}
+import { Capacitor } from "@capacitor/core";
+import { useSpeechPlayback } from "./composables/useSpeechPlayback";
+import { useVoiceRecording } from "./composables/useVoiceRecording";
+import { useSystemNotifications } from "./composables/useSystemNotifications";
+import { useDiffInspector } from "./composables/useDiffInspector";
+import { useAgentWorkspace } from "./composables/useAgentWorkspace";
+import { useChatHistory } from "./composables/useChatHistory";
+import {
+  selectedBackendShortLabel,
+  selectedBackendLabel,
+  formatTaskStatus,
+  formatTime,
+  formatRelativeTime,
+  type ChatMessage,
+  type CoreStatusData,
+  type PendingApprovalItem,
+  type ProjectInfo,
+  type RemoteTaskItem,
+} from "./types/nexus";
 
 // Navigation & View state
 const currentView = ref<"home" | "workspace">("home");
@@ -1061,11 +869,6 @@ const slideDirection = ref<"forward" | "backward">("forward");
 const settingsSection = ref<"connection" | "agent" | "persona" | "voice" | "notifications" | "projects" | "quotas">("connection");
 const activeTab = ref<"chat" | "agent" | "activity" | "dashboard" | "system">("chat");
 const selectedBackend = ref<"codex" | "antigravity" | "claude" | "brain">("codex");
-
-function shortModelName(model: string): string {
-  if (!model) return "";
-  return model.replace(/^claude-/, "").replace(/^gemini-/, "").replace(/^(groq|gemini|mistral|openrouter|cerebras|ollama):/, "$1:");
-}
 
 function enterMode(mode: "code" | "brain") {
   workspaceMode.value = mode;
@@ -1110,44 +913,26 @@ const showQuickMenu = ref<boolean>(false);
 const showProjectMenu = ref<boolean>(false);
 const showAgentPickerSheet = ref<boolean>(false);
 
-const agentOptions = [
-  {
-    id: "codex" as const,
-    name: "Codex",
-    description: "Modèle de code rapide & précis (OpenAI)",
-  },
-  {
-    id: "antigravity" as const,
-    name: "Antigravity",
-    description: "Agent autonome multi-outils (DeepMind)",
-  },
-  {
-    id: "claude" as const,
-    name: "Claude Code",
-    description: "Agent de code autonome (Anthropic)",
-  },
-  {
-    id: "brain" as const,
-    name: "Nexus Brain",
-    description: "Orchestration & brainstorming conceptuel",
-  },
-];
-
-function selectedBackendShortLabel(b?: string): string {
-  if (b === "brain") return "Brain";
-  if (b === "codex") return "Codex";
-  if (b === "antigravity") return "AGY";
-  if (b === "claude") return "Claude";
-  return "Agent";
-}
-
 // Core Connection state
 const coreUrl = ref<string>("");
+function apiUrl(path = ""): string {
+  return `${coreUrl.value.replace(/\/+$/, "")}${path}`;
+}
 const coreUrlInput = ref<string>("");
 const authToken = ref<string>("");
 const authTokenInput = ref<string>("");
 const showSettings = ref<boolean>(false);
-const settingsTab = ref('overview');
+
+function getRequestHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+  };
+  if (authToken.value) {
+    headers["Authorization"] = `Bearer ${authToken.value}`;
+  }
+  return headers;
+}
+
 function openConnectionSettings() {
   settingsSection.value = 'connection';
   showSettings.value = true;
@@ -1157,20 +942,12 @@ function openPersonaSettings() {
   showSettings.value = true;
   void fetchPersonaAndMemory();
 }
-const usageDashboard = ref<RuntimeDashboard | null>(null);
-const dashboardLoading = ref(false);
-const dashboardError = ref('');
-let dashboardController: AbortController | undefined;
-let dashboardFetchedAt = 0;
+
 const isRefreshing = ref<boolean>(false);
-const connectionStatus = ref<"connecting" | "connected" | "error">(
-  "connecting",
-);
+const connectionStatus = ref<"connecting" | "connected" | "error">("connecting");
 const errorMessage = ref<string>("");
 const lastUpdated = ref<number | null>(null);
 const now = ref<number>(Date.now());
-const copied = ref<boolean>(false);
-const deferredPrompt = ref<any>(null);
 
 const coreStatus = ref<CoreStatusData | null>(null);
 let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -1183,8 +960,17 @@ const voiceTaskIds = new Set<string>();
 watch(inputPrompt, (text) => { if (!text.trim()) draftFromVoice.value = false; }, { flush: "sync" });
 const isSending = ref<boolean>(false);
 const inFlightStartedAt = ref<number | null>(null);
-const inFlightBackend = ref<"brain" | "codex" | "antigravity" | null>(null);
+const inFlightBackend = ref<"brain" | "codex" | "antigravity" | "claude" | null>(null);
 const lastTaskFailed = ref(false);
+
+const isProgressExpanded = ref(false);
+const progressTracker = createProgressTracker();
+const inFlightProgressSteps = ref(progressTracker.getSteps());
+
+function toggleProgressExpanded() {
+  isProgressExpanded.value = !isProgressExpanded.value;
+  triggerHaptic("selection");
+}
 
 const currentInFlightTaskId = ref<string | null>(null);
 const messages = ref<ChatMessage[]>([]);
@@ -1196,6 +982,80 @@ const canScrollHomeUp = ref(false);
 const canScrollHomeDown = ref(false);
 const chatTextareaRef = ref<HTMLTextAreaElement | null>(null);
 const settingsError = ref("");
+
+// Activity & Tasks State
+const tasks = ref<RemoteTaskItem[]>([]);
+const isRefreshingTasks = ref<boolean>(false);
+
+// Approvals State
+const approvals = ref<PendingApprovalItem[]>([]);
+const isRefreshingApprovals = ref<boolean>(false);
+const showApprovalModal = ref<boolean>(false);
+const isDecidingApproval = ref<boolean>(false);
+const approvalDecidingId = ref<string | null>(null);
+const activeApprovalIndex = ref<number>(0);
+
+// Composables
+const {
+  voiceBackendStatus,
+  ttsEnabled,
+  autoSpeak,
+  speechRate,
+  speechVoice,
+  ttsProvider,
+  fishApiKeyInput,
+  isSavingFishConfig,
+  fishStatusMsg,
+  isEditingFishVoice,
+  showCustomApiKey,
+  fishReferenceDraft,
+  fishReferenceInputRef,
+  speechVoices,
+  isSpeaking,
+  currentSpeakingId,
+  speechError,
+  ttsAvailable,
+  effectiveFishVoiceId,
+  fishVoiceSourceNote,
+  selectedSystemVoiceLabel,
+  selectedFishVoiceLabel,
+  toggleEditFishVoice,
+  onFishInputClick,
+  setTtsProvider,
+  saveFishVoiceConfig,
+  stopSpeaking,
+  speakMessage,
+  toggleSpeakMessage,
+  toggleTts,
+  fetchVoiceStatus,
+  initTtsEngine,
+  cleanupTtsEngine,
+} = useSpeechPlayback({
+  coreUrl,
+  apiUrl,
+  getRequestHeaders,
+});
+
+const {
+  notificationsEnabled,
+  fcmToken,
+  notifiedTaskIds,
+  syncNativeDaemonConfig,
+  sendSystemNotification,
+  testUrgentNotification,
+  sendTokenToDaemon,
+  testFcmPush,
+  notifyApprovalIfNeeded,
+  initNativeNotifications,
+} = useSystemNotifications({
+  coreUrl,
+  authToken,
+  errorMessage,
+  apiUrl,
+  approvals,
+  showApprovalModal,
+  activeApprovalIndex,
+});
 
 function updateMessagesScrollState() {
   const el = messagesScrollRef.value;
@@ -1253,640 +1113,10 @@ function resizeComposer() {
   textarea.style.height = `${Math.min(textarea.scrollHeight, 140)}px`;
 }
 
-// Voice / Backend Voice Status
-const voiceBackendStatus = ref<{
-  available: boolean;
-  engine?: string;
-  provider?: string;
-  language?: string;
-  tts?: {
-    provider?: "fish" | "system";
-    fishAudioAvailable?: boolean;
-    hasApiKey?: boolean;
-    referenceId?: string;
-    model?: string;
-  };
-} | null>(null);
-
-// TTS State
-const ttsEnabled = ref<boolean>(true);
-const autoSpeak = ref(true);
-const speechRate = ref(1);
-const speechVoice = ref("");
-const ttsProvider = ref<"fish" | "system">("fish");
-const fishReferenceId = ref("");
-const fishModel = ref("s2.1-pro-free");
-const fishApiKeyInput = ref("");
-const isSavingFishConfig = ref(false);
-const fishStatusMsg = ref("");
-const isEditingFishVoice = ref(false);
-const showCustomApiKey = ref(false);
-const fishReferenceDraft = ref("");
-const fishReferenceInputRef = ref<HTMLInputElement | null>(null);
-const speechVoices = ref<SpeechSynthesisVoice[]>([]);
-
-function refreshSpeechVoices() {
-  speechVoices.value = window.speechSynthesis.getVoices();
-}
-
-const effectiveFishVoiceId = computed(() => {
-  return (
-    normalizeFishReferenceId(fishReferenceId.value) ||
-    normalizeFishReferenceId(voiceBackendStatus.value?.tts?.referenceId) ||
-    ""
-  );
-});
-
-const fishVoiceSourceNote = computed(() => {
-  const hasKey = voiceBackendStatus.value?.tts?.hasApiKey;
-  const keyNote = hasKey ? "Clé API active (.env)" : "Clé API non détectée";
-  if (fishReferenceId.value.trim()) {
-    return `${keyNote} · Voix personnalisée active`;
-  }
-  if (voiceBackendStatus.value?.tts?.referenceId) {
-    return `${keyNote} · Voix active du fichier .env`;
-  }
-  return `${keyNote} · Aucune voix configurée`;
-});
-
-function toggleEditFishVoice() {
-  if (isEditingFishVoice.value) {
-    isEditingFishVoice.value = false;
-    fishReferenceDraft.value = effectiveFishVoiceId.value;
-  } else {
-    fishReferenceDraft.value = effectiveFishVoiceId.value;
-    isEditingFishVoice.value = true;
-    nextTick(() => {
-      fishReferenceInputRef.value?.focus();
-      fishReferenceInputRef.value?.select();
-    });
-  }
-}
-
-function onFishInputClick() {
-  if (!isEditingFishVoice.value) {
-    toggleEditFishVoice();
-  }
-}
-
-watch(
-  effectiveFishVoiceId,
-  (newVal) => {
-    if (!isEditingFishVoice.value) {
-      fishReferenceDraft.value = newVal;
-    }
-  },
-  { immediate: true }
-);
-
-const selectedSystemVoiceLabel = computed(() => {
-  if (!speechVoice.value) return "Automatique · français de France";
-  const found = speechVoices.value.find((v) => v.voiceURI === speechVoice.value);
-  if (found) return `${found.name} (${found.lang})`;
-  return speechVoice.value;
-});
-
-const selectedFishVoiceLabel = computed(() => {
-  const ref = effectiveFishVoiceId.value;
-  if (ref) return `Voix personnalisée (${ref.slice(0, 10)}…)`;
-  return "Non configurée (cliquez pour choisir une voix)";
-});
-
-function setTtsProvider(provider: "fish" | "system") {
-  ttsProvider.value = provider;
-  stopSpeaking();
-  void triggerHaptic("release");
-}
-
-watch([ttsEnabled, autoSpeak, speechRate, speechVoice, ttsProvider, fishReferenceId, fishModel], () => {
-  if (!ttsEnabled.value) { stopSpeaking(); speechError.value = ""; }
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem("nexus_tts_enabled", String(ttsEnabled.value));
-    localStorage.setItem(
-      "nexus_tts_preferences",
-      JSON.stringify({
-        autoSpeak: autoSpeak.value,
-        rate: speechRate.value,
-        voice: speechVoice.value,
-        provider: ttsProvider.value,
-        fishReferenceId: normalizeFishReferenceId(fishReferenceId.value),
-        fishModel: fishModel.value,
-      })
-    );
-  } catch { /* Preferences remain usable for this session when storage is unavailable. */ }
-});
-const isSpeaking = ref<boolean>(false);
-const currentSpeakingId = ref<string | null>(null);
-
-const speechError = ref("");
-const ttsAvailable = ref(false);
-let speechPlayback:
-  | ReturnType<typeof createSpeechPlayback>
-  | ReturnType<typeof createNativeSpeechPlayback>
-  | ReturnType<typeof createFishSpeechPlayback>
-  | undefined;
-
-async function synthesizeFishSpeech(
-  chunkText: string,
-  opts: { referenceId?: string; rate?: number; model?: string } = {}
-): Promise<string> {
-  if (!coreUrl.value) {
-    throw new Error("Serveur Nexus non configuré");
-  }
-  const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/voice/synthesize`;
-  const headers = {
-    ...getRequestHeaders(),
-    "Content-Type": "application/json",
-  };
-  const res = await fetch(targetUrl, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      text: chunkText,
-      referenceId: normalizeFishReferenceId(opts.referenceId || effectiveFishVoiceId.value) || undefined,
-      rate: opts.rate ?? speechRate.value,
-      model: opts.model || fishModel.value || "s2.1-pro-free",
-    }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data?.audioBase64) {
-    throw new Error(data?.error || `Erreur HTTP ${res.status}`);
-  }
-  const mimeType = data.mimeType || "audio/mpeg";
-  return `data:${mimeType};base64,${data.audioBase64}`;
-}
-
-async function saveFishVoiceConfig() {
-  const cleanDraft = normalizeFishReferenceId(fishReferenceDraft.value);
-  fishReferenceId.value = cleanDraft;
-  fishReferenceDraft.value = cleanDraft;
-  fishStatusMsg.value = "";
-  if (!coreUrl.value) {
-    fishStatusMsg.value = "✓ Préférence enregistrée localement (connectez le serveur pour synchroniser).";
-    isEditingFishVoice.value = false;
-    return;
-  }
-  isSavingFishConfig.value = true;
-  try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/voice/config`;
-    const headers = {
-      ...getRequestHeaders(),
-      "Content-Type": "application/json",
-    };
-    const res = await fetch(targetUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        ttsProvider: ttsProvider.value,
-        referenceId: cleanDraft,
-        model: fishModel.value || "s2.1-pro-free",
-        ...(fishApiKeyInput.value.trim() ? { apiKey: fishApiKeyInput.value.trim() } : {}),
-      }),
-    });
-    if (res.ok) {
-      const updated = await res.json();
-      voiceBackendStatus.value = updated;
-      if (updated?.tts?.referenceId !== undefined) {
-        fishReferenceId.value = normalizeFishReferenceId(updated.tts.referenceId);
-        fishReferenceDraft.value = fishReferenceId.value;
-      }
-      fishApiKeyInput.value = "";
-      showCustomApiKey.value = false;
-      isEditingFishVoice.value = false;
-      fishStatusMsg.value = "✓ Voix Fish Audio enregistrée";
-      void triggerHaptic("success");
-    } else {
-      fishStatusMsg.value = "⚠ Impossible d'enregistrer sur le serveur.";
-    }
-  } catch {
-    fishStatusMsg.value = "✓ Sauvegardé localement sur cet appareil.";
-    isEditingFishVoice.value = false;
-  } finally {
-    isSavingFishConfig.value = false;
-  }
-}
-
-function stopSpeaking() {
-  return speechPlayback?.stop();
-}
-
-function speakMessage(text: string, messageId?: string) {
-  speechError.value = "";
-  if (!ttsEnabled.value) return;
-  if (!ttsAvailable.value || !speechPlayback) {
-    speechError.value = "La lecture vocale n’est pas disponible sur cet appareil.";
-    return;
-  }
-  const clean = cleanTextForSpeech(text);
-  const useFish =
-    ttsProvider.value === "fish" &&
-    Boolean(effectiveFishVoiceId.value || voiceBackendStatus.value?.tts?.fishAudioAvailable);
-  if (clean) {
-    speechPlayback.speak(clean, messageId, {
-      rate: speechRate.value,
-      voiceURI: speechVoice.value,
-      provider: useFish ? "fish" : "system",
-      fishEnabled: useFish,
-      fishReferenceId: normalizeFishReferenceId(effectiveFishVoiceId.value),
-      fishModel: fishModel.value,
-    });
-  }
-}
-
-function toggleSpeakMessage(msg: ChatMessage) {
-  if (currentSpeakingId.value === msg.id && isSpeaking.value) {
-    stopSpeaking();
-  } else {
-    speakMessage(msg.text, msg.id);
-  }
-}
-
-function toggleTts() {
-  ttsEnabled.value = !ttsEnabled.value;
-  if (!ttsEnabled.value) {
-    stopSpeaking();
-  }
-  triggerHaptic("light");
-}
-
-// System Notifications
-const notificationsEnabled = ref<boolean>(true);
-if (typeof window !== "undefined") {
-  try {
-    const savedNotifs = localStorage.getItem("nexus_notifications_enabled");
-    if (savedNotifs !== null) notificationsEnabled.value = savedNotifs === "true";
-  } catch {}
-}
-
-watch(notificationsEnabled, (val) => {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem("nexus_notifications_enabled", String(val));
-  } catch {}
-  void syncNativeDaemonConfig();
-});
-
-interface NexusNativeAlertPluginInterface {
-  sendUrgentNotification(options: {
-    title: string;
-    body: string;
-    approvalId?: string;
-    dedupKey?: string;
-  }): Promise<void>;
-  configureDaemon(options: {
-    url: string;
-    token: string;
-    notificationsEnabled: boolean;
-  }): Promise<void>;
-}
-const NexusNativeAlert = registerPlugin<NexusNativeAlertPluginInterface>("NexusNativeAlert");
-
-async function syncNativeDaemonConfig() {
-  if (!Capacitor.isNativePlatform()) return;
-  try {
-    await NexusNativeAlert.configureDaemon({
-      url: coreUrl.value || "",
-      token: authToken.value || "",
-      notificationsEnabled: notificationsEnabled.value,
-    });
-  } catch (err) {
-    console.warn("NexusNativeAlert.configureDaemon error:", err);
-  }
-}
-
-async function sendSystemNotification(title: string, body: string, extra?: Record<string, any>) {
-  if (!notificationsEnabled.value) return;
-  if (Capacitor.isNativePlatform()) {
-    try {
-      await NexusNativeAlert.sendUrgentNotification({
-        title,
-        body,
-        approvalId: extra?.approvalId || "",
-        dedupKey: extra?.dedupKey || (extra?.approvalId ? `approval:${extra.approvalId}` : ""),
-      });
-    } catch (e) {
-      console.warn("NexusNativeAlert error, fallback local-notif:", e);
-      try {
-        await LocalNotifications.schedule({
-          notifications: [
-            {
-              id: Math.floor(Math.random() * 1000000) + 1,
-              title,
-              body,
-              channelId: "nexus_urgent_sms_channel_v2",
-              extra,
-            },
-          ],
-        });
-      } catch {}
-    }
-  } else if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-    try {
-      new Notification(title, { body, icon: "/pwa-icon.png", badge: "/pwa-icon.png" });
-    } catch {}
-  }
-}
-
-async function testUrgentNotification() {
-  await sendSystemNotification(
-    "Nexus : Test d'alerte SMS",
-    "Ceci est une alerte sonore et pop-up Heads-Up comme un SMS !"
-  );
-}
-
-const fcmToken = ref<string>("");
-
-async function sendTokenToDaemon(token: string) {
-  if (!coreUrl.value || !token) return;
-  try {
-    const rawUrl = coreUrl.value.replace(/\/+$/, "");
-    await fetch(`${rawUrl}/api/push/register`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(authToken.value ? { Authorization: `Bearer ${authToken.value}` } : {}),
-      },
-      body: JSON.stringify({ token }),
-    });
-    console.log("[FCM] Token enregistré avec succès sur le daemon");
-  } catch (err) {
-    console.warn("[FCM] Échec enregistrement token sur le daemon:", err);
-  }
-}
-
-async function testFcmPush() {
-  if (!coreUrl.value) {
-    errorMessage.value = "Connectez-vous d'abord au daemon.";
-    return;
-  }
-  try {
-    const rawUrl = coreUrl.value.replace(/\/+$/, "");
-    const res = await fetch(`${rawUrl}/api/push/test`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(authToken.value ? { Authorization: `Bearer ${authToken.value}` } : {}),
-      },
-    });
-    const data = await res.json();
-    if (res.ok) {
-      alert("✅ Requête push envoyée à Google ! Votre téléphone va sonner.");
-    } else {
-      alert(`Erreur push : ${data.error || "Échec"}`);
-    }
-  } catch (err: any) {
-    alert(`Erreur de connexion au daemon : ${err.message}`);
-  }
-}
-
-// Agent & Models state
-interface ModelItem {
-  id: string;
-  model: string;
-  displayName: string;
-  description?: string;
-  context?: string;
-  supportedReasoningEfforts?: Array<{ reasoningEffort: string; description: string }>;
-  defaultReasoningEffort?: string;
-}
-
-const agentModels = ref<Record<string, { models: ModelItem[]; selected?: string; selectedEffort?: string }>>({
-  brain: { models: [], selected: "", selectedEffort: "" },
-  codex: { models: [], selected: "", selectedEffort: "high" },
-  antigravity: { models: [], selected: "", selectedEffort: "" },
-  claude: { models: [], selected: "claude-sonnet-4-6", selectedEffort: "high" },
-});
-const isLoadingModels = ref<boolean>(false);
-
-const currentBackendModels = computed(() => {
-  return agentModels.value[selectedBackend.value]?.models || [];
-});
-
-const currentSelectedModel = computed(() => {
-  return agentModels.value[selectedBackend.value]?.selected || "";
-});
-
-const currentSelectedEffort = computed(() => {
-  return agentModels.value[selectedBackend.value]?.selectedEffort || "high";
-});
-
-const currentModelEfforts = computed(() => {
-  const m = currentBackendModels.value.find(
-    (item) => item.model === currentSelectedModel.value || item.id === currentSelectedModel.value
-  );
-  return m?.supportedReasoningEfforts || [];
-});
-
-const selectedModelLabel = computed(() => {
-  if (selectedBackend.value === 'brain' && usageDashboard.value) {
-    const selection = usageDashboard.value.brain.selection;
-    return selection === 'auto' ? 'Sélection automatique' : selection.replace(':', ' · ');
-  }
-  const actual = usageDashboard.value?.agents.find(agent => agent.id === selectedBackend.value)?.model;
-  return actual || currentBackendModels.value.find(model => model.model === currentSelectedModel.value)?.displayName || currentSelectedModel.value;
-});
-
-// Persona & Memory State (Upstash synced)
-const personaInput = ref<string>("");
-const projectPreferencesInput = ref<string>("");
-const projectMemoryInput = ref<string>("");
-const isLoadingPersona = ref<boolean>(false);
-const isSavingPersona = ref<boolean>(false);
-const personaStatusMsg = ref<string>("");
-
-async function fetchPersonaAndMemory() {
-  if (!coreUrl.value || !isNodeReady.value) return;
-  isLoadingPersona.value = true;
-  personaStatusMsg.value = "";
-  try {
-    const base = coreUrl.value.replace(/\/+$/, "");
-    const headers = getRequestHeaders();
-    const activePath = primaryNode.value?.activeProject?.path;
-    const query = activePath ? `?path=${encodeURIComponent(activePath)}` : "";
-    const personaRes = await fetch(`${base}/api/persona${query}`, { headers });
-    if (personaRes.ok) {
-      const pData = await personaRes.json();
-      personaInput.value = pData.persona ?? "";
-      projectPreferencesInput.value = pData.projectPreferences ?? "";
-      projectMemoryInput.value = pData.projectMemory ?? "";
-    }
-  } catch (err) {
-    console.warn("[Persona] Échec du chargement Persona/Mémoire:", err);
-  } finally {
-    isLoadingPersona.value = false;
-  }
-}
-
-async function savePersonaAndMemory() {
-  if (!coreUrl.value || isSavingPersona.value) return;
-  isSavingPersona.value = true;
-  personaStatusMsg.value = "";
-  try {
-    const base = coreUrl.value.replace(/\/+$/, "");
-    const headers = {
-      ...getRequestHeaders(),
-      "Content-Type": "application/json",
-    };
-    const activePath = primaryNode.value?.activeProject?.path;
-    const pRes = await fetch(`${base}/api/persona`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        projectPath: activePath || undefined,
-        persona: personaInput.value,
-        projectPreferences: projectPreferencesInput.value,
-        projectMemory: projectMemoryInput.value,
-      }),
-    });
-    if (pRes.ok) {
-      const saved = await pRes.json().catch(() => null);
-      if (saved && typeof saved === "object") {
-        if (typeof saved.persona === "string") personaInput.value = saved.persona;
-        if (typeof saved.projectPreferences === "string") {
-          projectPreferencesInput.value = saved.projectPreferences;
-        }
-        if (typeof saved.projectMemory === "string") {
-          projectMemoryInput.value = saved.projectMemory;
-        }
-      }
-      personaStatusMsg.value = "✓ Sauvegardé et synchronisé sur Upstash";
-      triggerHaptic("success");
-    } else {
-      personaStatusMsg.value = "⚠ Erreur lors de la sauvegarde.";
-    }
-  } catch {
-    personaStatusMsg.value = "⚠ Impossible de joindre le serveur Nexus.";
-  } finally {
-    isSavingPersona.value = false;
-  }
-}
-
 async function sendQuickCommand(cmd: string) {
   if (isSending.value) return;
   triggerHaptic("release");
   await sendPrompt(cmd, false);
-}
-
-function handleSettingsTabKey(event: KeyboardEvent) {
-  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-  event.preventDefault();
-  settingsTab.value = event.key === 'Home' ? 'overview' : event.key === 'End' ? 'preferences' : settingsTab.value === 'overview' ? 'preferences' : 'overview';
-  void nextTick(() => document.getElementById(`${settingsTab.value === 'overview' ? 'overview' : 'preferences'}-tab`)?.focus());
-}
-
-async function fetchDashboard() {
-  if (dashboardLoading.value) return;
-  if (!coreUrl.value || !isNodeReady.value) {
-    dashboardError.value = 'Connectez votre poste dans Voix & connexion pour consulter ses informations.';
-    return;
-  }
-  dashboardLoading.value = true;
-  dashboardError.value = '';
-  dashboardFetchedAt = Date.now();
-  const controller = new AbortController();
-  dashboardController = controller;
-  // Also works in Android WebViews without AbortSignal.any/timeout.
-  const timer = setTimeout(() => controller.abort(), 10000);
-  try {
-    const query = primaryNode.value?.nodeId ? `?nodeId=${encodeURIComponent(primaryNode.value.nodeId)}` : '';
-    const response = await fetch(`${coreUrl.value.replace(/\/+$/, '')}/api/dashboard${query}`, {
-      headers: getRequestHeaders(), signal: controller.signal,
-    });
-    if (!response.ok) throw new Error(response.status === 401 ? 'Renseignez le jeton Nexus dans Voix & connexion pour consulter les quotas.' : response.status === 404 ? 'Mettez à jour Nexus Core et Nexus Desktop pour consulter cet aperçu.' : 'Le poste ne peut pas fournir ses quotas. Réessayez ou vérifiez Nexus Desktop.');
-    const data = await response.json();
-    if (dashboardController !== controller) return;
-    if (!data?.brain || !Array.isArray(data.brain.providers) || !Array.isArray(data.agents)) throw new Error('Mettez à jour Nexus Desktop pour afficher les informations de session.');
-    usageDashboard.value = data;
-  } catch (error: any) {
-    if (dashboardController === controller) dashboardError.value = controller.signal.aborted ? 'Le poste ne répond pas dans le délai prévu. Réessayez.' : error?.message || 'Impossible d’actualiser les quotas.';
-  } finally {
-    clearTimeout(timer);
-    if (dashboardController === controller) { dashboardLoading.value = false; dashboardController = undefined; }
-  }
-}
-
-async function fetchModelsForBackend(backend: "brain" | "codex" | "antigravity" | "claude") {
-  if (!coreUrl.value) return;
-  isLoadingModels.value = true;
-  try {
-    const res = await fetch(
-      `${coreUrl.value.replace(/\/+$/, "")}/api/models?backend=${backend}`,
-      { headers: getRequestHeaders() }
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data.models)) {
-        agentModels.value[backend] = {
-          models: data.models,
-          selected:
-            data.selected?.model || agentModels.value[backend]?.selected || data.models[0]?.model,
-          selectedEffort:
-            data.selected?.effort || agentModels.value[backend]?.selectedEffort || data.models[0]?.defaultReasoningEffort || "high",
-        };
-      }
-    }
-  } catch (err) {
-    console.warn(`[Models] Échec du chargement des modèles (${backend}):`, err);
-  } finally {
-    isLoadingModels.value = false;
-  }
-}
-
-async function handleSelectBackend(backend: "brain" | "codex" | "antigravity" | "claude") {
-  selectedBackend.value = backend;
-  if (backend === "brain") {
-    workspaceMode.value = "brain";
-  } else {
-    workspaceMode.value = "code";
-    lastCodingBackend.value = backend;
-  }
-  triggerHaptic("release");
-  await fetchModelsForBackend(backend);
-}
-
-async function handleSelectModel(modelName: string, effort?: string) {
-  if (!coreUrl.value || !modelName) return;
-  const backend = selectedBackend.value;
-  const foundModel = (agentModels.value[backend]?.models || []).find(
-    (m) => m.model === modelName || m.id === modelName
-  );
-  const resolvedEffort =
-    effort ||
-    agentModels.value[backend]?.selectedEffort ||
-    foundModel?.defaultReasoningEffort ||
-    undefined;
-  try {
-    const headers = getRequestHeaders();
-    headers["Content-Type"] = "application/json";
-    const res = await fetch(`${coreUrl.value.replace(/\/+$/, "")}/api/models/select`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        backend,
-        model: modelName,
-        context: foundModel?.context,
-        effort: resolvedEffort,
-        selection: {
-          model: modelName,
-          context: foundModel?.context,
-          effort: resolvedEffort,
-        },
-      }),
-    });
-    if (res.ok) {
-      agentModels.value[backend].selected = modelName;
-      if (resolvedEffort) {
-        agentModels.value[backend].selectedEffort = resolvedEffort;
-      }
-      void fetchDashboard();
-      triggerHaptic("press");
-    } else {
-      errorMessage.value = "Impossible de sélectionner ce modèle. Vérifiez sa configuration sur le poste Nexus.";
-    }
-  } catch {
-    errorMessage.value = "Impossible de joindre le poste pour changer de modèle.";
-  }
 }
 
 function openAgentPicker() {
@@ -1904,7 +1134,6 @@ function handleComposerKeydown(event: KeyboardEvent) {
     void submitMessage();
   }
 }
-
 
 watch(inputPrompt, () => nextTick(resizeComposer));
 watch(activeTab, (tab) => {
@@ -1924,19 +1153,6 @@ function syncViewport() {
   updateHomeScrollState();
   updateMessagesScrollState();
 }
-
-// Activity & Tasks State
-const tasks = ref<RemoteTaskItem[]>([]);
-const isRefreshingTasks = ref<boolean>(false);
-const activeTaskFilter = ref<"all" | "running" | "completed" | "failed">("all");
-
-// Approvals State
-const approvals = ref<PendingApprovalItem[]>([]);
-const isRefreshingApprovals = ref<boolean>(false);
-const showApprovalModal = ref<boolean>(false);
-const isDecidingApproval = ref<boolean>(false);
-const approvalDecidingId = ref<string | null>(null);
-const activeApprovalIndex = ref<number>(0);
 
 const approvalDecisionToastRef = ref<HTMLElement | null>(null);
 const approvalDecisionToast = ref<{
@@ -2027,23 +1243,139 @@ const activeApprovalParsed = computed<any>(() => {
   return parseApprovalDetails(activeApproval.value);
 });
 
-// Voice / Push-to-Talk State
-const isListening = ref<boolean>(false);
-const isProcessingAudio = ref<boolean>(false);
-const interimTranscript = ref<string>("");
-const autoSendVoice = ref<boolean>(true);
 const isNativeApp = computed(() => Capacitor.isNativePlatform());
 
-let recognitionInstance: any = null;
-let mediaRecorderInstance: MediaRecorder | null = null;
-let mediaStreamInstance: MediaStream | null = null;
-let recordedAudioChunks: Blob[] = [];
-let speechRecordingStart = 0;
-let isPressingMic = false;
-let clickToggleActive = false;
-let nativeSpeechActive = false;
-let nativeRecorderActive = false;
-let nativeSpeechStopTimer: ReturnType<typeof setTimeout> | null = null;
+// Computed properties for Nodes & Projects (needed by useVoiceRecording via submitMessage)
+const connectionStatusText = computed(() => {
+  if (connectionStatus.value === "connected") return "Nexus connecté";
+  if (connectionStatus.value === "connecting") return "Connexion à Nexus...";
+  return "Déconnecté de Nexus";
+});
+
+const onlineNodes = computed(() => {
+  return connectionStatus.value === "connected"
+    ? (coreStatus.value?.nodes || []).filter((n) => n.online)
+    : [];
+});
+
+const selectedNodeId = ref('');
+const primaryNode = computed(() => {
+  return onlineNodes.value.find(node => node.nodeId === selectedNodeId.value) || onlineNodes.value[0] || null;
+});
+
+const isNodeReady = computed(() => {
+  return connectionStatus.value === "connected" && onlineNodes.value.length > 0;
+});
+
+const activeProjectName = computed(() => {
+  return (
+    primaryNode.value?.activeProject?.name ||
+    coreStatus.value?.projects?.find((p) => p.isActive)?.name ||
+    ""
+  );
+});
+
+const projectsList = computed(() => {
+  return coreStatus.value?.projects || [];
+});
+
+const isSwitchingProject = ref(false);
+const switchingProjectId = ref<string | null>(null);
+
+const {
+  usageDashboard,
+  dashboardLoading,
+  dashboardError,
+  isLoadingModels,
+  currentBackendModels,
+  currentSelectedModel,
+  currentSelectedEffort,
+  currentModelEfforts,
+  selectedModelLabel,
+  personaInput,
+  projectPreferencesInput,
+  projectMemoryInput,
+  isLoadingPersona,
+  isSavingPersona,
+  personaStatusMsg,
+  fetchPersonaAndMemory,
+  savePersonaAndMemory,
+  fetchDashboard,
+  resetDashboardState,
+  shouldPollDashboard,
+  fetchModelsForBackend,
+  handleSelectBackend,
+  handleSelectModel,
+} = useAgentWorkspace({
+  coreUrl,
+  isNodeReady,
+  primaryNode,
+  selectedBackend,
+  workspaceMode,
+  lastCodingBackend,
+  errorMessage,
+  apiUrl,
+  getRequestHeaders,
+});
+
+const {
+  handoffNoticeMsg,
+  clearChat,
+  loadPersistedMessages,
+  saveMessages,
+  fetchChatHistoryFromServer,
+  handoffToCodingAgent,
+} = useChatHistory({
+  messages,
+  lastTaskFailed,
+  coreUrl,
+  isNodeReady,
+  primaryNode,
+  selectedBackend,
+  workspaceMode,
+  lastCodingBackend,
+  inputPrompt,
+  currentView,
+  activeTab,
+  chatTextareaRef,
+  apiUrl,
+  getRequestHeaders,
+  scrollToBottom,
+  resizeComposer,
+});
+
+const {
+  loadingDiffs,
+  isDiffOpen,
+  getParsedDiffForMessage,
+  getDiffSummaryLabel,
+  toggleDiffForMessage,
+} = useDiffInspector({
+  coreUrl,
+  apiUrl,
+  getRequestHeaders,
+  saveMessages,
+});
+
+const {
+  isListening,
+  isProcessingAudio,
+  interimTranscript,
+  autoSendVoice,
+  initSpeechRecognition,
+  handleMicClick,
+  cancelVoiceRecording,
+} = useVoiceRecording({
+  inputPrompt,
+  draftFromVoice,
+  isSending,
+  isNodeReady,
+  errorMessage,
+  apiUrl,
+  getRequestHeaders,
+  stopSpeaking,
+  submitMessage,
+});
 
 // WebSocket Real-Time Stream State
 let wsInstance: WebSocket | null = null;
@@ -2061,6 +1393,9 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
         inFlightStartedAt.value = payload.startedAt || Date.now();
         inFlightBackend.value = payload.backend || selectedBackend.value;
         isSending.value = true;
+        progressTracker.clear();
+        progressTracker.addStep(`Tâche démarrée sur ${selectedBackendLabel(inFlightBackend.value || selectedBackend.value)}`, 'running', '⟳');
+        inFlightProgressSteps.value = progressTracker.getSteps();
       }
       void fetchTasks(true);
       break;
@@ -2073,6 +1408,13 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
         if (existing && payload.filesChanged) {
           existing.filesChanged = payload.filesChanged;
         }
+        if (payload.filesChanged && payload.filesChanged.length) {
+          progressTracker.addStep(`${payload.filesChanged.length} fichier(s) modifiés`, 'running', '📁');
+        }
+        if (payload.message) {
+          progressTracker.addStep(payload.message, 'running', '⚡');
+        }
+        inFlightProgressSteps.value = progressTracker.getSteps();
       }
       break;
     }
@@ -2080,6 +1422,10 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
     case "task:chunk": {
       const payload = data.payload;
       if (payload?.taskId) {
+        if (inFlightProgressSteps.value.length <= 1) {
+          progressTracker.addStep("Rédaction de la réponse en direct…", 'running', '✍');
+          inFlightProgressSteps.value = progressTracker.getSteps();
+        }
         let msg = messages.value.find((m) => m.id === `asst-${payload.taskId}`);
         if (!msg) {
           msg = {
@@ -2101,6 +1447,8 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
     case "task:completed": {
       const payload = data.payload;
       if (payload?.taskId) {
+        progressTracker.complete("Tâche terminée avec succès");
+        inFlightProgressSteps.value = progressTracker.getSteps();
         const text = payload.replyText || payload.text;
         const wasFromVoice = voiceTaskIds.has(payload.taskId) || draftFromVoice.value;
         voiceTaskIds.delete(payload.taskId);
@@ -2108,6 +1456,9 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
         if (existingMsg) {
           if (text) existingMsg.text = text;
           existingMsg.fileSummary = payload.fileSummary;
+          existingMsg.filesChanged = payload.filesChanged;
+          existingMsg.diff = payload.diff;
+          existingMsg.taskId = payload.taskId;
           saveMessages();
           scrollToBottom();
           if (
@@ -2128,6 +1479,9 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
             text,
             timestamp: payload.completedAt || Date.now(),
             fileSummary: payload.fileSummary,
+            filesChanged: payload.filesChanged,
+            diff: payload.diff,
+            taskId: payload.taskId,
           };
           messages.value.push(assistantMsg);
           saveMessages();
@@ -2251,23 +1605,6 @@ function handleDaemonWsMessage(data: { event: string; payload: any; timestamp: n
   }
 }
 
-const notifiedApprovalIds = new Set<string>();
-const notifiedTaskIds = new Set<string>();
-
-function notifyApprovalIfNeeded(item: Partial<PendingApprovalItem> & { approvalId?: string }) {
-  if (!item?.approvalId || notifiedApprovalIds.has(item.approvalId)) {
-    return;
-  }
-  notifiedApprovalIds.add(item.approvalId);
-
-  const parsed = parseApprovalDetails(item);
-  void sendSystemNotification(
-    parsed.notificationTitle,
-    item.summary || parsed.notificationBody,
-    { approvalId: item.approvalId, dedupKey: `approval:${item.approvalId}` }
-  );
-}
-
 function connectWebSocket() {
   if (typeof window === "undefined" || !coreUrl.value) return;
   if (wsInstance && (wsInstance.readyState === WebSocket.OPEN || wsInstance.readyState === WebSocket.CONNECTING)) {
@@ -2275,7 +1612,7 @@ function connectWebSocket() {
   }
 
   try {
-    const rawUrl = coreUrl.value.replace(/\/+$/, "");
+    const rawUrl = apiUrl();
     const wsBase = rawUrl.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
     const wsTarget = `${wsBase}/ws?token=${encodeURIComponent(authToken.value || "")}`;
 
@@ -2318,40 +1655,7 @@ function connectWebSocket() {
 
 // Lifecycle
 onMounted(async () => {
-  const speechCallbacks = {
-    onState: (speaking: boolean, id: string | null) => { isSpeaking.value = speaking; currentSpeakingId.value = id; },
-    onError: (message: string) => { speechError.value = message; },
-  };
-  let fallbackSpeechPlayback:
-    | ReturnType<typeof createSpeechPlayback>
-    | ReturnType<typeof createNativeSpeechPlayback>
-    | undefined;
-  if (Capacitor.isNativePlatform()) {
-    const nativeTtsAvailable = Capacitor.isPluginAvailable("TextToSpeech");
-    if (nativeTtsAvailable) {
-      fallbackSpeechPlayback = createNativeSpeechPlayback(TextToSpeech, speechCallbacks);
-      void TextToSpeech.getSupportedVoices().then(({ voices }) => { speechVoices.value = voices; }).catch(() => {
-        speechError.value = "Vérifiez le moteur vocal et la voix française dans les paramètres Android.";
-      });
-    }
-  } else {
-    const webTtsAvailable = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
-    if (webTtsAvailable) {
-      refreshSpeechVoices();
-      window.speechSynthesis.addEventListener("voiceschanged", refreshSpeechVoices);
-      fallbackSpeechPlayback = createSpeechPlayback(window.speechSynthesis,
-        (text: string) => new SpeechSynthesisUtterance(text), speechCallbacks);
-    }
-  }
-  ttsAvailable.value = Boolean(fallbackSpeechPlayback) || typeof Audio !== "undefined";
-  if (ttsAvailable.value) {
-    speechPlayback = createFishSpeechPlayback({
-      synthesize: synthesizeFishSpeech,
-      createAudio: (src: string) => new Audio(src),
-      fallbackPlayer: fallbackSpeechPlayback,
-      callbacks: speechCallbacks,
-    });
-  }
+  initTtsEngine();
   if (typeof window !== "undefined") {
     syncViewport();
     window.addEventListener("resize", syncViewport);
@@ -2395,110 +1699,13 @@ onMounted(async () => {
       coreUrl.value = "http://127.0.0.1:4040";
     }
 
-    if (Capacitor.isNativePlatform()) {
-      try {
-        await StatusBar.setOverlaysWebView({ overlay: false });
-        await StatusBar.setStyle({ style: Style.Dark });
-        await StatusBar.setBackgroundColor({ color: "#07090e" });
-      } catch { }
-      try {
-        const perm = await LocalNotifications.checkPermissions();
-        if (perm.display !== "granted") {
-          await LocalNotifications.requestPermissions();
-        }
-        await LocalNotifications.createChannel({
-          id: "nexus-alerts",
-          name: "Nexus Approbations & Alertes",
-          description: "Alertes instantanées pour les approbations requises et fins de tâches",
-          importance: 5,
-          visibility: 1,
-          vibration: true,
-          lights: true,
-          lightColor: "#4f98a3",
-        });
-        await LocalNotifications.addListener("localNotificationActionPerformed", (action) => {
-          if (action.notification.extra?.approvalId) {
-            showApprovalModal.value = true;
-            const idx = approvals.value.findIndex((a) => a.approvalId === action.notification.extra?.approvalId);
-            if (idx >= 0) activeApprovalIndex.value = idx;
-          }
-        });
-      } catch (err) {
-        console.warn("LocalNotifications init error:", err);
-      }
-      try {
-        await PushNotifications.addListener("registration", async (token) => {
-          console.log("[FCM] Registered token:", token.value);
-          fcmToken.value = token.value;
-          localStorage.setItem("nexus_fcm_token", token.value);
-          await sendTokenToDaemon(token.value);
-        });
-
-        await PushNotifications.addListener("registrationError", (err) => {
-          console.warn("[FCM] Registration error:", err);
-        });
-
-        await PushNotifications.addListener("pushNotificationReceived", (notification) => {
-          console.log("[FCM] Push received foreground:", notification);
-        });
-
-        await PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
-          console.log("[FCM] Push action clicked:", action);
-          const approvalId = action.notification.data?.approvalId;
-          if (approvalId) {
-            showApprovalModal.value = true;
-            const idx = approvals.value.findIndex((a) => a.approvalId === approvalId);
-            if (idx >= 0) activeApprovalIndex.value = idx;
-          }
-        });
-
-        let pushPerm = await PushNotifications.checkPermissions();
-        if (pushPerm.receive !== "granted") {
-          pushPerm = await PushNotifications.requestPermissions();
-        }
-        if (pushPerm.receive === "granted") {
-          await PushNotifications.register();
-        }
-      } catch (err) {
-        console.warn("PushNotifications init error:", err);
-      }
-      await syncNativeDaemonConfig();
-    } else if (typeof Notification !== "undefined" && Notification.permission === "default") {
-      try {
-        void Notification.requestPermission();
-      } catch { }
-    }
+    await initNativeNotifications();
 
     coreUrlInput.value = coreUrl.value;
     if (savedTab && ["chat", "agent", "activity", "dashboard", "system"].includes(savedTab))
       activeTab.value = savedTab;
 
-    const savedAutoSend = localStorage.getItem("nexus_auto_send_voice");
-    if (savedAutoSend !== null) {
-      autoSendVoice.value = savedAutoSend === "true";
-    }
-
-    const savedTts = localStorage.getItem("nexus_tts_enabled");
-    if (savedTts !== null) {
-      ttsEnabled.value = savedTts === "true";
-    }
-
-    try {
-      const preferences = JSON.parse(localStorage.getItem("nexus_tts_preferences") || "null");
-      if (preferences && typeof preferences === "object") {
-        if (typeof preferences.autoSpeak === "boolean") autoSpeak.value = preferences.autoSpeak;
-        if (typeof preferences.rate === "number" && preferences.rate >= 0.8 && preferences.rate <= 1.3) speechRate.value = preferences.rate;
-        if (typeof preferences.voice === "string") speechVoice.value = preferences.voice;
-        if (preferences.provider === "fish" || preferences.provider === "system") ttsProvider.value = preferences.provider;
-        if (typeof preferences.fishReferenceId === "string") fishReferenceId.value = normalizeFishReferenceId(preferences.fishReferenceId);
-        if (typeof preferences.fishModel === "string" && preferences.fishModel.trim()) fishModel.value = preferences.fishModel.trim();
-      }
-    } catch { /* Ignore malformed saved preferences. */ }
-
-    // Load persisted chat messages
     loadPersistedMessages();
-
-    // Initialize Voice / Speech Recognition
     initSpeechRecognition();
 
     // Purge legacy ServiceWorker / CacheStorage to avoid stale cached assets
@@ -2510,7 +1717,7 @@ onMounted(async () => {
             r.unregister();
           }
         })
-        .catch(() => { });
+        .catch(() => {});
     }
     if ("caches" in window) {
       caches
@@ -2520,14 +1727,9 @@ onMounted(async () => {
             caches.delete(name);
           }
         })
-        .catch(() => { });
+        .catch(() => {});
     }
 
-    // Listen for PWA install prompt
-    window.addEventListener("beforeinstallprompt", (e: Event) => {
-      e.preventDefault();
-      deferredPrompt.value = e;
-    });
     document.addEventListener("visibilitychange", handleVisibilityChange);
   }
 
@@ -2535,11 +1737,12 @@ onMounted(async () => {
   fetchTasks(true);
   fetchApprovals(true);
   fetchVoiceStatus();
+  void fetchChatHistoryFromServer();
   fetchModelsForBackend(selectedBackend.value);
   connectWebSocket();
 
   pollTimer = setInterval(() => {
-    if ((showSettings.value || activeTab.value === 'agent' || isSending.value) && Date.now() - dashboardFetchedAt > 5000) void fetchDashboard();
+    if ((showSettings.value || activeTab.value === 'agent' || isSending.value) && shouldPollDashboard()) void fetchDashboard();
     fetchStatus(true);
     fetchTasks(true);
     fetchApprovals(true);
@@ -2564,7 +1767,7 @@ onUnmounted(() => {
   window.visualViewport?.removeEventListener("resize", syncViewport);
   document.removeEventListener("visibilitychange", handleVisibilityChange);
   document.documentElement.style.removeProperty("--app-height");
-  dashboardController?.abort();
+  resetDashboardState();
   if (pollTimer) clearInterval(pollTimer);
   if (clockTimer) clearInterval(clockTimer);
   if (fastApprovalTimer) clearInterval(fastApprovalTimer);
@@ -2575,8 +1778,7 @@ onUnmounted(() => {
     wsInstance = null;
   }
   cancelVoiceRecording();
-  stopSpeaking();
-  if (!Capacitor.isNativePlatform() && ttsAvailable.value) window.speechSynthesis.removeEventListener("voiceschanged", refreshSpeechVoices);
+  cleanupTtsEngine();
 });
 
 watch([coreUrl, authToken], () => {
@@ -2619,55 +1821,18 @@ watch(isSending, (sending) => {
   }
 });
 
-// Computed properties
-const connectionStatusText = computed(() => {
-  if (connectionStatus.value === "connected") return "Nexus Core connecté";
-  if (connectionStatus.value === "connecting")
-    return "Connexion à Nexus Core...";
-  return "Déconnecté de Nexus Core";
-});
-
-const onlineNodes = computed(() => {
-  return connectionStatus.value === "connected"
-    ? (coreStatus.value?.nodes || []).filter((n) => n.online)
-    : [];
-});
-
-const selectedNodeId = ref('');
-const primaryNode = computed(() => {
-  return onlineNodes.value.find(node => node.nodeId === selectedNodeId.value) || onlineNodes.value[0] || null;
-});
 async function handleFolderOpened(nodeId: string) {
   selectedNodeId.value = nodeId;
   await fetchStatus();
   activeTab.value = 'chat';
 }
 
-const isNodeReady = computed(() => {
-  return connectionStatus.value === "connected" && onlineNodes.value.length > 0;
-});
-
-const activeProjectName = computed(() => {
-  return (
-    primaryNode.value?.activeProject?.name ||
-    coreStatus.value?.projects?.find((p) => p.isActive)?.name ||
-    ""
-  );
-});
-
-const projectsList = computed(() => {
-  return coreStatus.value?.projects || [];
-});
-
-const isSwitchingProject = ref(false);
-const switchingProjectId = ref<string | null>(null);
-
 async function switchProject(projectId: string, nodeId?: string) {
   if (!projectId || isSwitchingProject.value || isSending.value) return false;
   isSwitchingProject.value = true;
   switchingProjectId.value = projectId;
   try {
-    const res = await fetch(`${coreUrl.value.replace(/\/+$/, "")}/api/filesystem/open`, {
+    const res = await fetch(`${apiUrl()}/api/filesystem/open`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -2694,14 +1859,6 @@ async function switchProject(projectId: string, nodeId?: string) {
   }
 }
 
-function projectLabel(id: string) {
-  return (
-    projectsList.value.find(
-      (project) => project.id === id || project.path === id,
-    )?.name || id
-  );
-}
-
 async function openProject(project: ProjectInfo) {
   if (
     isProjectActive(project) ||
@@ -2714,15 +1871,15 @@ async function openProject(project: ProjectInfo) {
 }
 
 watch([coreUrl, authToken, () => primaryNode.value?.nodeId], () => {
-  dashboardController?.abort();
-  dashboardController = undefined;
-  dashboardLoading.value = false;
-  usageDashboard.value = null;
-  dashboardError.value = '';
+  resetDashboardState();
   if ((showSettings.value || activeTab.value === 'agent') && isNodeReady.value) void fetchDashboard();
 });
-watch([showSettings, settingsSection, isNodeReady, activeTab, () => primaryNode.value?.activeProject?.path], ([settings, section, ready, view]) => {
+watch([showSettings, settingsSection, isNodeReady, activeTab, () => primaryNode.value?.activeProject?.path], ([settings, section, ready, view, currentProj], [, , , , prevProj]) => {
   if (!ready) return;
+  if (currentProj && currentProj !== prevProj) {
+    loadPersistedMessages(currentProj);
+    void fetchChatHistoryFromServer(currentProj);
+  }
   if ((settings && section === 'quotas') || view === 'agent') void fetchDashboard();
   if (settings && section === 'persona') void fetchPersonaAndMemory();
   if (settings && section === 'agent') void fetchModelsForBackend(selectedBackend.value);
@@ -2746,10 +1903,6 @@ const lastUpdatedText = computed(() => {
   return `il y a ${diffSec}s`;
 });
 
-// Tasks Computeds
-const runningTasks = computed(() =>
-  tasks.value.filter((t) => t.status === "running"),
-);
 const currentProgressMessage = computed(() => getInteractionMessage(
   tasks.value.find(task => task.taskId === currentInFlightTaskId.value), inFlightBackend.value,
 ));
@@ -2763,92 +1916,12 @@ const runtimeStatus = computed(() => getAssistantState({
 }));
 const runtimeStatusText = computed(() => assistantStateLabels[runtimeStatus.value]);
 
-const runningTasksCount = computed(() => {
-  return runningTasks.value.length || (coreStatus.value?.activeTasks ?? 0);
-});
-
-const filteredTasks = computed(() => {
-  if (activeTaskFilter.value === "all") return tasks.value;
-  if (activeTaskFilter.value === "running") {
-    return tasks.value.filter(
-      (t) => t.status === "running" || t.status === "pending",
-    );
-  }
-  if (activeTaskFilter.value === "completed") {
-    return tasks.value.filter((t) => t.status === "completed");
-  }
-  if (activeTaskFilter.value === "failed") {
-    return tasks.value.filter(
-      (t) => t.status === "failed" || t.status === "cancelled",
-    );
-  }
-  return tasks.value;
-});
-
-const taskFilterTabs = computed(() => [
-  { key: "all" as const, label: "Tout", count: tasks.value.length },
-  {
-    key: "running" as const,
-    label: "En cours",
-    count: tasks.value.filter(
-      (t) => t.status === "running" || t.status === "pending",
-    ).length,
-  },
-  {
-    key: "completed" as const,
-    label: "Terminées",
-    count: tasks.value.filter((t) => t.status === "completed").length,
-  },
-  {
-    key: "failed" as const,
-    label: "Interrompues",
-    count: tasks.value.filter(
-      (t) => t.status === "failed" || t.status === "cancelled",
-    ).length,
-  },
-]);
-
-
-
-// Helper functions for Approvals
-function formatApprovalKind(kind?: string): string {
-  if (kind === "command") return "Exécution de commande";
-  if (kind === "fileChange") return "Modification de fichier";
-  if (kind === "consent") return "Demande d’autorisation";
-  return "Opération sécurisée";
-}
-
-function getApprovalRemainingSeconds(expiresAt?: number): number {
-  if (!expiresAt) return 0;
-  return Math.max(0, Math.ceil((expiresAt - now.value) / 1000));
-}
-
-function isApprovalExpired(expiresAt?: number): boolean {
-  if (!expiresAt) return false;
-  return now.value >= expiresAt;
-}
-
-// Actions & HTTP Calls
-function getRequestHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-  };
-  if (authToken.value) {
-    headers["Authorization"] = `Bearer ${authToken.value}`;
-  }
-  return headers;
-}
-
 async function handleManualRefresh() {
   await Promise.all([
     fetchStatus(false),
     fetchTasks(false),
     fetchApprovals(false),
   ]);
-}
-
-async function refreshActivity() {
-  await Promise.all([fetchTasks(false), fetchApprovals(false)]);
 }
 
 async function fetchStatus(background = false) {
@@ -2858,7 +1931,7 @@ async function fetchStatus(background = false) {
   }
   if (!background) isRefreshing.value = true;
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/status`;
+    const targetUrl = `${apiUrl()}/status`;
     const res = await fetch(targetUrl, {
       method: "GET",
       headers: getRequestHeaders(),
@@ -2873,7 +1946,7 @@ async function fetchStatus(background = false) {
     connectionStatus.value = "connected";
     errorMessage.value = "";
     lastUpdated.value = Date.now();
-  } catch (err: any) {
+  } catch {
     connectionStatus.value = "error";
     errorMessage.value =
       "Connexion impossible. Vérifiez l’adresse du serveur et votre réseau.";
@@ -2886,7 +1959,7 @@ async function fetchTasks(background = false) {
   if (!coreUrl.value) return;
   if (!background) isRefreshingTasks.value = true;
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/tasks`;
+    const targetUrl = `${apiUrl()}/api/tasks`;
     const res = await fetch(targetUrl, {
       method: "GET",
       headers: getRequestHeaders(),
@@ -2993,7 +2066,7 @@ async function fetchTasks(background = false) {
 async function cancelTask(taskId: string) {
   if (!taskId) return;
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/tasks/${encodeURIComponent(taskId)}/cancel`;
+    const targetUrl = `${apiUrl()}/api/tasks/${encodeURIComponent(taskId)}/cancel`;
     const headers = getRequestHeaders();
     headers["Content-Type"] = "application/json";
 
@@ -3014,7 +2087,7 @@ async function fetchApprovals(background = false) {
   if (!coreUrl.value) return;
   if (!background) isRefreshingApprovals.value = true;
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/approvals`;
+    const targetUrl = `${apiUrl()}/api/approvals`;
     const res = await fetch(targetUrl, {
       method: "GET",
       headers: getRequestHeaders(),
@@ -3029,7 +2102,6 @@ async function fetchApprovals(background = false) {
             notifyApprovalIfNeeded(item);
           }
         }
-        // If index is beyond bounds, reset it
         if (activeApprovalIndex.value >= pendingApprovals.value.length) {
           activeApprovalIndex.value = Math.max(
             0,
@@ -3056,7 +2128,7 @@ async function decideApproval(
   approvalDecidingId.value = approvalId;
 
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/approvals/${encodeURIComponent(approvalId)}/decide`;
+    const targetUrl = `${apiUrl()}/api/approvals/${encodeURIComponent(approvalId)}/decide`;
     const headers = getRequestHeaders();
     headers["Content-Type"] = "application/json";
 
@@ -3076,14 +2148,12 @@ async function decideApproval(
       throw new Error(data.error || `Erreur HTTP ${res.status}`);
     }
 
-    // Update approval status locally
     const found = approvals.value.find((a) => a.approvalId === approvalId);
     if (found) {
       found.status = decision === "accept" ? "accepted" : "declined";
       found.decision = decision;
     }
 
-    // Close modal immediately if no more pending approvals remain
     if (pendingApprovals.value.length === 0) {
       showApprovalModal.value = false;
     }
@@ -3097,7 +2167,6 @@ async function decideApproval(
         : "L’action demandée a été bloquée"
     );
 
-    // Refresh state from core in background
     void Promise.all([
       fetchApprovals(true),
       fetchStatus(true),
@@ -3160,13 +2229,17 @@ async function sendPrompt(promptText: string, fromVoice = false) {
   scrollToBottom();
 
   isSending.value = true;
+  isProgressExpanded.value = false;
+  progressTracker.clear();
+  progressTracker.addStep(`Initialisation (${selectedBackendLabel(backend)})…`, 'running', '⟳');
+  inFlightProgressSteps.value = progressTracker.getSteps();
   inFlightStartedAt.value = Date.now();
   inFlightBackend.value = backend;
   lastTaskFailed.value = false;
   let keepTrackingInBackground = false;
 
   try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/tasks`;
+    const targetUrl = `${apiUrl()}/api/tasks`;
     const headers = getRequestHeaders();
     headers["Content-Type"] = "application/json";
 
@@ -3202,6 +2275,9 @@ async function sendPrompt(promptText: string, fromVoice = false) {
         text: replyContent,
         timestamp: Date.now(),
         fileSummary: data.fileSummary,
+        filesChanged: data.filesChanged,
+        diff: data.diff,
+        taskId: generatedTaskId,
       };
 
       messages.value.push(assistantMsg);
@@ -3211,9 +2287,6 @@ async function sendPrompt(promptText: string, fromVoice = false) {
       }
     }
   } catch (err: any) {
-    // Reconcile with daemon state first: if the mobile OS suspended the long-lived HTTP
-    // socket while the app was minimized (e.g. waiting on an approval), the task may still
-    // be running or may have already completed on the daemon.
     await Promise.all([fetchTasks(true), fetchApprovals(true)]);
     const stillRunningOnDaemon = tasks.value.some(
       (t) =>
@@ -3244,59 +2317,16 @@ async function sendPrompt(promptText: string, fromVoice = false) {
     if (!keepTrackingInBackground) {
       voiceTaskIds.delete(generatedTaskId);
       isSending.value = false;
+      isProgressExpanded.value = false;
       inFlightStartedAt.value = null;
       inFlightBackend.value = null;
       currentInFlightTaskId.value = null;
       scrollToBottom();
       void fetchDashboard();
-      // Refresh tasks and status
       fetchTasks(true);
       fetchStatus(true);
     }
   }
-}
-
-function clearChat() {
-  if (confirm("Voulez-vous effacer l’historique de conversation et réinitialiser la session active ?")) {
-    messages.value = [];
-    lastTaskFailed.value = false;
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("nexus_brain_messages");
-    }
-    if (coreUrl.value && isNodeReady.value) {
-      const headers = {
-        ...getRequestHeaders(),
-        "Content-Type": "application/json",
-      };
-      fetch(`${coreUrl.value.replace(/\/+$/, "")}/api/sessions/reset`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ backend: selectedBackend.value }),
-      }).catch(() => {});
-    }
-  }
-}
-
-function loadPersistedMessages() {
-  if (typeof window === "undefined") return;
-  try {
-    const raw = localStorage.getItem("nexus_brain_messages");
-    if (raw) {
-      messages.value = JSON.parse(raw);
-      scrollToBottom();
-    }
-  } catch {
-    messages.value = [];
-  }
-}
-
-function saveMessages() {
-  if (typeof window === "undefined") return;
-  try {
-    // Keep last 50 messages to preserve memory
-    const trimmed = messages.value.slice(-50);
-    localStorage.setItem("nexus_brain_messages", JSON.stringify(trimmed));
-  } catch { }
 }
 
 function scrollToBottom() {
@@ -3307,607 +2337,6 @@ function scrollToBottom() {
     updateMessagesScrollState();
     updateHomeScrollState();
   });
-}
-
-function selectedBackendLabel(b?: string): string {
-  if (b === "brain") return "Nexus Brain";
-  if (b === "codex") return "Codex";
-  if (b === "antigravity") return "Antigravity";
-  if (b === "claude") return "Claude Code";
-  return "Agent";
-}
-
-function handoffToCodingAgent(text: string) {
-  workspaceMode.value = "code";
-  if (selectedBackend.value === "brain") {
-    selectedBackend.value = lastCodingBackend.value || "codex";
-  }
-  inputPrompt.value = text;
-  currentView.value = "workspace";
-  activeTab.value = "chat";
-  triggerHaptic("medium");
-  nextTick(() => {
-    resizeComposer();
-    chatTextareaRef.value?.focus();
-  });
-}
-
-function renderMarkdown(raw: string): string {
-  if (!raw) return "";
-  let html = raw
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-
-  // Code blocks: ```lang ... ```
-  html = html.replace(
-    /```([a-zA-Z0-9_+-]*)\n([\s\S]*?)```/g,
-    (_match, _lang, code) => {
-      return `<pre class="code-block"><code>${code.trim()}</code></pre>`;
-    },
-  );
-
-  // Inline code: `code`
-  html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
-
-  // Bold: **text**
-  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-
-  // Italics: *text*
-  html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
-
-  // Line breaks
-  html = html.replace(/\n/g, "<br>");
-
-  return html;
-}
-
-function initSpeechRecognition() {
-  if (typeof window === "undefined") return;
-  const SpeechRecognitionClass =
-    (window as any).SpeechRecognition ||
-    (window as any).webkitSpeechRecognition;
-
-  if (SpeechRecognitionClass) {
-    try {
-      const recognition = new SpeechRecognitionClass();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = "fr-FR";
-
-      recognition.onresult = (event: any) => {
-        let finalChunk = "";
-        let interimChunk = "";
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalChunk += event.results[i][0].transcript;
-          } else {
-            interimChunk += event.results[i][0].transcript;
-          }
-        }
-        if (interimChunk) {
-          interimTranscript.value = interimChunk;
-        }
-        if (finalChunk) {
-          appendTranscript(finalChunk);
-        }
-      };
-
-      recognition.onerror = (event: any) => {
-        console.warn("SpeechRecognition error:", event.error);
-        if (event.error !== "no-speech") {
-          interimTranscript.value = "";
-        }
-      };
-
-      recognition.onend = () => {
-        if (isListening.value && !clickToggleActive) {
-          isListening.value = false;
-        }
-      };
-
-      recognitionInstance = recognition;
-    } catch (e) {
-      console.warn("Failed to initialize SpeechRecognition:", e);
-    }
-  }
-}
-
-async function fetchVoiceStatus() {
-  if (!coreUrl.value) return;
-  try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/voice/status`;
-    const res = await fetch(targetUrl, {
-      method: "GET",
-      headers: getRequestHeaders(),
-    });
-    if (res.ok) {
-      const status = await res.json();
-      voiceBackendStatus.value = status;
-      if (status?.tts) {
-        if (status.tts.referenceId && !fishReferenceId.value) {
-          fishReferenceId.value = normalizeFishReferenceId(status.tts.referenceId);
-        }
-        if (status.tts.model && !fishModel.value) {
-          fishModel.value = status.tts.model;
-        }
-      }
-    }
-  } catch {
-    // Non-blocking
-  }
-}
-
-async function triggerHaptic(type: "press" | "release" | "cancel" | "success") {
-  if (Capacitor.isNativePlatform()) {
-    try {
-      if (type === "press") {
-        await Haptics.impact({ style: ImpactStyle.Medium });
-      } else if (type === "release") {
-        await Haptics.impact({ style: ImpactStyle.Light });
-      } else if (type === "success") {
-        await Haptics.notification({ type: NotificationType.Success });
-      } else if (type === "cancel") {
-        await Haptics.notification({ type: NotificationType.Warning });
-      }
-      return;
-    } catch { }
-  }
-  if (typeof navigator !== "undefined" && navigator.vibrate) {
-    try {
-      if (type === "press") navigator.vibrate(40);
-      else if (type === "release") navigator.vibrate([20, 30, 20]);
-    } catch { }
-  }
-}
-
-function appendTranscript(text: string) {
-  const trimmed = text.trim();
-  if (!trimmed) return;
-  if (inputPrompt.value) {
-    inputPrompt.value = `${inputPrompt.value} ${trimmed}`;
-  } else {
-    inputPrompt.value = trimmed;
-  }
-  draftFromVoice.value = true;
-  interimTranscript.value = "";
-}
-
-async function stopNativeSpeechRecognition(settleMs = 0) {
-  if (nativeSpeechStopTimer) {
-    clearTimeout(nativeSpeechStopTimer);
-    nativeSpeechStopTimer = null;
-  }
-  try {
-    // SpeechRecognition.stop() in @capacitor-community/speech-recognition Android
-    // does not resolve its PluginCall; bound it with a short settle window so
-    // onResults -> partialResults can fire before listeners are removed.
-    await Promise.race([
-      SpeechRecognition.stop().catch(() => {}),
-      new Promise<void>((resolve) => setTimeout(resolve, Math.max(80, settleMs))),
-    ]);
-  } catch { }
-  try {
-    await SpeechRecognition.removeAllListeners();
-  } catch { }
-}
-
-async function handleMicClick() {
-  if (isSending.value || isProcessingAudio.value) return;
-
-  if (isListening.value) {
-    clickToggleActive = false;
-    await stopPushToTalk();
-  } else {
-    clickToggleActive = true;
-    await startPushToTalk();
-  }
-}
-
-async function onMicPointerDown(e: PointerEvent) {
-  if (Capacitor.isNativePlatform()) return;
-  if (isSending.value) return;
-  const target = e.currentTarget as HTMLElement;
-  if (target && target.setPointerCapture) {
-    try {
-      target.setPointerCapture(e.pointerId);
-    } catch { }
-  }
-
-  if (isListening.value) {
-    clickToggleActive = false;
-    await stopPushToTalk();
-    return;
-  }
-
-  speechRecordingStart = Date.now();
-  isPressingMic = true;
-  await startPushToTalk();
-}
-
-async function onMicPointerUp(e: PointerEvent) {
-  if (Capacitor.isNativePlatform()) return;
-  const target = e.currentTarget as HTMLElement;
-  if (target && target.releasePointerCapture) {
-    try {
-      target.releasePointerCapture(e.pointerId);
-    } catch { }
-  }
-
-  if (!isPressingMic && !isListening.value) return;
-
-  const pressDuration = Date.now() - speechRecordingStart;
-  isPressingMic = false;
-
-  if (pressDuration < 280) {
-    clickToggleActive = true;
-    return;
-  }
-
-  clickToggleActive = false;
-  await stopPushToTalk();
-}
-
-async function onMicPointerCancel(e: PointerEvent) {
-  const target = e.currentTarget as HTMLElement;
-  if (target && target.releasePointerCapture) {
-    try {
-      target.releasePointerCapture(e.pointerId);
-    } catch { }
-  }
-  await cancelVoiceRecording();
-}
-
-async function startPushToTalk() {
-  await stopSpeaking();
-  if (isSending.value || isProcessingAudio.value) return;
-
-  if (nativeSpeechStopTimer) {
-    clearTimeout(nativeSpeechStopTimer);
-    nativeSpeechStopTimer = null;
-  }
-  speechRecordingStart = Date.now();
-  interimTranscript.value = "";
-  errorMessage.value = "";
-  isListening.value = true;
-  await triggerHaptic("press");
-
-  if (Capacitor.isNativePlatform()) {
-    // 1. Reconnaissance vocale native inline (sans popup système Google)
-    let speechAvailable = false;
-    try {
-      const avail = await SpeechRecognition.available();
-      if (avail.available) {
-        const perm = await SpeechRecognition.checkPermissions();
-        if (perm.speechRecognition !== "granted") {
-          const req = await SpeechRecognition.requestPermissions();
-          speechAvailable = req.speechRecognition === "granted";
-        } else {
-          speechAvailable = true;
-        }
-      }
-    } catch (e) {
-      console.warn("SpeechRecognition check failed:", e);
-    }
-
-    if (speechAvailable) {
-      try {
-        nativeSpeechActive = true;
-        await SpeechRecognition.removeAllListeners();
-        await SpeechRecognition.addListener(
-          "partialResults",
-          (data: { matches: string[] }) => {
-            if (data.matches && data.matches.length > 0) {
-              const candidate = data.matches[0]?.trim() || "";
-              if (candidate) {
-                interimTranscript.value = candidate;
-              }
-            }
-          },
-        );
-        await SpeechRecognition.addListener(
-          "listeningState",
-          (state: { status: "started" | "stopped" }) => {
-            if (state.status === "stopped" && isListening.value && nativeSpeechActive) {
-              if (nativeSpeechStopTimer) clearTimeout(nativeSpeechStopTimer);
-              nativeSpeechStopTimer = setTimeout(() => {
-                nativeSpeechStopTimer = null;
-                if (isListening.value && nativeSpeechActive) {
-                  void stopPushToTalk();
-                }
-              }, 240);
-            }
-          },
-        );
-        await SpeechRecognition.start({
-          language: "fr-FR",
-          maxResults: 3,
-          partialResults: true,
-          popup: false,
-        });
-        return;
-      } catch (err) {
-        console.warn(
-          "SpeechRecognition.start inline failed, fallback to VoiceRecorder:",
-          err,
-        );
-        nativeSpeechActive = false;
-      }
-    }
-
-    // 2. Fallback vers enregistreur audio natif + transcription Whisper serveur
-    try {
-      const perm = await VoiceRecorder.hasAudioRecordingPermission();
-      if (!perm.value) {
-        const req = await VoiceRecorder.requestAudioRecordingPermission();
-        if (!req.value) {
-          isListening.value = false;
-          errorMessage.value =
-            "Autorisation du micro requise pour la dictée vocale.";
-          return;
-        }
-      }
-      nativeRecorderActive = true;
-      await VoiceRecorder.startRecording();
-      return;
-    } catch (err) {
-      console.warn("VoiceRecorder.startRecording failed:", err);
-      nativeRecorderActive = false;
-      isListening.value = false;
-      errorMessage.value =
-        "Reconnaissance vocale non disponible sur cet appareil.";
-      return;
-    }
-  }
-
-  // Navigateur Web classique
-  if (recognitionInstance) {
-    try {
-      recognitionInstance.start();
-      return;
-    } catch {
-      // Fallback MediaRecorder
-    }
-  }
-
-  if (
-    typeof navigator !== "undefined" &&
-    navigator.mediaDevices &&
-    typeof MediaRecorder !== "undefined"
-  ) {
-    try {
-      recordedAudioChunks = [];
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamInstance = stream;
-      const recorder = new MediaRecorder(stream);
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          recordedAudioChunks.push(e.data);
-        }
-      };
-      recorder.start(100);
-      mediaRecorderInstance = recorder;
-    } catch (err: any) {
-      console.warn("MediaRecorder error:", err);
-      isListening.value = false;
-      isPressingMic = false;
-    }
-  }
-}
-
-async function stopPushToTalk() {
-  if (!isListening.value && !isPressingMic) return;
-
-  const durationMs = Date.now() - speechRecordingStart;
-  isPressingMic = false;
-  clickToggleActive = false;
-  isListening.value = false;
-  await triggerHaptic("release");
-
-  if (Capacitor.isNativePlatform()) {
-    if (nativeSpeechActive) {
-      try {
-        await stopNativeSpeechRecognition(220);
-        const text = interimTranscript.value.trim();
-        if (text) {
-          appendTranscript(text);
-        }
-      } catch (err) {
-        console.warn("SpeechRecognition.stop failed:", err);
-        if (interimTranscript.value.trim()) {
-          appendTranscript(interimTranscript.value.trim());
-        }
-      } finally {
-        nativeSpeechActive = false;
-      }
-    }
-
-    if (nativeRecorderActive) {
-      isProcessingAudio.value = true;
-      try {
-        const result = await VoiceRecorder.stopRecording();
-        if (result.value?.recordDataBase64 && durationMs > 250) {
-          await transcribeNativeAudio(
-            result.value.recordDataBase64,
-            result.value.mimeType || "audio/aac",
-          );
-        }
-      } catch (err) {
-        console.warn("VoiceRecorder.stopRecording failed:", err);
-      } finally {
-        nativeRecorderActive = false;
-        isProcessingAudio.value = false;
-      }
-    }
-
-    if (
-      autoSendVoice.value &&
-      isNodeReady.value &&
-      inputPrompt.value.trim().length > 0 &&
-      durationMs > 250
-    ) {
-      await submitMessage();
-    }
-    return;
-  }
-
-  // Web Browser fallback: attendre la fin de reconnaissance pour capter le dernier segment
-  if (recognitionInstance) {
-    await new Promise<void>((resolve) => {
-      let settled = false;
-      const done = () => {
-        if (settled) return;
-        settled = true;
-        resolve();
-      };
-      const prevOnEnd = recognitionInstance.onend;
-      recognitionInstance.onend = (ev: any) => {
-        recognitionInstance.onend = prevOnEnd;
-        if (typeof prevOnEnd === "function") prevOnEnd(ev);
-        done();
-      };
-      setTimeout(() => {
-        recognitionInstance.onend = prevOnEnd;
-        done();
-      }, 240);
-      try {
-        recognitionInstance.stop();
-      } catch {
-        recognitionInstance.onend = prevOnEnd;
-        done();
-      }
-    });
-    if (interimTranscript.value.trim()) {
-      appendTranscript(interimTranscript.value.trim());
-    }
-  }
-
-  if (mediaRecorderInstance && mediaRecorderInstance.state !== "inactive") {
-    isProcessingAudio.value = true;
-    try {
-      const audioBlob = await new Promise<Blob>((resolve) => {
-        mediaRecorderInstance!.onstop = () => {
-          const blob = new Blob(recordedAudioChunks, {
-            type: mediaRecorderInstance!.mimeType || "audio/webm",
-          });
-          resolve(blob);
-        };
-        mediaRecorderInstance!.stop();
-      });
-
-      if (mediaStreamInstance) {
-        for (const track of mediaStreamInstance.getTracks()) {
-          track.stop();
-        }
-        mediaStreamInstance = null;
-      }
-      mediaRecorderInstance = null;
-
-      if (audioBlob.size > 1000) {
-        await transcribeAudioBlob(audioBlob);
-      }
-    } catch (err: any) {
-      console.warn("Error processing audio recording:", err);
-    } finally {
-      isProcessingAudio.value = false;
-    }
-  }
-
-  if (
-    autoSendVoice.value &&
-    isNodeReady.value &&
-    inputPrompt.value.trim().length > 0 &&
-    durationMs > 250
-  ) {
-    await submitMessage();
-  }
-}
-
-async function transcribeNativeAudio(base64: string, mimeType: string) {
-  try {
-    const targetUrl = `${coreUrl.value.replace(/\/+$/, "")}/api/voice/transcribe`;
-    const headers = {
-      ...getRequestHeaders(),
-      "Content-Type": "application/json",
-    };
-    const res = await fetch(targetUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        audioBase64: base64,
-        mimeType: mimeType || "audio/aac",
-        language: "fr",
-      }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.text) {
-        appendTranscript(data.text);
-      }
-    }
-  } catch (err) {
-    console.warn("Native audio backend transcription failed:", err);
-  }
-}
-
-async function blobToBase64(blob: Blob): Promise<string> {
-  const buffer = await blob.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
-}
-
-async function transcribeAudioBlob(blob: Blob) {
-  try {
-    const base64 = await blobToBase64(blob);
-    await transcribeNativeAudio(base64, blob.type || "audio/webm");
-  } catch (err) {
-    console.warn("Backend transcription failed:", err);
-  }
-}
-
-async function cancelVoiceRecording() {
-  isListening.value = false;
-  isPressingMic = false;
-  clickToggleActive = false;
-  interimTranscript.value = "";
-  await triggerHaptic("cancel");
-
-  if (Capacitor.isNativePlatform()) {
-    if (nativeSpeechActive) {
-      await stopNativeSpeechRecognition(80);
-      nativeSpeechActive = false;
-    }
-    if (nativeRecorderActive) {
-      try {
-        await VoiceRecorder.stopRecording();
-      } catch { }
-      nativeRecorderActive = false;
-    }
-    return;
-  }
-
-  if (recognitionInstance) {
-    try {
-      recognitionInstance.abort();
-    } catch { }
-  }
-  if (mediaRecorderInstance && mediaRecorderInstance.state !== "inactive") {
-    try {
-      mediaRecorderInstance.stop();
-    } catch { }
-  }
-  if (mediaStreamInstance) {
-    for (const track of mediaStreamInstance.getTracks()) {
-      track.stop();
-    }
-    mediaStreamInstance = null;
-  }
-  mediaRecorderInstance = null;
 }
 
 function saveSettings() {
@@ -3976,54 +2405,5 @@ function isProjectActive(project: ProjectInfo): boolean {
     (!project.nodeId || node.nodeId === project.nodeId) &&
     (node.activeProject?.path === project.path || Boolean(project.id && node.activeProject?.id === project.id)),
   );
-}
-
-function formatState(state: string): string {
-  if (state === "idle") return "Disponible";
-  if (state === "busy") return "En cours";
-  return state;
-}
-
-function formatTaskStatus(status: string): string {
-  if (status === "running") return "En cours";
-  if (status === "pending") return "En attente";
-  if (status === "completed") return "Terminé";
-  if (status === "failed") return "Échoué";
-  if (status === "cancelled") return "Annulé";
-  return status;
-}
-
-function formatTime(timestamp: number): string {
-  const d = new Date(timestamp);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function formatRelativeTime(timestamp?: number): string {
-  if (!timestamp) return "inconnu";
-  const diffSec = Math.floor((now.value - timestamp) / 1000);
-  if (diffSec <= 1) return "à l'instant";
-  if (diffSec < 60) return `il y a ${diffSec}s`;
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `il y a ${diffMin}m`;
-  return `il y a ${Math.floor(diffMin / 60)}h`;
-}
-
-async function copyCommand(text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    copied.value = true;
-    setTimeout(() => {
-      copied.value = false;
-    }, 2000);
-  } catch { }
-}
-
-async function installPwa() {
-  if (!deferredPrompt.value) return;
-  deferredPrompt.value.prompt();
-  const choice = await deferredPrompt.value.userChoice;
-  if (choice.outcome === "accepted") {
-    deferredPrompt.value = null;
-  }
 }
 </script>

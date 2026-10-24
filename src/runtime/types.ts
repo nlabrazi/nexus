@@ -1,12 +1,18 @@
 import { AntigravityClientOptions } from '../antigravity/client';
 import { AntigravitySessionPersistence } from '../antigravity/persistence';
 import { AntigravityModelPreferences } from '../antigravity/model-preferences';
-import { CodexApprovalRequest } from '../codex/types';
 import { SessionPersistence } from '../codex/persistence';
 import { ModelPreferences } from '../codex/model-preferences';
-import { ApprovalDecision } from '../codex/types';
 import { BrainModel } from '../conversational/model';
 import { BrainSessionPersistence } from '../conversational/persistence';
+import {
+  AgentApprovalRequest,
+  ApprovalDecision,
+  TurnTimeoutHandler,
+  TurnTimeoutRequest,
+} from './agent-service';
+
+export type { TurnTimeoutHandler, TurnTimeoutRequest };
 export type AgentBackendType = 'codex' | 'antigravity' | 'claude';
 export type { NexusStatusSnapshot } from './status';
 import { WorkspaceGuard } from '../workspace/guard';
@@ -24,18 +30,8 @@ export interface TaskExecutionResult {
   readonly filesChanged?: readonly string[];
 }
 
-export interface TurnTimeoutRequest {
-  readonly agentName?: string;
-  readonly elapsedSeconds: number;
-}
-
-export type TurnTimeoutHandler = (
-  request: TurnTimeoutRequest,
-  signal: AbortSignal
-) => Promise<boolean>;
-
 export type RuntimeApprovalRequest =
-  | CodexApprovalRequest
+  | AgentApprovalRequest
   | {
       readonly kind: 'inspection';
       readonly agentName: string;

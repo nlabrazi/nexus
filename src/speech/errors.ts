@@ -1,3 +1,5 @@
+import { DiagnosticError } from '../logging/logger';
+
 export type SpeechErrorCode =
   | 'not_configured'
   | 'untrusted_workspace'
@@ -30,5 +32,27 @@ export class SpeechError extends Error {
   constructor(readonly code: SpeechErrorCode) {
     super(messages[code]);
     this.name = 'SpeechError';
+  }
+}
+
+export type SpeechSynthesisErrorCode =
+  | 'invalid_configuration'
+  | 'process_failed'
+  | 'invalid_audio'
+  | 'timeout'
+  | 'cancelled';
+
+const synthesisMessages: Record<SpeechSynthesisErrorCode, string> = {
+  invalid_configuration: 'Configure nexus.speech.tts with local Piper paths and a valid speaker ID',
+  process_failed: 'Speech synthesis process unavailable',
+  invalid_audio: 'Speech synthesis produced invalid audio',
+  timeout: 'Speech synthesis timed out',
+  cancelled: 'Speech synthesis cancelled',
+};
+
+export class SpeechSynthesisError extends DiagnosticError {
+  constructor(readonly code: SpeechSynthesisErrorCode) {
+    super(synthesisMessages[code]);
+    this.name = 'SpeechSynthesisError';
   }
 }

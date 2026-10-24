@@ -10,11 +10,12 @@ export class WorkspaceModelPreferences implements ModelPreferences {
     private readonly storage: {
       get(key: string): unknown;
       update(key: string, value: unknown): PromiseLike<void>;
-    }
+    },
+    private readonly key = 'nexus.codex.model'
   ) {}
 
   load(): ModelSelection | undefined {
-    const value = this.storage.get('nexus.codex.model') as Partial<ModelSelection> | undefined;
+    const value = this.storage.get(this.key) as Partial<ModelSelection> | undefined;
     return value &&
       typeof value.model === 'string' &&
       value.model.trim() &&
@@ -25,6 +26,6 @@ export class WorkspaceModelPreferences implements ModelPreferences {
   }
 
   async save(selection: ModelSelection): Promise<void> {
-    await this.storage.update('nexus.codex.model', { ...selection });
+    await this.storage.update(this.key, { ...selection });
   }
 }

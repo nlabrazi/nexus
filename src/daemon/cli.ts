@@ -23,7 +23,9 @@ function getTailscaleIp(): string | undefined {
 export async function runDaemonCli(argv: string[] = process.argv.slice(2)): Promise<number> {
   const envCandidates = [
     resolve(process.cwd(), '.env'),
-    resolve(process.env.HOME ?? '', 'code/bricolage/nexus/.env'),
+    resolve(__dirname, '../.env'),
+    resolve(__dirname, '../../.env'),
+    resolve(process.env.HOME ?? '', '.nexus/.env'),
   ];
   for (const p of envCandidates) {
     if (existsSync(p)) {
@@ -69,7 +71,10 @@ OPTIONS:
     return 0;
   }
 
-  const port = parseInt(parsed.values.port ?? process.env.NEXUS_PORT ?? '4040', 10);
+  const port = parseInt(
+    parsed.values.port ?? process.env.NEXUS_PORT ?? process.env.NEXUS_CORE_PORT ?? '4040',
+    10
+  );
   let host = parsed.values.host ?? '127.0.0.1';
 
   if (parsed.values.tailscale) {
@@ -89,7 +94,11 @@ OPTIONS:
   const jail = new JailGuard({ allowedRoots: [allowedRoot] });
 
   // Security Auth
-  const token = getOrCreateDaemonToken(parsed.values.token ?? process.env.NEXUS_TOKEN);
+  const envToken =
+    process.env.NEXUS_TOKEN ??
+    process.env.NEXUS_CORE_AUTH_TOKEN ??
+    process.env.NEXUS_CORE_AUTH_TOKENS?.split(',')[0]?.trim();
+  const token = getOrCreateDaemonToken(parsed.values.token ?? envToken);
   const auth = new AuthGuard([token]);
 
   const cwd = process.cwd();
@@ -110,7 +119,7 @@ OPTIONS:
   await daemon.start();
 
   console.log('================================================================');
-  console.log('  🛡️ NEXUS SECURE DAEMON v1.0.0');
+  console.log('  🛡️ NEXUS SECURE DAEMON v1.3.0');
   console.log('================================================================');
   console.log(`  • URL HTTP & WS  : http://${host}:${port}`);
   console.log(`  • Confinement    : ${allowedRoot} (🔒 Jail étanche actif)`);

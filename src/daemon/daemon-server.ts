@@ -1,11 +1,38 @@
+import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { createReadStream, existsSync, readdirSync, statSync } from 'node:fs';
 import { createServer, IncomingMessage, Server as HttpServer, ServerResponse } from 'node:http';
-import { basename, dirname, extname, join, resolve } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { hostname } from 'node:os';
 import type { Duplex } from 'node:stream';
-import { WebSocketServerConnection } from '../core/ws-connection';
+import { promisify } from 'node:util';
+import { WebSocketServerConnection } from './ws-connection';
+
+const execute = promisify(execFile);
+
+export async function getGitDiff(targetPath: string, files?: readonly string[]): Promise<string> {
+  try {
+    const args = ['diff', '--no-color', '-U2'];
+    if (files && files.length > 0) {
+      args.push('--', ...files.map((f) => (isAbsolute(f) ? relative(targetPath, f) : f)));
+    }
+    const { stdout } = await execute('git', args, { cwd: targetPath, timeout: 5000 });
+    if (!stdout.trim()) {
+      const headArgs = ['diff', '--no-color', '-U2', 'HEAD'];
+      if (files && files.length > 0) {
+        headArgs.push('--', ...files.map((f) => (isAbsolute(f) ? relative(targetPath, f) : f)));
+      }
+      const headRes = await execute('git', headArgs, { cwd: targetPath, timeout: 5000 }).catch(
+        () => ({ stdout: '' })
+      );
+      return (headRes.stdout || '').slice(0, 50_000);
+    }
+    return stdout.slice(0, 50_000);
+  } catch {
+    return '';
+  }
+}
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -20,6 +47,10 @@ const MIME_TYPES: Record<string, string> = {
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.webmanifest': 'application/manifest+json',
+  '.txt': 'text/plain; charset=utf-8',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.ttf': 'font/ttf',
 };
 import { logger } from '../logging/logger';
 import { NexusRuntime } from '../runtime/nexus-runtime';
@@ -62,6 +93,7 @@ export interface DaemonTaskRecord {
   text?: string;
   fileSummary?: string;
   filesChanged?: readonly string[];
+  diff?: string;
   error?: string;
 }
 
@@ -499,7 +531,7 @@ export class NexusDaemonServer extends EventEmitter {
     return {
       nodeId: 'local-daemon',
       nodeName: hostname(),
-      version: '1.0.0',
+      version: '1.3.0',
       connectedAt: this.startedAt,
       lastHeartbeatAt: Date.now(),
       state: this.currentTaskId ? 'busy' : 'idle',
@@ -605,7 +637,7 @@ export class NexusDaemonServer extends EventEmitter {
         JSON.stringify({
           status: 'ok',
           daemon: 'nexus-daemon',
-          version: '1.0.0',
+          version: '1.3.0',
           uptimeSeconds: Math.round((Date.now() - this.startedAt) / 1000),
         })
       );
@@ -928,11 +960,91 @@ export class NexusDaemonServer extends EventEmitter {
         return;
       }
 
+      if (pathname === '/api/projects/diff' && method === 'GET') {
+        const projectPath = url.searchParams.get('path')
+          ? this.jail.resolveSafePath(url.searchParams.get('path')!)
+          : this.activeProject.path;
+        const diff = await getGitDiff(projectPath);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ path: projectPath, diff }));
+        return;
+      }
+
       if (pathname === '/api/projects/memory' && method === 'DELETE') {
         const projectPath = url.searchParams.get('path')
           ? this.jail.resolveSafePath(url.searchParams.get('path')!)
           : this.activeProject.path;
         this.runtime.clearProjectMemory(projectPath);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', cleared: true }));
+        return;
+      }
+
+      // 3c-bis. Chat History persistence (Upstash Redis backed)
+      if (pathname === '/api/chat/history' && method === 'GET') {
+        const rawProject = url.searchParams.get('project') || url.searchParams.get('path');
+        const projectPath = rawProject
+          ? this.jail.resolveSafePath(rawProject)
+          : this.activeProject.path;
+        const mode = url.searchParams.get('mode') || '';
+        const projKey = basename(projectPath);
+        const suffix = mode && mode !== 'all' ? `:${mode}` : '';
+        const primaryKey = `nexus.chat:${projKey}${suffix}`;
+        const fallbackKey = `nexus.chat:${resolve(projectPath)}${suffix}`;
+        let stored = this.storage.get(primaryKey);
+        if (!stored) {
+          stored = this.storage.get(fallbackKey);
+        }
+        const list = Array.isArray(stored) ? stored : [];
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(list));
+        return;
+      }
+
+      if (pathname === '/api/chat/history' && method === 'POST') {
+        const body = JSON.parse(await this.readRequestBody(req));
+        const rawProject = typeof body.project === 'string' ? body.project : undefined;
+        const projectPath = rawProject
+          ? this.jail.resolveSafePath(rawProject)
+          : this.activeProject.path;
+        const mode = typeof body.mode === 'string' ? body.mode : '';
+        const rawList: Array<Record<string, unknown>> = Array.isArray(body.messages)
+          ? body.messages
+          : [];
+        // Keep only the most recent 50 messages, and bound text payload per message
+        const bounded = rawList.slice(-50).map((m) => {
+          const text = typeof m?.text === 'string' ? m.text.slice(0, 30000) : '';
+          return {
+            id: typeof m?.id === 'string' ? m.id : String(Date.now()),
+            role: m?.role === 'user' ? 'user' : 'assistant',
+            backend: typeof m?.backend === 'string' ? m.backend : 'brain',
+            text,
+            timestamp: typeof m?.timestamp === 'number' ? m.timestamp : Date.now(),
+            ...(typeof m?.fileSummary === 'string'
+              ? { fileSummary: m.fileSummary.slice(0, 500) }
+              : {}),
+            ...(m?.error ? { error: true } : {}),
+          };
+        });
+        const projKey = basename(projectPath);
+        const suffix = mode && mode !== 'all' ? `:${mode}` : '';
+        const key = `nexus.chat:${projKey}${suffix}`;
+        await this.storage.update(key, bounded);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', count: bounded.length }));
+        return;
+      }
+
+      if (pathname === '/api/chat/history' && method === 'DELETE') {
+        const rawProject = url.searchParams.get('project') || url.searchParams.get('path');
+        const projectPath = rawProject
+          ? this.jail.resolveSafePath(rawProject)
+          : this.activeProject.path;
+        const mode = url.searchParams.get('mode') || '';
+        const projKey = basename(projectPath);
+        const suffix = mode && mode !== 'all' ? `:${mode}` : '';
+        const key = `nexus.chat:${projKey}${suffix}`;
+        await this.storage.update(key, []);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'ok', cleared: true }));
         return;
@@ -1264,6 +1376,24 @@ export class NexusDaemonServer extends EventEmitter {
       }
 
       if (pathname.startsWith('/api/tasks/') && method === 'GET' && !pathname.endsWith('/cancel')) {
+        if (pathname.endsWith('/diff')) {
+          const taskId = pathname.slice('/api/tasks/'.length, -'/diff'.length);
+          const task = this.tasks.get(taskId);
+          if (!task) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: `Tâche non trouvée : ${taskId}` }));
+            return;
+          }
+          let diff = task.diff;
+          if (!diff && task.filesChanged && task.filesChanged.length > 0) {
+            diff = await getGitDiff(task.projectPath || this.activeProject.path, task.filesChanged);
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({ taskId, diff: diff || '', filesChanged: task.filesChanged || [] })
+          );
+          return;
+        }
         const taskId = pathname.slice('/api/tasks/'.length);
         const task = this.tasks.get(taskId);
         if (!task) {
@@ -1385,6 +1515,14 @@ export class NexusDaemonServer extends EventEmitter {
 
         const runTask = async (): Promise<DaemonTaskRecord> => {
           try {
+            this.broadcastWs('task:progress', {
+              taskId,
+              message:
+                backend === 'brain'
+                  ? 'Nexus Brain réfléchit…'
+                  : 'Initialisation de l’agent de code…',
+              stage: 'starting',
+            });
             const slashReply = await this.tryExecuteSlashCommand(
               String(body.prompt),
               backend,
@@ -1406,7 +1544,12 @@ export class NexusDaemonServer extends EventEmitter {
                   },
                   onFilesChanged: (files) => {
                     taskRecord.filesChanged = files;
-                    this.broadcastWs('task:progress', { taskId, filesChanged: files });
+                    this.broadcastWs('task:progress', {
+                      taskId,
+                      filesChanged: files,
+                      message: `${files.length} fichier(s) modifiés`,
+                      stage: 'executing',
+                    });
                   },
                 });
 
@@ -1416,6 +1559,9 @@ export class NexusDaemonServer extends EventEmitter {
             taskRecord.text = result.text;
             taskRecord.fileSummary = result.fileSummary;
             taskRecord.filesChanged = result.filesChanged;
+            if (result.filesChanged && result.filesChanged.length > 0) {
+              taskRecord.diff = await getGitDiff(targetPath, result.filesChanged);
+            }
             this.persistTasks();
 
             this.broadcastWs('task:completed', { ...taskRecord });

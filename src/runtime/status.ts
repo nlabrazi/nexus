@@ -1,4 +1,5 @@
 import type { AntigravityServiceStatus } from '../antigravity/types';
+import type { ClaudeCodeClientStatus } from '../claude/types';
 import type { CodexServiceStatus } from '../codex/types';
 import type { AgentBackendType } from './types';
 
@@ -10,6 +11,7 @@ export interface NexusStatusSnapshot {
   activeBackend?: AgentBackendType;
   codex?: CodexServiceStatus;
   antigravity?: AntigravityServiceStatus;
+  claude?: ClaudeCodeClientStatus;
   core?: {
     uptimeSeconds: number;
     onlineNodes: number;

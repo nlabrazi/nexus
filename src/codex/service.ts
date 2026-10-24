@@ -1,4 +1,5 @@
 import { isAbsolute, resolve } from 'node:path';
+import { AgentService, resolveAndSelectModel } from '../runtime/agent-service';
 import { CodexClient, CodexClientOptions } from './client';
 import {
   CodexApprovalHandler,
@@ -14,7 +15,7 @@ import { ModelPreferences } from './model-preferences';
 
 type SessionAction = 'ensure' | 'new' | 'resume';
 
-export class CodexService {
+export class CodexService implements AgentService {
   private readonly client: CodexClient;
   private sessionId?: string;
   private workspacePath?: string;
@@ -147,6 +148,18 @@ export class CodexService {
 
   async refreshStatus(): Promise<void> {
     await this.client.refreshRateLimits();
+  }
+
+  getModelMenu(path: string): Promise<ModelMenu> {
+    return this.listModels(path);
+  }
+
+  selectModelChoice(path: string, selection: ModelSelection, context?: string): Promise<void> {
+    return resolveAndSelectModel(this, path, selection, context);
+  }
+
+  getActiveWorkspacePath(): string | undefined {
+    return this.workspacePath;
   }
 
   private async changeSession(

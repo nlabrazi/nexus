@@ -4,8 +4,14 @@ using System.Drawing;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Threading;
 using System.Windows.Forms;
+
+[assembly: AssemblyTitle("Nexus Agent")]
+[assembly: AssemblyProduct("Nexus")]
+[assembly: AssemblyVersion("1.3.0.0")]
+[assembly: AssemblyFileVersion("1.3.0.0")]
 
 namespace NexusTrayApp
 {
@@ -14,8 +20,6 @@ namespace NexusTrayApp
         private const int Port = 4040;
         private const string HealthUrl = "http://127.0.0.1:4040/health";
         private const string MutexName = "NexusWindowsTrayAppMutex";
-        private const string NodePath = "/home/kaox/.nvm/versions/node/v24.14.1/bin/node";
-        private const string DaemonJs = "/home/kaox/code/bricolage/nexus/dist/daemon.js";
 
         private static NotifyIcon notifyIcon;
         private static ContextMenuStrip contextMenu;
@@ -53,24 +57,28 @@ namespace NexusTrayApp
                 "Nexus.lnk"
             );
 
-            // Création de l'icône de notification
+            // Création de l'icône de notification (icône embarquée dans Nexus.exe ou nexus.ico adjacent)
             notifyIcon = new NotifyIcon();
-            string iconPath = Path.Combine(appDir, "nexus.ico");
-            if (File.Exists(iconPath))
+            Icon trayIcon = null;
+            try
             {
-                try
+                trayIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+            }
+            catch { }
+
+            if (trayIcon == null)
+            {
+                string iconPath = Path.Combine(appDir, "nexus.ico");
+                if (File.Exists(iconPath))
                 {
-                    notifyIcon.Icon = new Icon(iconPath);
-                }
-                catch
-                {
-                    notifyIcon.Icon = SystemIcons.Application;
+                    try
+                    {
+                        trayIcon = new Icon(iconPath);
+                    }
+                    catch { }
                 }
             }
-            else
-            {
-                notifyIcon.Icon = SystemIcons.Application;
-            }
+            notifyIcon.Icon = trayIcon ?? SystemIcons.Application;
 
             notifyIcon.Text = "Nexus Agent - En ligne";
             notifyIcon.Visible = true;
@@ -79,7 +87,7 @@ namespace NexusTrayApp
             // Création du Menu Contextuel
             contextMenu = new ContextMenuStrip();
 
-            var headerItem = new ToolStripMenuItem("Nexus Agent v1.0.0");
+            var headerItem = new ToolStripMenuItem("Nexus Agent v1.3.0");
             headerItem.Enabled = false;
             headerItem.Font = new Font(headerItem.Font, FontStyle.Bold);
             contextMenu.Items.Add(headerItem);
@@ -164,8 +172,10 @@ namespace NexusTrayApp
         {
             if (CheckDaemonHealth()) return;
 
-            string wslCmd = "tmux kill-session -t nexus-daemon 2>/dev/null || true; " +
-                           "tmux new-session -d -s nexus-daemon '" + NodePath + " " + DaemonJs + " --host 0.0.0.0 --port " + Port + "'";
+            string wslCmd = "NODE_BIN=$(command -v node || ls -1d $HOME/.nvm/versions/node/*/bin/node 2>/dev/null | tail -n 1); " +
+                           "DAEMON_JS=${NEXUS_DAEMON_JS:-$(ls -1 $HOME/code/*/nexus/dist/daemon.js $HOME/code/nexus/dist/daemon.js 2>/dev/null | head -n 1)}; " +
+                           "tmux kill-session -t nexus-daemon 2>/dev/null || true; " +
+                           "tmux new-session -d -s nexus-daemon \"$NODE_BIN $DAEMON_JS --host 0.0.0.0 --port " + Port + "\"";
 
             ProcessStartInfo psi = new ProcessStartInfo();
             psi.FileName = "wsl.exe";

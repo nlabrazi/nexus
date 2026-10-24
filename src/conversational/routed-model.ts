@@ -10,7 +10,7 @@ import { ConversationProjectContext } from './types';
 export const CLOUD_DEFAULTS: ReadonlyArray<{ provider: CloudProvider; model: string }> = [
   { provider: 'cerebras', model: 'gpt-oss-120b' },
   { provider: 'groq', model: 'openai/gpt-oss-120b' },
-  { provider: 'gemini', model: 'gemini-3.8-flash' },
+  { provider: 'gemini', model: 'gemini-3.5-flash-lite' },
   { provider: 'openrouter', model: 'openrouter/free' },
 ];
 interface Route {

@@ -1,3 +1,29 @@
+import type {
+  AgentApprovalHandler,
+  AgentApprovalRequest,
+  AgentModel,
+  ApprovalDecision,
+  ModelControls,
+  ModelMenu,
+  ModelSelection,
+  TokenBreakdown,
+  TurnTimeoutHandler,
+  TurnTimeoutRequest,
+} from '../runtime/agent-service';
+
+export type {
+  ApprovalDecision,
+  ModelControls,
+  ModelMenu,
+  ModelSelection,
+  TokenBreakdown,
+  TurnTimeoutHandler,
+  TurnTimeoutRequest,
+};
+export type CodexModel = AgentModel;
+export type CodexApprovalRequest = AgentApprovalRequest;
+export type CodexApprovalHandler = AgentApprovalHandler;
+
 export type RpcRequestId = number | string;
 
 export interface RpcMessage {
@@ -21,39 +47,6 @@ export interface CodexThread {
   reasoningEffort?: string | null;
 }
 
-export interface CodexModel {
-  id: string;
-  model: string;
-  displayName: string;
-  description: string;
-  hidden?: boolean;
-  isDefault: boolean;
-  defaultReasoningEffort: string;
-  supportedReasoningEfforts: { reasoningEffort: string; description: string }[];
-}
-
-export interface ModelSelection {
-  model: string;
-  effort: string;
-}
-export interface ModelMenu {
-  models: CodexModel[];
-  selected?: ModelSelection;
-  context: string;
-}
-export interface ModelControls {
-  list(): Promise<ModelMenu>;
-  select(selection: ModelSelection, context: string): Promise<void>;
-}
-
-export interface TokenBreakdown {
-  totalTokens: number;
-  inputTokens: number;
-  cachedInputTokens: number;
-  cacheWriteInputTokens?: number;
-  outputTokens: number;
-  reasoningOutputTokens: number;
-}
 export interface ThreadTokenUsage {
   total: TokenBreakdown;
   last: TokenBreakdown;
@@ -169,30 +162,3 @@ export interface RpcServerRequest {
   method: string;
   params?: unknown;
 }
-
-export type ApprovalDecision = 'accept' | 'decline';
-
-export interface CodexApprovalRequest {
-  agentName?: string;
-  kind: 'command' | 'fileChange';
-  threadId: string;
-  turnId: string;
-  itemId: string;
-  details: string;
-  expiresAt: number;
-}
-
-export type CodexApprovalHandler = (
-  request: CodexApprovalRequest,
-  signal: AbortSignal
-) => Promise<ApprovalDecision>;
-
-export interface TurnTimeoutRequest {
-  agentName?: string;
-  elapsedSeconds: number;
-}
-
-export type TurnTimeoutHandler = (
-  request: TurnTimeoutRequest,
-  signal: AbortSignal
-) => Promise<boolean>;
