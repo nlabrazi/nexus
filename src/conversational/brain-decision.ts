@@ -23,7 +23,7 @@ export const BRAIN_INSTRUCTIONS = [
   'Si toolsAllowed est false, réponds avec action "reply".',
 ].join('\n');
 
-const VALID_ACTIONS = new Set<BrainDecision['action']>([
+export const VALID_BRAIN_ACTIONS = new Set<BrainDecision['action']>([
   'reply',
   'get_project_status',
   'inspect_project',
@@ -32,6 +32,8 @@ const VALID_ACTIONS = new Set<BrainDecision['action']>([
   'list_projects',
   'switch_project',
 ]);
+
+const VALID_ACTIONS = VALID_BRAIN_ACTIONS;
 
 const OPTIONAL_TEXT_ACTIONS = new Set<BrainDecision['action']>([
   'get_project_status',

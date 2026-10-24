@@ -10,19 +10,22 @@ export interface SessionPersistence {
   load(): SavedSession | undefined;
   save(session: SavedSession): Promise<void>;
 }
-interface WorkspaceStorage {
+export interface WorkspaceStorage {
   get(key: string): unknown;
   update(key: string, value: unknown): PromiseLike<void>;
 }
-const KEY = 'nexus.codex.session';
+const DEFAULT_KEY = 'nexus.codex.session';
 
 /** VS Code workspaceState already provides isolation between workspaces. */
 export class WorkspaceSessionPersistence implements SessionPersistence {
   private pending: Promise<void> = Promise.resolve();
-  constructor(private readonly storage: WorkspaceStorage) {}
+  constructor(
+    private readonly storage: WorkspaceStorage,
+    private readonly key = DEFAULT_KEY
+  ) {}
 
   load(): SavedSession | undefined {
-    const value = this.storage.get(KEY) as Partial<SavedSession> | undefined;
+    const value = this.storage.get(this.key) as Partial<SavedSession> | undefined;
     if (value?.version !== 1 || typeof value.id !== 'string' || !value.id || /\s/.test(value.id)) {
       return undefined;
     }
@@ -54,7 +57,7 @@ export class WorkspaceSessionPersistence implements SessionPersistence {
     const write = this.pending
       .catch(() => {})
       .then(async () => {
-        await this.storage.update(KEY, snapshot);
+        await this.storage.update(this.key, snapshot);
       });
     this.pending = write;
     return write;

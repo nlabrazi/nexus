@@ -158,7 +158,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const newCodexSessionCommand = vscode.commands.registerCommand(
     'nexus.newCodexSession',
     async () => {
-      await runLocalSessionAction({ type: 'new' });
+      await runLocalSessionAction('codex', { type: 'new' });
     }
   );
 
@@ -200,7 +200,7 @@ export async function activate(context: vscode.ExtensionContext) {
         ignoreFocusOut: true,
       });
       if (id?.trim()) {
-        await runLocalSessionAction({ type: 'resume', sessionId: id.trim() });
+        await runLocalSessionAction('codex', { type: 'resume', sessionId: id.trim() });
       }
     }
   );
@@ -220,6 +220,11 @@ export async function activate(context: vscode.ExtensionContext) {
           label: '✨ Gemini Antigravity',
           value: 'antigravity' as const,
           description: current === 'antigravity' ? '(actif)' : '',
+        },
+        {
+          label: '🧠 Claude Code',
+          value: 'claude' as const,
+          description: current === 'claude' ? '(actif)' : '',
         },
       ],
       { placeHolder: 'Choisir le backend agent actif pour Nexus' }
@@ -275,7 +280,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const newAntigravitySessionCommand = vscode.commands.registerCommand(
     'nexus.newAntigravitySession',
     async () => {
-      await runLocalAntigravitySessionAction({ type: 'new' });
+      await runLocalSessionAction('antigravity', { type: 'new' });
     }
   );
 
@@ -287,7 +292,7 @@ export async function activate(context: vscode.ExtensionContext) {
         ignoreFocusOut: true,
       });
       if (id?.trim()) {
-        await runLocalAntigravitySessionAction({ type: 'resume', sessionId: id.trim() });
+        await runLocalSessionAction('antigravity', { type: 'resume', sessionId: id.trim() });
       }
     }
   );
@@ -345,30 +350,18 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(statusBar);
 }
 
-async function runLocalSessionAction(action: RemoteSessionAction): Promise<void> {
+async function runLocalSessionAction(
+  backend: 'codex' | 'antigravity',
+  action: RemoteSessionAction
+): Promise<void> {
+  const label = backend === 'antigravity' ? 'Antigravity' : 'Codex';
   if (!nexusRuntime) {
-    throw new Error('Codex service unavailable.');
+    throw new Error(`${label} service unavailable.`);
   }
   try {
-    const id = await nexusRuntime.handleSessionAction('codex', action);
+    const id = await nexusRuntime.handleSessionAction(backend, action);
     vscode.window.showInformationMessage(
-      `Nexus : session Codex ${action.type === 'new' ? 'créée' : 'reprise'} — ${id}`
-    );
-  } catch (error) {
-    vscode.window.showErrorMessage(
-      `Nexus : ${error instanceof Error ? error.message : String(error)}`
-    );
-  }
-}
-
-async function runLocalAntigravitySessionAction(action: RemoteSessionAction): Promise<void> {
-  if (!nexusRuntime) {
-    throw new Error('Gemini Antigravity service unavailable.');
-  }
-  try {
-    const id = await nexusRuntime.handleSessionAction('antigravity', action);
-    vscode.window.showInformationMessage(
-      `Nexus : session Antigravity ${action.type === 'new' ? 'créée' : 'reprise'} — ${id}`
+      `Nexus : session ${label} ${action.type === 'new' ? 'créée' : 'reprise'} — ${id}`
     );
   } catch (error) {
     vscode.window.showErrorMessage(
