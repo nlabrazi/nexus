@@ -1,9 +1,11 @@
 <a name="readme-top"></a>
 
 <!-- PROJECT SHIELDS -->
-[![VS Code][vscode-shield]][vscode-url]
+[![Windows][windows-shield]][windows-url]
+[![Android][android-shield]][android-url]
 [![TypeScript][typescript-shield]][typescript-url]
 [![Node.js][node-shield]][node-url]
+[![Vue.js][vue-shield]][vue-url]
 [![License][license-shield]][license-url]
 
 <!-- TABLE OF CONTENTS -->
@@ -24,15 +26,16 @@
       <ul>
         <li><a href="#-requirements">Requirements</a></li>
         <li><a href="#-development-installation">Development Installation</a></li>
-        <li><a href="#-telegram-setup">Telegram Setup</a></li>
         <li><a href="#-codex-setup">Codex Setup</a></li>
+        <li><a href="#-gemini-antigravity-setup">Gemini Antigravity Setup</a></li>
+        <li><a href="#-claude-code-setup">Claude Code Setup</a></li>
       </ul>
     </li>
     <li>
       <a href="#-daily-usage">Daily Usage</a>
       <ul>
-        <li><a href="#-vscode-commands">VS Code Commands</a></li>
-        <li><a href="#-telegram-commands">Telegram Commands</a></li>
+        <li><a href="#-windows-system-tray-nexusexe">Windows System Tray (Nexus.exe)</a></li>
+        <li><a href="#-mobile--web-app-controls">Mobile & Web App Controls</a></li>
       </ul>
     </li>
     <li>
@@ -60,100 +63,74 @@
 
 ### ℹ️ Description
 
-**Nexus** is a private VS Code extension that turns Telegram into a remote control for local coding agents (**OpenAI Codex** and **Gemini Antigravity**).
+**Nexus** is a private standalone daemon (`Nexus.exe` + WSL backend) and mobile/web application (Nuxt 4 + Capacitor Android) that turns a smartphone or browser into a real-time remote control for local coding agents (**OpenAI Codex**, **Google Gemini Antigravity**, **Anthropic Claude Code**, and **Nexus Brain**).
 
-The goal is simple: keep the real development environment on the workstation while allowing safe remote interaction from a smartphone.
+The goal is simple: keep the real development environment on the workstation while allowing safe, responsive, voice-enabled remote interaction from a smartphone or desktop browser.
 
-Nexus runs inside the VS Code workspace, listens to a private Telegram bot, and forwards authorized instructions to local agent backends such as Codex or Gemini Antigravity (`agy`).
+`Nexus.exe` runs silently in the Windows System Tray, manages the WSL `nexus-daemon` process (`dist/daemon.js`) on port `4040`, serves the static Web PWA, streams real-time WebSocket events, and orchestrates local coding agents against your repositories.
 
 Typical use case:
 
 ```text
-📱 Telegram
+📱 Android App (APK) / Web PWA
+    ↓  (HTTP REST + WebSocket /ws + FCM Push)
+🖥️ Nexus.exe (Windows Tray) ──► 🛡️ Nexus Unified Daemon (WSL :4040)
     ↓
-🧩 Nexus VS Code Extension (Multi-Backend: Codex / Antigravity)
+🧠 Nexus Brain  |  🤖 OpenAI Codex  |  ✨ Gemini Antigravity  |  🟣 Claude Code
     ↓
-🤖 Codex App Server  OR  ✨ Gemini Antigravity CLI
+📁 Active Git / Code Workspace
     ↓
-📁 Current VS Code Workspace
+🔄 Real-Time Streaming + Diff Inspector + Instant Approvals + Voice (TTS/STT)
     ↓
-🤖 / ✨ Agent Response
-    ↓
-📱 Telegram
+📱 Android App / Web PWA
 ```
 
-Nexus is not intended to replace VS Code, Git, Codex, or Antigravity. It acts as a secure bridge between them.
+Nexus is not intended to replace your IDE, Git, Codex, Antigravity, or Claude Code. It acts as a unified, low-latency bridge between them and your mobile device.
 
 ---
 
 ## ⚡ Core Features
 
-- 📱 **Telegram Remote Control**
-  - Send instructions from a smartphone.
-  - Receive Codex and Gemini Antigravity responses directly in Telegram.
-  - Long-polling transport: no inbound port needs to be exposed.
+- 🖥️ **Native Windows System Tray (`Nexus.exe`)**
+  - Single-click native C# launcher (`windows/NexusTray.cs`) managing the WSL background daemon in `tmux`.
+  - Health monitoring (`/health`), one-click browser launch, Tailscale/LAN URL copy, and "Start with Windows" shortcut.
 
-- 🔀 **Dual-Backend Support (Codex & Antigravity)**
-  - Seamlessly switch between OpenAI Codex and Google Gemini Antigravity (`/backend [codex|antigravity]`).
-  - Direct execution aliases: `/codex <prompt>`, `/antigravity <prompt>`, `/agy <prompt>`, `/gemini <prompt>`.
-  - Symmetric session management, model selection, and token telemetry across both backends.
+- 🔀 **Multi-Agent Support (Brain, Codex, Antigravity & Claude Code)**
+  - Seamlessly switch between **Nexus Brain**, **OpenAI Codex**, **Google Gemini Antigravity (`agy`)**, and **Anthropic Claude Code (`claude`)**.
+  - Unified [`AgentService`](src/runtime/agent-service.ts) contract across all coding backends: session lifecycle, model & reasoning-effort discovery, token telemetry, turn timeouts, and cancellation.
+  - One-tap **Brain → Code Handoff**: brainstorm an architectural solution with Brain, then forward the actionable proposal directly to Codex, Antigravity, or Claude Code.
 
-- 🔐 **Secure Telegram Pairing**
-  - Pairing code generated from VS Code.
-  - Only the paired Telegram user/chat is authorized.
-  - Private chats only.
-  - Bot token stored with VS Code `SecretStorage`.
+- 🧠 **Nexus Brain (Cloud Providers & Local Fallback)**
+  - Dedicated conversational intelligence for brainstorming, architectural discussions, and codebase exploration.
+  - Routes through configured Cerebras, Groq, Gemini, and free OpenRouter models, then local Ollama. See [cloud setup](docs/brain-cloud.md).
+  - Zero token consumption from paid coding agent quotas during planning phases.
+  - Persistent persona, project preferences, and project memory synchronized locally and via Upstash Redis.
 
-- 🤖 **Codex Integration**
-  - Starts Codex through `codex app-server --stdio`.
-  - Uses JSON-RPC over stdio.
-  - Creates and reuses workspace-bound Codex sessions.
-  - Streams agent responses.
-  - Handles RPC and turn timeouts.
+- 🤖 **OpenAI Codex Integration**
+  - Starts Codex through `codex app-server --stdio` over JSON-RPC.
+  - Creates and reuses workspace-bound Codex sessions with streaming deltas, diff capture, and interactive approvals.
 
-- ✨ **Gemini Antigravity Integration**
+- ✨ **Google Gemini Antigravity Integration**
   - Headless persistent process execution via `agy` CLI with NDJSON streaming (`stream-json`).
-  - Automated session tracking, workspace binding, and Git branch synchronization.
-  - Full telemetry: token consumption (input, cached, output, thinking), reasoning effort, and turn monitoring.
-  - Sandboxed execution (`--sandbox`) by default with fail-closed safety.
+  - Automated session tracking, workspace binding, Git branch synchronization, and token/quota telemetry.
 
-- ✅ **Remote Approvals**
-  - Codex approval requests can be surfaced through Telegram.
-  - Unknown or expired approvals fail closed.
-  - No implicit auto-approval.
+- 🟣 **Anthropic Claude Code Integration**
+  - Headless execution via `claude` CLI (`--output-format stream-json --verbose`) with session continuation (`--resume`), model/effort selection, and live tool/file progress tracking.
 
-- 🧭 **Workspace Awareness**
-  - Nexus always works against the currently opened VS Code workspace.
-  - Workspace and Git safety checks protect against accidental operations in the wrong project.
+- ⚡ **Instant Remote Approvals & Push Notifications**
+  - Tool execution and file/command approvals pop up modally in real time over WebSocket with haptic feedback.
+  - Native Android notifications and **Firebase Cloud Messaging (FCM)** wake-up push alerts when the phone screen is off or the app is in the background.
+  - Fail-closed posture: unknown or expired approvals are rejected automatically.
 
-- 💬 **Telegram UX**
-  - `/status` reports Nexus activity, active backend, sessions, models, token usage, context usage, and quotas.
-  - `/model` opens an interactive paginated model picker with reasoning-effort selection for the active backend.
-  - `/stop` cancels the currently running agent turn (Codex or Antigravity).
-  - Session commands (`/new`, `/resume <id>`) allow creating or resuming conversations in the active backend.
-  - Long responses are formatted and split safely for Telegram with code fence preservation.
+- 🔍 **Visual Git Diff Inspector**
+  - Per-message collapsible unified diff viewer with file stats (`+additions` / `-deletions`) and syntax-highlighted hunks.
 
-- 💾 **Session Persistence**
-  - Nexus restores persisted session information (Codex and Antigravity) after reload or restart.
-  - Session lifecycle is isolated per workspace to prevent cross-project contamination.
+- 🗣️ **Voice Dictation (STT) & Vocal Responses (TTS)**
+  - Inline native Android speech recognition (`popup: false`) and fallback audio recording with local Whisper (`faster-whisper`) transcription.
+  - High-quality neural vocal synthesis via **Fish Audio** with automatic fallback to native Android / Web SpeechSynthesis voices.
 
-- 🧠 **Nexus Brain (cloud providers & local fallback)**
-  - Dedicated conversational intelligence for brainstorming, architectural discussions, and technical exchanges.
-  - Routes through configured Cerebras, Groq, Gemini and free OpenRouter models, then local Ollama. Without API keys, only Ollama is used; local-only mode remains available. See [cloud setup](docs/brain-cloud.md).
-  - Zero token consumption from paid Codex / Antigravity subscriptions during brainstorm and planning phases.
-  - Unrestricted directory exploration starting by default in `/code` or `~/code`.
-
-- ⚡ **Instant Remote Approvals**
-  - Tool execution and command approvals automatically pop up modally on screen with haptic feedback.
-  - No buried pills or missed timeouts: one-tap "Autoriser" or "Refuser".
-
-- 🗣️ **Vocal Responses (TTS)**
-  - Assistant responses are optionally spoken aloud automatically via Web SpeechSynthesis.
-  - Per-message replay controls and global quick toggle.
-
-- 🎛️ **Dynamic Agent & Model Switcher**
-  - Seamlessly switch between Brain (cloud or Ollama), Codex, and Antigravity.
-  - Query installed models dynamically via `/api/models` and pick target model per agent.
+- 📊 **Live Usage & Quota Dashboard**
+  - Real-time visibility into Brain provider rate limits, active agent sessions, context window utilization, and account quota reset timers.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -162,125 +139,77 @@ Nexus is not intended to replace VS Code, Git, Codex, or Antigravity. It acts as
 ## 🏗️ Architecture
 
 ```text
-src/
-├── extension.ts
-├── core/
-│   ├── cli.ts
-│   ├── nexus-core.ts
-│   ├── presence.ts
-│   ├── ws-connection.ts
-│   ├── types.ts
-│   └── index.ts
-├── desktop/
-│   ├── cli.ts
-│   ├── node.ts
-│   ├── ws-client.ts
-│   ├── config.ts
-│   ├── types.ts
-│   └── index.ts
-├── runtime/
-│   ├── nexus-runtime.ts
-│   ├── workspace.ts
-│   ├── storage.ts
-│   └── types.ts
-├── protocol/
-│   ├── types.ts
-│   ├── messages.ts
-│   └── errors.ts
-├── conversational/
-│   ├── service.ts
-│   ├── tools.ts
-│   ├── codex-model.ts
-│   ├── codex-inspector.ts
-│   └── types.ts
-├── telegram/
-│   ├── client.ts
-│   ├── service.ts
-│   ├── models.ts
-│   ├── status.ts
-│   └── types.ts
-├── codex/
-│   ├── client.ts
-│   ├── service.ts
-│   ├── persistence.ts
-│   ├── model-preferences.ts
-│   └── types.ts
-└── antigravity/
-    ├── client.ts
-    ├── service.ts
-    ├── persistence.ts
-    ├── model-preferences.ts
-    ├── telemetry.ts
-    ├── errors.ts
-    └── types.ts
-```
-
-Responsibilities:
-
-```text
-extension.ts
-└── VS Code lifecycle, commands, status bar, NexusRuntime instantiation
-
-core/ (nexus-core)
-└── Central coordination server, desktop presence tracking (heartbeat/liveness), HTTP & WebSocket RFC 6455 protocol gateway
-
-desktop/ (nexus-desktop)
-└── Standalone terminal Desktop Node daemon, CLI commands (start, status, exec), outbound authenticated WebSocket connection to Core
-
-NexusRuntime
-└── Unified headless agent orchestration (tasks, Brain, sessions, branches, models, cancellation)
-
-WorkspaceGuard
-└── Standalone / VS Code workspace and Git security checks, protected branches, preflight guards
-
-TelegramService
-└── Polling, pairing, authorization, multi-backend routing (/backend, /codex, /antigravity)
-
-CodexService / AntigravityService / ConversationalService (Nexus Brain)
-└── Agent sessions, turn lifecycle, workspace isolation, model preferences, conversational guidance
-
-CodexClient
-└── Codex App Server process + JSON-RPC transport
-
-AntigravityClient
-└── Headless persistent agy process + NDJSON stream transport
+nexus/
+├── src/
+│   ├── daemon/
+│   │   ├── cli.ts                  # Unified daemon CLI entrypoint (dist/daemon.js)
+│   │   ├── daemon-server.ts        # HTTP REST API, static PWA server & WebSocket hub
+│   │   └── ws-connection.ts        # RFC 6455 WebSocket frame parser & sender
+│   ├── runtime/
+│   │   ├── nexus-runtime.ts        # Headless multi-agent orchestrator
+│   │   ├── agent-service.ts        # Unified AgentService interface & shared helpers
+│   │   ├── model-preferences.ts    # Shared per-workspace model preference store
+│   │   ├── session-persistence.ts  # Shared per-workspace session store
+│   │   ├── project-registry.ts     # Workspace discovery & registration
+│   │   ├── usage-dashboard.ts      # Agent & Brain quota/telemetry aggregator
+│   │   ├── workspace.ts            # Standalone WorkspaceGuard
+│   │   └── storage.ts              # Key-value storage abstraction
+│   ├── conversational/             # Nexus Brain (Cloud providers + Ollama + read-only tools)
+│   ├── codex/                      # OpenAI Codex App Server JSON-RPC client & service
+│   ├── antigravity/                # Google Gemini Antigravity (agy) NDJSON client & service
+│   ├── claude/                     # Anthropic Claude Code CLI streaming client & service
+│   ├── memory/                     # Local file & Upstash Redis HybridStorage
+│   ├── notifications/              # Firebase Cloud Messaging (FCM HTTP v1) push service
+│   ├── security/                   # Token authentication & IP rate-limiting
+│   ├── speech/                     # Local STT worker bridge & Fish Audio TTS service
+│   └── workspace/                  # Git & filesystem safety preflight checks
+├── web/
+│   ├── app/
+│   │   ├── app.vue                 # Main workspace & HUD shell
+│   │   ├── components/             # Modular Vue 3 components (Diff, Approvals, Picker, Quota, etc.)
+│   │   ├── composables/            # Vue composables (Speech, Voice, Notifications, Agent, Chat, Diff)
+│   │   ├── types/                  # Shared frontend TypeScript definitions
+│   │   └── utils/                  # Tested pure logic (diff parser, markdown, speech, handoff)
+│   └── android/                    # Capacitor Android native project (ForegroundService + FCM)
+└── windows/
+    ├── NexusTray.cs                # Native Windows System Tray application source
+    └── build-exe.bat               # One-click csc.exe compiler for Nexus.exe
 ```
 
 ### Runtime Flow
 
 ```text
-Telegram message (/codex, /antigravity, /new, /resume, /model, /backend)
+Mobile App (Android APK) / Web Browser
+      ↓  HTTP /api/* + WebSocket /ws
+NexusDaemonServer (src/daemon/daemon-server.ts)
       ↓
-TelegramService
+NexusRuntime (src/runtime/nexus-runtime.ts)
       ↓
-NexusRuntime (Isolated agent runtime)
+WorkspaceGuard (Git & directory preflight)
       ↓
-WorkspaceGuard (Git & workspace preflight)
+ConversationalService (Brain) | CodexService | AntigravityService | ClaudeService
       ↓
-CodexService  OR  AntigravityService  OR  ConversationalService
+Cloud/Ollama API | codex app-server | agy CLI | claude CLI
       ↓
-CodexClient (JSON-RPC)  OR  AntigravityClient (NDJSON stream)
+Real-time WebSocket chunks, tool progress, diffs & approval modals
       ↓
-codex app-server  OR  agy CLI
-      ↓
-workspace files / tools
-      ↓
-Formatted response + file summary
-      ↓
-Telegram
+Mobile App / Web Browser (+ FCM Push & Fish Audio / Native TTS)
 ```
 
 ---
 
 ## 🛠️ Built With
 
-- [![VS Code][vscode-shield]][vscode-url]
+- [![Windows][windows-shield]][windows-url]
+- [![Android][android-shield]][android-url]
 - [![TypeScript][typescript-shield]][typescript-url]
 - [![Node.js][node-shield]][node-url]
-- OpenAI Codex CLI / App Server
+- [![Vue.js][vue-shield]][vue-url]
+- Nuxt 4 & Capacitor 7 (Android)
+- OpenAI Codex CLI (`codex app-server`)
 - Google Gemini Antigravity CLI (`agy`)
-- Telegram Bot API
-- esbuild
+- Anthropic Claude Code CLI (`claude`)
+- Biome & esbuild
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -290,58 +219,45 @@ Telegram
 
 ## 📋 Requirements
 
-Nexus currently expects:
+Nexus expects:
 
-- VS Code
-- WSL/Linux workspace environment
-- Node.js + npm
-- Codex CLI installed and authenticated
-- `bubblewrap` available on Linux for Codex sandboxing
-- A private Telegram bot
-- Nexus installed in the same VS Code/WSL environment as the target workspace
+- Windows 10/11 with WSL2 (Ubuntu/Linux environment)
+- Node.js 20+ & npm in WSL
+- `tmux` installed in WSL (used by `Nexus.exe` to supervise the background daemon)
+- At least one coding agent CLI installed and authenticated in WSL (`codex`, `agy`, or `claude`)
+- Optional: JDK 21 + Android SDK Platform 35 (for building the Android APK locally)
 
-Example Codex checks:
+Example environment checks in WSL:
 
 ```bash
+node --version
+tmux -V
 codex --version
-which codex
-codex login status
-```
-
-Example sandbox prerequisite:
-
-```bash
-sudo apt update
-sudo apt install bubblewrap
+agy --version
+claude --version
 ```
 
 ---
 
 ## 💻 Development Installation
 
-Clone the repository:
+Clone the repository and install dependencies (root and web):
 
 ```bash
-git clone <your-nexus-repository>
+git clone https://github.com/nlabrazi/nexus.git
 cd nexus
 npm install
+cd web && npm install && cd ..
 ```
 
-Validate the project:
+Validate and build the daemon and static web client:
 
 ```bash
 npm run check-types
 npm run lint
 npm run package
+npm run web:build
 ```
-
-Run Nexus in development mode with:
-
-```text
-F5
-```
-
-VS Code opens an **Extension Development Host**.
 
 For development-specific instructions, see:
 
@@ -349,40 +265,9 @@ For development-specific instructions, see:
 
 ---
 
-## 📱 Telegram Setup
-
-1. Create a bot with **@BotFather**.
-2. Launch Nexus in VS Code.
-3. Run:
-
-```text
-Nexus: Configure Telegram
-```
-
-4. Paste the bot token.
-5. Run:
-
-```text
-Nexus: Pair Telegram
-```
-
-6. Send the generated pairing command to the bot:
-
-```text
-/pair 123456
-```
-
-7. Nexus confirms the pairing in Telegram.
-
-The Telegram token is stored in VS Code `SecretStorage`. It should never be committed to the repository.
-
----
-
 ## 🤖 Codex Setup
 
-Install and authenticate the Codex CLI in the same environment where Nexus runs.
-
-Example checks:
+Install and authenticate the Codex CLI in your WSL environment:
 
 ```bash
 codex --version
@@ -390,21 +275,13 @@ which codex
 codex login status
 ```
 
-Nexus communicates with Codex through:
-
-```bash
-codex app-server --stdio
-```
-
-For more details, see [Codex setup](docs/codex-sessions.md).
+Nexus communicates with Codex through `codex app-server --stdio`. See [Codex sessions](docs/codex-sessions.md).
 
 ---
 
 ## ✨ Gemini Antigravity Setup
 
-Install the Google Gemini Antigravity CLI (`agy`) and ensure your Google Cloud or Gemini API access is configured.
-
-Example checks:
+Install the Google Gemini Antigravity CLI (`agy`) and verify model availability:
 
 ```bash
 agy --version
@@ -412,13 +289,20 @@ which agy
 agy models
 ```
 
-Nexus executes Antigravity in headless streaming mode:
+Nexus executes Antigravity in headless streaming mode (`--input-format stream-json --output-format stream-json --sandbox`). See [Antigravity setup](docs/antigravity-setup.md).
+
+---
+
+## 🟣 Claude Code Setup
+
+Install and authenticate Anthropic's `claude` CLI in WSL:
 
 ```bash
-agy -p "" --input-format stream-json --output-format stream-json --sandbox --add-dir <workspace>
+claude --version
+which claude
 ```
 
-For detailed configuration (custom paths, sandbox flags), see [Antigravity setup](docs/antigravity-setup.md).
+Nexus executes Claude Code in non-interactive streaming JSON mode and preserves conversation continuity across turns.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -426,130 +310,37 @@ For detailed configuration (custom paths, sandbox flags), see [Antigravity setup
 
 # 🛋️ Daily Usage
 
-Nexus is designed to run automatically when VS Code starts.
+## 🖥️ Windows System Tray (`Nexus.exe`)
 
-Typical daily setup:
-
-```text
-1. Start the workstation.
-2. Open VS Code in WSL.
-3. Open the root folder of the project you want to control.
-4. Nexus starts automatically.
-5. Leave VS Code running.
-6. Use Telegram from the phone.
-```
-
-Important:
-
-> Nexus operates on the currently opened workspace. Always open the real project root, not a nested folder such as `src/`.
-
-Example:
-
-```text
-✅ /home/user/code/sentinel
-❌ /home/user/code/sentinel/src
-```
+1. Launch `Nexus.exe` on Windows (or enable **Démarrer avec Windows** from its tray menu).
+2. `Nexus.exe` automatically starts `dist/daemon.js` inside a detached WSL `tmux` session (`nexus-daemon`) on port `4040`.
+3. Right-click the Nexus tray icon near the Windows clock to:
+   - Check daemon health (`[OK] En ligne (Port 4040)`).
+   - Open the Web application (`http://localhost:4040`).
+   - Copy the mobile URL (automatically prefers your Tailscale `100.x.y.z` or LAN IP).
+   - Restart or stop the daemon.
 
 ---
 
-## 🧩 VS Code Commands
+## 📱 Mobile & Web App Controls
 
-Nexus exposes commands through the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`):
+From the Android app or Web browser:
 
-```text
-Nexus: Status
-Nexus: Select Active Backend
-Nexus: Configure Telegram
-Nexus: Test Telegram Connection
-Nexus: Pair Telegram
-Nexus: Switch Branch
-Nexus: Test Local Speech-to-Text
-
-# Codex commands
-Nexus: Test Codex Connection
-Nexus: Start Codex Session
-Nexus: New Codex Session
-Nexus: Resume Codex Session
-Nexus: Test Codex Prompt
-
-# Gemini Antigravity commands
-Nexus: Test Antigravity Connection
-Nexus: Start Antigravity Session
-Nexus: New Antigravity Session
-Nexus: Resume Antigravity Session
-Nexus: Test Antigravity Prompt
-```
-
----
-
-## 📲 Telegram Commands
-
-Nexus provides a rich set of Telegram commands:
-
-```text
-/help                        # Formatted command reference in French
-/status                      # Full status report (project, backend, sessions, models, tokens, quotas)
-/backend [codex|antigravity] # Query or toggle the active agent backend
-/model                       # Interactive model and reasoning effort picker for the active backend
-/codex <instruction>         # Send instruction directly to OpenAI Codex
-/antigravity <instruction>   # Send instruction directly to Gemini Antigravity (aliases: /agy, /gemini)
-/stop                        # Stop the current running turn (Codex or Antigravity)
-/new                         # Create a new session in the active backend
-/resume <session-id>         # Resume an existing session in the active backend
-/branches                    # List Git branches and identify the current branch
-/switch <branch>             # Safely switch Git branch (with tracking support)
-```
-
-Send `/help` for a formatted command reference in French, grouped by usage with examples. Help remains available while agents are working and is restricted to the paired private chat.
-
-Send `/model`, tap a model, then choose its reasoning effort. The catalog comes from the active backend (`codex` or `antigravity`). The choice applies to the next explicit prompt and survives extension reloads for that workspace.
-
-`/status` displays the active backend, current sessions, acknowledged configuration, token consumption, context usage, and account quotas.
-
-Examples:
-
-```text
-/status
-```
-
-```text
-/backend antigravity
-/model
-/antigravity Analyse l'architecture du projet et propose une refactorisation modulaire.
-```
-
-```text
-/codex Analyse pourquoi le dernier test échoue. Ne modifie rien.
-```
-
-```text
-/stop
-```
+- **Home Screen**: Switch between **Mode Réflexion (Nexus Brain)** and **Mode Code (Codex / Antigravity / Claude)**, browse projects, or open Settings.
+- **Agent & Model Picker**: Tap the active agent pill in the top HUD to switch agents, select a specific model, or adjust reasoning effort (`low`, `medium`, `high`, `xhigh`).
+- **Voice Input**: Tap the microphone button for inline speech recognition (or server-side transcription) with optional auto-send.
+- **Brain → Code Handoff**: On any Brain response, tap **Transmettre au mode Code** to prefill the coding agent composer with an actionable implementation prompt.
+- **Diff Inspector**: Tap the modified files badge under an assistant reply to inspect syntax-highlighted unified git diffs.
+- **Approvals Modal**: Authorize or decline sensitive command/file operations in one tap.
 
 Detailed documentation:
 
-- [Local speech-to-text setup and test](docs/speech-local.md)
-- [Local acknowledgement voice: Piper / Jessica](docs/speech-voice.md)
-- [Telegram voice transcription](docs/telegram-voice.md)
-- [Git branch selection](docs/workspace-safety.md#changer-de-branche)
-- [Telegram status](docs/telegram-status.md)
-- [Telegram model selection](docs/telegram-models.md)
-- [Telegram stop](docs/telegram-stop.md)
-- [Telegram approvals](docs/telegram-approvals.md)
-- [Telegram formatting](docs/telegram-formatting.md)
-- [Codex sessions](docs/codex-sessions.md)
-- [Codex errors & recovery](docs/codex-errors.md)
-- [Gemini Antigravity setup](docs/antigravity-setup.md)
-- [Gemini Antigravity sessions](docs/antigravity-sessions.md)
-- [Gemini Antigravity models](docs/antigravity-models.md)
-- [Gemini Antigravity errors](docs/antigravity-errors.md)
 - [Nexus Brain cloud providers and API key setup](docs/brain-cloud.md)
-- [Nexus Brain initial spike](docs/nexus-brain.md)
 - [Agent Memory and Context Augmentation](docs/agent-memory.md)
-- [Nexus Protocol](docs/nexus-protocol.md)
-- [Agent Runtime Isolation](docs/runtime-isolation.md)
-- [Desktop Node](docs/desktop-node.md)
-- [Nexus Core](docs/nexus-core.md)
+- [Local speech-to-text setup and test](docs/speech-local.md)
+- [Vocal configuration (Fish Audio & native TTS)](docs/speech-voice.md)
+- [Usage & Quota Dashboard](docs/usage-dashboard.md)
+- [Workspace and Git safety](docs/workspace-safety.md)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -557,30 +348,23 @@ Detailed documentation:
 
 # 🔐 Security Model
 
-Nexus indirectly grants access to a development workstation, so the default posture is **fail closed**.
+Nexus grants remote control over local coding agents, so the default posture is **fail closed**.
 
-### Telegram
+### Authentication & Network
 
-- Only the paired Telegram user and chat are authorized.
-- Private chats only.
-- Unknown users are ignored.
-- Bot token is stored in VS Code `SecretStorage`.
-- Nexus uses Telegram long polling and exposes no inbound HTTP port.
+- Token-based authentication (`Authorization: Bearer <token>`) with brute-force rate limiting (`AuthService`).
+- Designed for private local networks or encrypted **Tailscale** mesh VPN (`100.x.y.z`).
+- HTTP request body size limits enforced on all daemon endpoints.
 
-### Codex
+### Agent Sandboxing & Approvals
 
-- Codex runs with workspace-scoped sandboxing.
-- Remote approvals are explicit.
-- Unsupported approval requests are rejected by default.
-- Approval requests expire.
-- Approval actions are bound to the corresponding Codex request/turn.
-- Nexus does not provide a generic remote shell command.
+- Coding agents run scoped to the active project workspace.
+- Sensitive operations trigger explicit remote approval requests with automatic timeout expiration.
+- Unknown or expired approval requests fail closed.
 
 ### Workspace / Git
 
-Before allowing sensitive remote actions, Nexus performs workspace and Git safety checks.
-
-The detailed model is documented in:
+Before allowing branch switches or sensitive workspace actions, Nexus performs Git and directory safety checks:
 
 - [Workspace safety](docs/workspace-safety.md)
 - [Codex errors & timeouts](docs/codex-errors.md)
@@ -588,19 +372,14 @@ The detailed model is documented in:
 
 ### Sensitive Data
 
-Do not intentionally send the following through Telegram:
+Never commit sensitive credentials to the repository (ignored via `.gitignore`):
 
 ```text
-.env
-API keys
-private SSH keys
-tokens
-cookies
-credentials
-production secrets
+.env / .env.local
+firebase-service-account.json
+google-services.json
+API keys & tokens
 ```
-
-Telegram is used as a remote command and response channel, not as a secrets vault.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -608,64 +387,34 @@ Telegram is used as a remote command and response channel, not as a secrets vaul
 
 # 📦 Private Packaging & Installation
 
-For private usage, Nexus can be packaged as a `.vsix`.
-
-Validate first:
+### 1. Build the Daemon & Web Bundle (WSL)
 
 ```bash
-npm run check-types
-npm run lint
 npm run package
+npm run web:build
 ```
 
-Inspect the files that will be included:
+### 2. Build `Nexus.exe` (Windows)
+
+From Windows CMD or PowerShell, run:
+
+```bat
+windows\build-exe.bat
+```
+
+This compiles [`windows/NexusTray.cs`](windows/NexusTray.cs) into `windows\Nexus.exe` (with the embedded version and icon) and copies `Nexus.exe` to your Windows Desktop.
+
+### 3. Build the Android APK
 
 ```bash
-npx @vscode/vsce ls
+# Build APK with current version (outputs nexus-v<version>-b<build>.apk and nexus-debug.apk)
+npm run android:build
+
+# Bump patch version, synchronize version across daemon/web/exe/gradle, and build APK
+npm run android:release
 ```
 
-Package the extension:
-
-```bash
-npx @vscode/vsce package
-```
-
-Example output:
-
-```text
-nexus-0.0.1.vsix
-```
-
-Install it from a VS Code window connected to WSL:
-
-```bash
-code --install-extension ./nexus-0.0.1.vsix
-```
-
-Or use:
-
-```text
-Extensions: Install from VSIX...
-```
-
-After the first installation, configure Telegram once:
-
-```text
-Nexus: Configure Telegram
-Nexus: Pair Telegram
-```
-
-For an update:
-
-1. Increment the extension version in `package.json`.
-2. Rebuild the VSIX.
-3. Reinstall with `--force`.
-
-Example:
-
-```bash
-code --install-extension ./nexus-0.0.2.vsix --force
-```
+Note: Binary artifacts (`*.exe`, `*.apk`) are intentionally excluded from Git via `.gitignore`, while their version metadata (`1.3.0`) is synchronized across `package.json`, `web/package.json`, `web/android/app/build.gradle`, `web/app/utils/app-version.mjs`, `src/daemon/`, and `windows/NexusTray.cs`.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -673,25 +422,18 @@ code --install-extension ./nexus-0.0.2.vsix --force
 
 # 🧪 Testing & Validation
 
-Nexus focuses on practical regression tests rather than tests added only for coverage.
+Nexus maintains comprehensive unit and regression suites across both the backend runtime and the frontend client:
 
-Current validation areas include:
-
-- Telegram polling restart
-- Telegram pairing and authorization
-- Telegram 409 conflict prevention
-- Codex process startup, RPC timeout, turn timeout, and crash recovery
-- Antigravity headless process execution and NDJSON streaming
-- Antigravity stream timeouts, turn timeouts, and crash recovery
-- Workspace-bound session reuse (Codex & Antigravity)
-- Remote approvals
-- Approval expiration
-- Workspace/Git safety
-- Session persistence (Codex & Antigravity)
-- Telegram `/stop` (cancelling Codex and Antigravity)
-- Interactive model selection, workspace model preferences, and usage telemetry
-- Multi-backend Telegram command routing (`/backend`, `/codex`, `/antigravity`, `/agy`, `/gemini`)
-- Response formatting and file summary presentation
+- **Backend Unit Tests (`329 tests`)**:
+  - `NexusRuntime` isolation, memory injection, and multi-backend cancellation
+  - `CodexService`, `AntigravityService`, and `ClaudeService` session lifecycle, streaming, approvals, and turn timeouts
+  - `ConversationalService` (Nexus Brain) provider fallback, cooldowns, and read-only workspace tools
+  - `HybridStorage` (local file + Upstash Redis synchronization)
+  - `ProjectRegistry` and `FcmService` (Firebase Cloud Messaging OAuth2 & push delivery)
+  - `WorkspaceGuard` and Git preflight safety checks
+  - Local Speech-to-Text (`SpeechService`) and Fish Audio / TTS error classification
+- **Frontend Unit Tests (`53 tests`)**:
+  - Approval payload parsing, unified diff hunk parsing, markdown sanitization, assistant state machine, Fish Audio & native Android TTS/STT playback, progress tracker, and quota dashboard formatting.
 
 Detailed test documentation:
 
@@ -704,13 +446,6 @@ Detailed test documentation:
 - [Gemini Antigravity models](docs/antigravity-models.md)
 - [Gemini Antigravity errors](docs/antigravity-errors.md)
 - [Workspace safety](docs/workspace-safety.md)
-- [Telegram approvals](docs/telegram-approvals.md)
-- [Nexus Brain cloud providers and API key setup](docs/brain-cloud.md)
-- [Nexus Brain initial spike](docs/nexus-brain.md)
-- [Nexus Protocol](docs/nexus-protocol.md)
-- [Agent Runtime Isolation](docs/runtime-isolation.md)
-- [Desktop Node](docs/desktop-node.md)
-- [Nexus Core](docs/nexus-core.md)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -719,45 +454,33 @@ Detailed test documentation:
 # 🧪 Development Commands
 
 ```bash
-# TypeScript validation
+# TypeScript type-checking
 npm run check-types
 
-# ESLint
+# Biome linter & formatter check
 npm run lint
 
-# Production build
+# Build production daemon bundle (dist/daemon.js)
 npm run package
 
-# Unit tests
+# Run backend unit tests
 npm run test:unit
 
-# Development watch mode
-npm run watch
+# Run frontend unit tests
+cd web && npm run test:unit
 
-# Run Nexus Desktop Node locally
-npm run desktop -- start --project /chemin/vers/projet
+# Run Nexus Daemon directly in terminal
+npm run daemon
 
-# Run Nexus Core Server locally
-npm run core -- --port 4040 --token secret123
+# Web / Mobile client (Nuxt 4)
+npm run web:dev         # Start Nuxt dev server (http://localhost:3000)
+npm run web:build       # Generate static web bundle (web/.output/public)
 
-# Web Mobile PWA Client
-npm run web:dev     # Démarre le serveur Nuxt en développement (http://localhost:3000)
-npm run web:build   # Génère les fichiers statiques PWA (.output/public)
-
-# Docker (Nexus Core + Web PWA intégrée)
-npm run docker:build  # Construit l'image Docker nexus-core
-npm run docker:up     # Démarre Nexus Core via Docker Compose (PWA sur http://localhost:4040)
-npm run docker:logs   # Affiche les logs en direct
-npm run docker:down   # Arrête et supprime les conteneurs
-
-# Extension tests
-npm test
-
-# Package VSIX
-npx @vscode/vsce package
-
-# List files included in VSIX
-npx @vscode/vsce ls
+# Android (Capacitor + Gradle)
+npm run android:sync    # Build web bundle and sync Capacitor Android project
+npm run android:build   # Build versioned Android APK
+npm run android:release # Bump patch version across project and build APK
+npm run android:open    # Open Android project in Android Studio
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -766,29 +489,23 @@ npx @vscode/vsce ls
 
 # 🗺️ Roadmap
 
-### V1
+### V1 (Completed)
 
-- [x] VS Code extension bootstrap
-- [x] Telegram secure pairing
-- [x] Telegram long polling
-- [x] Codex App Server integration
-- [x] Gemini Antigravity CLI streaming integration
-- [x] Dual-backend routing (`/backend`, `/codex`, `/antigravity`)
-- [x] Workspace-bound sessions (Codex & Antigravity)
-- [x] Telegram ↔ Agent communication (streaming, formatted markdown, file summaries)
-- [x] Remote approvals
-- [x] Session management (`/new`, `/resume`, `/status`, `/stop`)
-- [x] Model discovery and reasoning effort selection (`/model`)
-- [x] Workspace/Git safety
-- [x] Comprehensive error handling and timeouts
-- [x] Private VSIX packaging
+- [x] Unified standalone daemon (`dist/daemon.js`) with HTTP REST & WebSocket streaming
+- [x] Native Windows System Tray launcher (`Nexus.exe`)
+- [x] Nuxt 4 & Capacitor Android mobile client with ForegroundService
+- [x] Multi-backend orchestration: Nexus Brain, OpenAI Codex, Gemini Antigravity, and Claude Code
+- [x] Brain → Code one-tap handoff
+- [x] Instant remote approval modals with FCM push notifications
+- [x] Upstash Redis hybrid persistence for chat history, persona, and project memory
+- [x] Fish Audio neural TTS + native Android TTS/STT voice pipeline
+- [x] Collapsible unified Git diff inspector and live quota dashboard
 
 ### Later
 
-- [ ] Multi-workspace / project selection
-- [ ] Better multi-instance coordination
-- [ ] Optional standalone Nexus daemon
-- [ ] Public Marketplace publication if the project becomes suitable for general use
+- [ ] Multi-node remote workstation federation
+- [ ] Custom voice wake-word on Android client
+- [ ] Automated background test runner notifications
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -796,12 +513,13 @@ npx @vscode/vsce ls
 
 # Fiabilité, voix et diagnostic
 
-- [Logs persistants et commandes de diagnostic](docs/logging.md) : `Nexus: Diagnostics` dans VS Code, `/diagnostics` dans Telegram.
-- [Configuration vocale](docs/speech-voice.md) : activation, voix, vitesse et lecture automatique selon le client.
-- [Audit et périmètre de la première itération](docs/reliability-audit.md).
+- [Logs persistants et diagnostic](docs/logging.md) : journalisation structurée du daemon et suivi des tâches.
+- [Configuration vocale](docs/speech-voice.md) : activation Fish Audio, voix système, vitesse et lecture automatique.
+- [Audit et périmètre de fiabilité](docs/reliability-audit.md).
 - [Tests et validations](docs/regression-tests.md#fiabilité-voix-et-interface).
+- [Dashboard des agents, modèles et quotas](docs/usage-dashboard.md) : données mesurées, renouvellement des limites et actualisation dans les paramètres.
 
-Le client affiche les états READY, THINKING, CODING, SPEAKING, ERROR et OFFLINE.
+Le client affiche les états `READY`, `THINKING`, `CODING`, `SPEAKING`, `ERROR` et `OFFLINE`.
 Les paramètres détaillés restent accessibles depuis les menus secondaires.
 
 ---
@@ -817,8 +535,11 @@ See [LICENSE](LICENSE) for the terms.
 
 <!-- MARKDOWN LINKS & IMAGES -->
 
-[vscode-shield]: https://img.shields.io/badge/VS%20Code-007ACC?style=for-the-badge&logo=visual-studio-code&logoColor=white
-[vscode-url]: https://code.visualstudio.com/
+[windows-shield]: https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white
+[windows-url]: https://www.microsoft.com/windows
+
+[android-shield]: https://img.shields.io/badge/Android-3DDC84?style=for-the-badge&logo=android&logoColor=white
+[android-url]: https://developer.android.com/
 
 [typescript-shield]: https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white
 [typescript-url]: https://www.typescriptlang.org/
@@ -826,7 +547,8 @@ See [LICENSE](LICENSE) for the terms.
 [node-shield]: https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=node.js&logoColor=white
 [node-url]: https://nodejs.org/
 
+[vue-shield]: https://img.shields.io/badge/Vue.js-4FC08D?style=for-the-badge&logo=vuedotjs&logoColor=white
+[vue-url]: https://vuejs.org/
+
 [license-shield]: https://img.shields.io/badge/license-private-lightgrey?style=for-the-badge
 [license-url]: LICENSE
-
-- [Dashboard des agents, modèles et quotas](docs/usage-dashboard.md) : données mesurées, renouvellement des limites et actualisation dans les paramètres.

@@ -12,11 +12,14 @@ const env = { ...process.env };
 function run(command, args, cwd = root) {
   const result = spawnSync(command, args, { cwd, env, stdio: 'inherit', shell: windows });
   if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`${command} a échoué (${result.status ?? result.signal}).`);
+  if (result.status !== 0)
+    throw new Error(`${command} a échoué (${result.status ?? result.signal}).`);
 }
 
 function bumpSemver(version, kind) {
-  const parts = String(version || '1.0.0').split('.').map(n => Number.parseInt(n, 10) || 0);
+  const parts = String(version || '1.0.0')
+    .split('.')
+    .map((n) => Number.parseInt(n, 10) || 0);
   const [major = 1, minor = 0, patch = 0] = parts;
   if (kind === 'major') return `${major + 1}.0.0`;
   if (kind === 'minor') return `${major}.${minor + 1}.0`;
@@ -35,7 +38,8 @@ function syncReleaseVersion() {
   let gradleContent = fs.readFileSync(gradlePath, 'utf8');
 
   const currentGradleCode = Number(gradleContent.match(/versionCode\s+(\d+)/)?.[1] || 3);
-  const currentGradleName = gradleContent.match(/versionName\s+"([^"]+)"/)?.[1] || pkg.version || '1.3.0';
+  const currentGradleName =
+    gradleContent.match(/versionName\s+"([^"]+)"/)?.[1] || pkg.version || '1.3.0';
 
   const explicitVersionIdx = args.indexOf('--version');
   const bumpIdx = args.indexOf('--bump');
@@ -70,6 +74,40 @@ function syncReleaseVersion() {
     `export const APP_VERSION = "${nextVersion}";\nexport const APP_BUILD = ${nextBuildCode};\n`
   );
 
+  const trayCsPath = path.join(root, 'windows', 'NexusTray.cs');
+  if (fs.existsSync(trayCsPath)) {
+    const trayCs = fs
+      .readFileSync(trayCsPath, 'utf8')
+      .replace(/AssemblyVersion\("[^"]+"\)/, `AssemblyVersion("${nextVersion}.0")`)
+      .replace(/AssemblyFileVersion\("[^"]+"\)/, `AssemblyFileVersion("${nextVersion}.0")`)
+      .replace(/Nexus Agent v[0-9.]+/, `Nexus Agent v${nextVersion}`);
+    fs.writeFileSync(trayCsPath, trayCs);
+  }
+
+  const trayPs1Path = path.join(root, 'windows', 'NexusTray.ps1');
+  if (fs.existsSync(trayPs1Path)) {
+    const trayPs1 = fs
+      .readFileSync(trayPs1Path, 'utf8')
+      .replace(/Nexus Agent v[0-9.]+/, `Nexus Agent v${nextVersion}`);
+    fs.writeFileSync(trayPs1Path, trayPs1);
+  }
+
+  const daemonCliPath = path.join(root, 'src', 'daemon', 'cli.ts');
+  if (fs.existsSync(daemonCliPath)) {
+    const daemonCli = fs
+      .readFileSync(daemonCliPath, 'utf8')
+      .replace(/NEXUS SECURE DAEMON v[0-9.]+/, `NEXUS SECURE DAEMON v${nextVersion}`);
+    fs.writeFileSync(daemonCliPath, daemonCli);
+  }
+
+  const daemonServerPath = path.join(root, 'src', 'daemon', 'daemon-server.ts');
+  if (fs.existsSync(daemonServerPath)) {
+    const daemonServer = fs
+      .readFileSync(daemonServerPath, 'utf8')
+      .replace(/version: '[0-9.]+'/g, `version: '${nextVersion}'`);
+    fs.writeFileSync(daemonServerPath, daemonServer);
+  }
+
   return { versionName: nextVersion, versionCode: nextBuildCode };
 }
 
@@ -79,29 +117,47 @@ try {
   if (!windows && fs.existsSync(path.join(managedJava, 'bin', 'java'))) {
     env.JAVA_HOME = managedJava;
   }
-  if (env.JAVA_HOME) env.PATH = `${path.join(env.JAVA_HOME, 'bin')}${path.delimiter}${env.PATH || ''}`;
-  const java = env.JAVA_HOME ? path.join(env.JAVA_HOME, 'bin', windows ? 'java.exe' : 'java') : 'java';
+  if (env.JAVA_HOME)
+    env.PATH = `${path.join(env.JAVA_HOME, 'bin')}${path.delimiter}${env.PATH || ''}`;
+  const java = env.JAVA_HOME
+    ? path.join(env.JAVA_HOME, 'bin', windows ? 'java.exe' : 'java')
+    : 'java';
   const version = spawnSync(java, ['-version'], { env, encoding: 'utf8' });
-  const major = Number(`${version.stderr || ''}\n${version.stdout || ''}`.match(/version "(\d+)/)?.[1]);
+  const major = Number(
+    `${version.stderr || ''}\n${version.stdout || ''}`.match(/version "(\d+)/)?.[1]
+  );
   if (version.status !== 0 || major < 21 || major > 23 || !major) {
-    throw new Error('Ce projet nécessite un JDK 21 (Gradle 8.11). Installez-le et renseignez JAVA_HOME.');
+    throw new Error(
+      'Ce projet nécessite un JDK 21 (Gradle 8.11). Installez-le et renseignez JAVA_HOME.'
+    );
   }
 
   const properties = path.join(android, 'local.properties');
   const original = fs.existsSync(properties) ? fs.readFileSync(properties, 'utf8') : null;
-  const configuredSdk = original?.match(/^sdk\.dir=(.*)$/m)?.[1]?.trim().replace(/\\([\\: ])/g, '$1');
+  const configuredSdk = original
+    ?.match(/^sdk\.dir=(.*)$/m)?.[1]
+    ?.trim()
+    .replace(/\\([\\: ])/g, '$1');
   const sdk = [
     !windows && path.join(tools, 'sdk'),
     env.ANDROID_HOME,
     env.ANDROID_SDK_ROOT,
     configuredSdk,
-  ].find(candidate => candidate && fs.existsSync(path.join(candidate, 'platforms', 'android-35', 'android.jar')));
-  if (!sdk) throw new Error('SDK Android Linux/Windows introuvable : installez la plateforme Android 35 et renseignez ANDROID_HOME.');
+  ].find(
+    (candidate) =>
+      candidate && fs.existsSync(path.join(candidate, 'platforms', 'android-35', 'android.jar'))
+  );
+  if (!sdk)
+    throw new Error(
+      'SDK Android Linux/Windows introuvable : installez la plateforme Android 35 et renseignez ANDROID_HOME.'
+    );
   env.ANDROID_HOME = sdk;
   env.ANDROID_SDK_ROOT = sdk;
 
   const { versionName, versionCode } = syncReleaseVersion();
-  console.log(`Compilation Android Nexus v${versionName} (build #${versionCode}) avec Java ${major}.`);
+  console.log(
+    `Compilation Android Nexus v${versionName} (build #${versionCode}) avec Java ${major}.`
+  );
   run(windows ? 'npm.cmd' : 'npm', ['--prefix', 'web', 'run', 'cap:build']);
 
   // Use the SDK for this build, then restore the user's Android Studio setting.
@@ -111,7 +167,11 @@ try {
     : `${original || ''}\n${sdkLine}\n`;
   try {
     fs.writeFileSync(properties, content);
-    run(windows ? 'gradlew.bat' : './gradlew', ['--no-daemon', '--console=plain', 'clean', 'assembleDebug'], android);
+    run(
+      windows ? 'gradlew.bat' : './gradlew',
+      ['--no-daemon', '--console=plain', 'clean', 'assembleDebug'],
+      android
+    );
   } finally {
     if (original === null) fs.rmSync(properties, { force: true });
     else fs.writeFileSync(properties, original);
@@ -122,7 +182,9 @@ try {
   const latestApk = path.join(root, 'nexus-debug.apk');
   fs.copyFileSync(builtApk, versionedApk);
   fs.copyFileSync(builtApk, latestApk);
-  console.log(`\nAPK versionné prêt : ${versionedApk}\nAlias rapide : ${latestApk}\nTransférez ce fichier sur votre téléphone pour l’installer.`);
+  console.log(
+    `\nAPK versionné prêt : ${versionedApk}\nAlias rapide : ${latestApk}\nTransférez ce fichier sur votre téléphone pour l’installer.`
+  );
 } catch (error) {
   console.error(`\nBuild Android : ${error.message}`);
   process.exitCode = 1;

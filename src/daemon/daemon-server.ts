@@ -531,7 +531,7 @@ export class NexusDaemonServer extends EventEmitter {
     return {
       nodeId: 'local-daemon',
       nodeName: hostname(),
-      version: '1.0.0',
+      version: '1.3.0',
       connectedAt: this.startedAt,
       lastHeartbeatAt: Date.now(),
       state: this.currentTaskId ? 'busy' : 'idle',
@@ -637,7 +637,7 @@ export class NexusDaemonServer extends EventEmitter {
         JSON.stringify({
           status: 'ok',
           daemon: 'nexus-daemon',
-          version: '1.0.0',
+          version: '1.3.0',
           uptimeSeconds: Math.round((Date.now() - this.startedAt) / 1000),
         })
       );

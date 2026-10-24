@@ -4,8 +4,14 @@ using System.Drawing;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Threading;
 using System.Windows.Forms;
+
+[assembly: AssemblyTitle("Nexus Agent")]
+[assembly: AssemblyProduct("Nexus")]
+[assembly: AssemblyVersion("1.3.0.0")]
+[assembly: AssemblyFileVersion("1.3.0.0")]
 
 namespace NexusTrayApp
 {
