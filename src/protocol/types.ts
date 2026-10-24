@@ -1,7 +1,7 @@
 import type { RuntimeDashboard } from '../runtime/dashboard-types';
 export const NEXUS_PROTOCOL_VERSION = 1;
 
-export type TaskBackend = 'codex' | 'antigravity' | 'brain';
+export type TaskBackend = 'codex' | 'antigravity' | 'claude' | 'brain';
 
 export type TaskStage = 'starting' | 'inspecting' | 'executing' | 'synthesizing';
 

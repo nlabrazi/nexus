@@ -144,7 +144,7 @@ suite('Desktop Node configuration and lifecycle', () => {
     assert.equal(status.activeProject.path, testDir);
     assert.equal(status.activeProject.currentBranch, 'staging');
     assert.equal(status.capabilities.workspaceGuard, true);
-    assert.deepEqual(status.capabilities.backends, ['codex', 'antigravity', 'brain']);
+    assert.deepEqual(status.capabilities.backends, ['codex', 'antigravity', 'claude', 'brain']);
 
     await node.stop();
     assert.equal(node.getState(), 'draining');

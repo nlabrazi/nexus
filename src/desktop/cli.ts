@@ -36,7 +36,7 @@ COMMANDES:
 OPTIONS:
   -p, --project <path>     Chemin absolu ou relatif vers le répertoire du projet (ou via registre)
   -n, --name <name>        Nom lisible du projet ou du nœud
-  -b, --backend <backend>  Backend agent par défaut (codex, antigravity, brain) [défaut: codex]
+  -b, --backend <backend>  Backend agent par défaut (codex, antigravity, claude, brain) [défaut: codex]
   -c, --config <file>      Fichier de configuration JSON
   -C, --core <url>         URL de Nexus Core (ex: ws://vps.example.com:4040 ou http://localhost:4040)
   --node-id <id>           Identifiant unique du nœud Desktop
@@ -197,7 +197,9 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
       }
       try {
         const backend =
-          values.backend === 'codex' || values.backend === 'antigravity'
+          values.backend === 'codex' ||
+          values.backend === 'antigravity' ||
+          values.backend === 'claude'
             ? values.backend
             : undefined;
         const added = registry.add({

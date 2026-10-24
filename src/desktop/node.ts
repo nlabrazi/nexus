@@ -150,7 +150,12 @@ export class DesktopNode {
       this.runtime = new NexusRuntime({
         workspaceGuard: delegatingGuard,
         targetPath: () => this.getActiveProject().path,
-        defaultBackend: this.config.defaultBackend === 'antigravity' ? 'antigravity' : 'codex',
+        defaultBackend:
+          this.config.defaultBackend === 'antigravity'
+            ? 'antigravity'
+            : this.config.defaultBackend === 'claude'
+              ? 'claude'
+              : 'codex',
         requestApproval: (req, sig) => this.handleApprovalRequest(req, sig),
         requestTurnTimeoutContinuation: this.options?.requestTurnTimeoutContinuation,
         brainModel: this.options?.brainModel,
@@ -259,7 +264,7 @@ export class DesktopNode {
   getCapabilities(): NodeCapabilities {
     return {
       filesystem: true,
-      backends: ['codex', 'antigravity', 'brain'],
+      backends: ['codex', 'antigravity', 'claude', 'brain'],
       speech: {
         stt: false,
         tts: false,

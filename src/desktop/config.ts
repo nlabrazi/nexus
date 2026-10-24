@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { loadProjectRegistry } from './registry';
 import { DesktopNodeConfig, DesktopProjectConfig, TaskBackend } from './types';
 
-const VALID_BACKENDS = new Set<TaskBackend>(['codex', 'antigravity', 'brain']);
+const VALID_BACKENDS = new Set<TaskBackend>(['codex', 'antigravity', 'claude', 'brain']);
 
 export interface CliConfigOptions {
   readonly project?: string;
@@ -187,7 +187,7 @@ export function resolveDesktopConfig(
     cliOptions?.backend ?? env.NEXUS_DEFAULT_BACKEND ?? fileConfig.defaultBackend ?? 'codex';
   if (!VALID_BACKENDS.has(backendCandidate as TaskBackend)) {
     throw new Error(
-      `Backend inconnu : « ${backendCandidate} ». Valeurs permises : codex, antigravity, brain.`
+      `Backend inconnu : « ${backendCandidate} ». Valeurs permises : codex, antigravity, claude, brain.`
     );
   }
   const defaultBackend = backendCandidate as TaskBackend;

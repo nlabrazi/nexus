@@ -48,7 +48,8 @@
           "type": "string",
           "enum": [
             "codex",
-            "antigravity"
+            "antigravity",
+            "claude"
           ],
           "default": "codex",
           "scope": "window",

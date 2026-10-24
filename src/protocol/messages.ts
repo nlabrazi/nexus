@@ -33,7 +33,7 @@ const KNOWN_MESSAGE_TYPES = new Set<NexusMessageType>([
   'core:error',
 ]);
 
-const VALID_BACKENDS = new Set(['codex', 'antigravity', 'brain']);
+const VALID_BACKENDS = new Set(['codex', 'antigravity', 'claude', 'brain']);
 const VALID_NODE_STATES = new Set(['idle', 'busy', 'draining']);
 const VALID_TASK_STAGES = new Set(['starting', 'inspecting', 'executing', 'synthesizing']);
 const VALID_APPROVAL_KINDS = new Set(['command', 'fileChange', 'consent']);

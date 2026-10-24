@@ -601,6 +601,7 @@ export class NexusRuntime {
             : { provider: this.brainModel instanceof CodexBrainModel ? 'codex' : 'custom' },
       codex: this.codexService.getStatus(),
       antigravity: this.antigravityService.getStatus(),
+      claude: this.claudeService.getStatus(),
     };
   }
 
