@@ -179,7 +179,8 @@ namespace NexusTrayApp
 
             ProcessStartInfo psi = new ProcessStartInfo();
             psi.FileName = "wsl.exe";
-            psi.Arguments = "-e bash -l -c \"" + wslCmd + "\"";
+            // Preserve the quotes inside the command when Windows parses the arguments.
+            psi.Arguments = "-e bash -l -c \"" + wslCmd.Replace("\"", "\\\"") + "\"";
             psi.WindowStyle = ProcessWindowStyle.Hidden;
             psi.CreateNoWindow = true;
             psi.UseShellExecute = false;
