@@ -49,7 +49,7 @@
     "typescript": "^6.0.3"
   },
   "overrides": {
-    "diff": "^8.0.4",
+    "diff": "^9.0.0",
     "serialize-javascript": "^7.0.6"
   }
 }
