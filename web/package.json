@@ -20,7 +20,7 @@
     "@capacitor/android": "^7.6.9",
     "@capacitor/cli": "^7.6.9",
     "@capacitor/core": "^7.6.9",
-    "@capacitor/haptics": "^7.0.5",
+    "@capacitor/haptics": "^8.0.0",
     "@capacitor/local-notifications": "^7.0.7",
     "@capacitor/push-notifications": "^7.0.7",
     "@capacitor/status-bar": "^7.0.6",
