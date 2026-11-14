@@ -1,66 +1,66 @@
-import { basename } from 'node:path';
-import { randomUUID } from 'node:crypto';
-import { assertSameWorkspace, WorkspaceIdentity } from '../workspace/guard';
-import { DecisionRecordInput, ProjectDecision, ProjectMemorySnapshot } from '../memory/types';
-import { ProjectMemory } from '../memory/project-memory';
-import { ConversationProjectContext } from './types';
+import { randomUUID } from 'node:crypto'
+import { basename } from 'node:path'
+import { ProjectMemory } from '../memory/project-memory'
+import { DecisionRecordInput, ProjectDecision, ProjectMemorySnapshot } from '../memory/types'
+import { assertSameWorkspace, WorkspaceIdentity } from '../workspace/guard'
+import { ConversationProjectContext } from './types'
 
 export interface ProjectStatus {
-  readonly project: ConversationProjectContext;
-  readonly inspectionAvailable: boolean;
+  readonly project: ConversationProjectContext
+  readonly inspectionAvailable: boolean
 }
 
 export interface InspectionConsent {
-  readonly id: string;
-  readonly question: string;
-  readonly project: ConversationProjectContext;
-  readonly expiresAt: number;
+  readonly id: string
+  readonly question: string
+  readonly project: ConversationProjectContext
+  readonly expiresAt: number
 }
 
 /** Implemented only by adapters that enforce read-only execution. */
 export interface ProjectInspector {
-  inspect(question: string, workspace: WorkspaceIdentity, signal: AbortSignal): Promise<string>;
+  inspect(question: string, workspace: WorkspaceIdentity, signal: AbortSignal): Promise<string>
 }
 
 export interface CodingAgentProjectSummary {
-  readonly id: string;
-  readonly name: string;
-  readonly path: string;
-  readonly currentBranch?: string;
-  readonly isCurrent?: boolean;
+  readonly id: string
+  readonly name: string
+  readonly path: string
+  readonly currentBranch?: string
+  readonly isCurrent?: boolean
 }
 
 export interface CodingAgentToolsOptions {
-  resolveWorkspace: (targetPath?: string) => Promise<WorkspaceIdentity>;
-  inspector?: ProjectInspector;
-  requestConsent?: (request: InspectionConsent, signal: AbortSignal) => Promise<boolean>;
-  projectMemory?: ProjectMemory;
+  resolveWorkspace: (targetPath?: string) => Promise<WorkspaceIdentity>
+  inspector?: ProjectInspector
+  requestConsent?: (request: InspectionConsent, signal: AbortSignal) => Promise<boolean>
+  projectMemory?: ProjectMemory
   listProjects?: () =>
     | Promise<readonly CodingAgentProjectSummary[]>
-    | readonly CodingAgentProjectSummary[];
+    | readonly CodingAgentProjectSummary[]
   switchProject?: (
-    idOrPath: string
-  ) => Promise<CodingAgentProjectSummary> | CodingAgentProjectSummary;
+    idOrPath: string,
+  ) => Promise<CodingAgentProjectSummary> | CodingAgentProjectSummary
 }
 
-const CONSENT_TIMEOUT_MS = 60_000;
+const CONSENT_TIMEOUT_MS = 60_000
 
 /** The model supplies a question; the application owns the target and authorization. */
 export class CodingAgentTools {
-  private inspecting = false;
-  private readonly memory: ProjectMemory;
+  private inspecting = false
+  private readonly memory: ProjectMemory
 
   constructor(private readonly options: CodingAgentToolsOptions) {
-    this.memory = options.projectMemory ?? new ProjectMemory();
+    this.memory = options.projectMemory ?? new ProjectMemory()
   }
 
   async listProjects(signal: AbortSignal): Promise<readonly CodingAgentProjectSummary[]> {
-    signal.throwIfAborted();
+    signal.throwIfAborted()
     if (this.options.listProjects) {
-      return this.options.listProjects();
+      return this.options.listProjects()
     }
-    const current = await this.getProjectStatus(signal);
-    const workspace = await this.options.resolveWorkspace();
+    const current = await this.getProjectStatus(signal)
+    const workspace = await this.options.resolveWorkspace()
     return [
       {
         id: current.project.name,
@@ -69,79 +69,79 @@ export class CodingAgentTools {
         currentBranch: current.project.branch,
         isCurrent: true,
       },
-    ];
+    ]
   }
 
   async switchProject(idOrPath: string, signal: AbortSignal): Promise<CodingAgentProjectSummary> {
-    signal.throwIfAborted();
-    const trimmed = idOrPath.trim();
+    signal.throwIfAborted()
+    const trimmed = idOrPath.trim()
     if (!trimmed) {
-      throw new Error('Identifiant ou chemin de projet manquant.');
+      throw new Error('Identifiant ou chemin de projet manquant.')
     }
     if (!this.options.switchProject) {
-      throw new Error('Le basculement de projet est indisponible.');
+      throw new Error('Le basculement de projet est indisponible.')
     }
-    return this.options.switchProject(trimmed);
+    return this.options.switchProject(trimmed)
   }
 
   async getProjectMemory(signal: AbortSignal): Promise<ProjectMemorySnapshot> {
-    signal.throwIfAborted();
-    const workspace = await this.options.resolveWorkspace();
-    signal.throwIfAborted();
-    return this.memory.getSnapshot(workspace.root);
+    signal.throwIfAborted()
+    const workspace = await this.options.resolveWorkspace()
+    signal.throwIfAborted()
+    return this.memory.getSnapshot(workspace.root)
   }
 
   async recordDecision(input: DecisionRecordInput, signal: AbortSignal): Promise<ProjectDecision> {
-    signal.throwIfAborted();
-    const workspace = await this.options.resolveWorkspace();
-    signal.throwIfAborted();
-    return this.memory.recordDecision(workspace.root, input);
+    signal.throwIfAborted()
+    const workspace = await this.options.resolveWorkspace()
+    signal.throwIfAborted()
+    return this.memory.recordDecision(workspace.root, input)
   }
 
   async getProjectStatus(signal: AbortSignal): Promise<ProjectStatus> {
-    signal.throwIfAborted();
-    const workspace = await this.options.resolveWorkspace();
-    signal.throwIfAborted();
+    signal.throwIfAborted()
+    const workspace = await this.options.resolveWorkspace()
+    signal.throwIfAborted()
     return {
       project: projectContext(workspace),
       inspectionAvailable: Boolean(this.options.inspector && this.options.requestConsent),
-    };
+    }
   }
 
   async inspectProject(question: string, signal: AbortSignal): Promise<string> {
-    signal.throwIfAborted();
-    let trimmed = question.trim();
+    signal.throwIfAborted()
+    let trimmed = question.trim()
     if (!trimmed || trimmed.length > 4000) {
-      throw new Error('La question d’inspection doit contenir entre 1 et 4000 caractères.');
+      throw new Error('La question d’inspection doit contenir entre 1 et 4000 caractères.')
     }
-    let targetProjectPath: string | undefined;
+    let targetProjectPath: string | undefined
     try {
-      const parsed = JSON.parse(trimmed);
+      const parsed = JSON.parse(trimmed)
       if (typeof parsed === 'object' && parsed !== null && typeof parsed.question === 'string') {
-        trimmed = parsed.question.trim();
+        trimmed = parsed.question.trim()
         if (typeof parsed.project === 'string' && parsed.project.trim()) {
-          targetProjectPath = parsed.project.trim();
+          targetProjectPath = parsed.project.trim()
         }
       }
     } catch {
       // Normal plain question
     }
-    const { inspector, requestConsent } = this.options;
+    const { inspector, requestConsent } = this.options
     if (!inspector || !requestConsent) {
-      throw new Error('L’inspection en lecture seule est indisponible.');
+      throw new Error('L’inspection en lecture seule est indisponible.')
     }
     if (this.inspecting) {
-      throw new Error('Une inspection est déjà en cours.');
+      throw new Error('Une inspection est déjà en cours.')
     }
-    this.inspecting = true;
+    this.inspecting = true
     try {
-      const workspace = structuredClone(await this.options.resolveWorkspace(targetProjectPath));
-      signal.throwIfAborted();
-      const expiresAt = Date.now() + CONSENT_TIMEOUT_MS;
-      const consent = new AbortController();
-      const consentSignal = AbortSignal.any([signal, consent.signal]);
-      const timer = setTimeout(() => consent.abort(), CONSENT_TIMEOUT_MS);
-      let accepted = false;
+      const workspace = structuredClone(await this.options.resolveWorkspace(targetProjectPath))
+      signal.throwIfAborted()
+      const expiresAt = Date.now() + CONSENT_TIMEOUT_MS
+      const consent = new AbortController()
+      const consentSignal = AbortSignal.any([signal, consent.signal])
+      const timer = setTimeout(() => consent.abort(), CONSENT_TIMEOUT_MS)
+      let accepted = false
       try {
         accepted = await abortable(
           () =>
@@ -152,30 +152,30 @@ export class CodingAgentTools {
                 project: projectContext(workspace),
                 expiresAt,
               },
-              consentSignal
+              consentSignal,
             ),
-          consentSignal
-        );
+          consentSignal,
+        )
       } catch {
         // An unavailable UI, timeout or cancellation never grants permission.
       } finally {
-        clearTimeout(timer);
-        consent.abort();
+        clearTimeout(timer)
+        consent.abort()
       }
-      signal.throwIfAborted();
+      signal.throwIfAborted()
       if (accepted !== true || Date.now() >= expiresAt) {
-        throw new Error('Inspection non autorisée ou demande expirée.');
+        throw new Error('Inspection non autorisée ou demande expirée.')
       }
-      assertSameWorkspace(workspace, await this.options.resolveWorkspace(targetProjectPath));
-      signal.throwIfAborted();
-      if (Date.now() >= expiresAt) throw new Error('La demande d’inspection a expiré.');
-      const result = await inspector.inspect(trimmed, workspace, signal);
-      signal.throwIfAborted();
-      assertSameWorkspace(workspace, await this.options.resolveWorkspace(targetProjectPath));
-      signal.throwIfAborted();
-      return result;
+      assertSameWorkspace(workspace, await this.options.resolveWorkspace(targetProjectPath))
+      signal.throwIfAborted()
+      if (Date.now() >= expiresAt) throw new Error('La demande d’inspection a expiré.')
+      const result = await inspector.inspect(trimmed, workspace, signal)
+      signal.throwIfAborted()
+      assertSameWorkspace(workspace, await this.options.resolveWorkspace(targetProjectPath))
+      signal.throwIfAborted()
+      return result
     } finally {
-      this.inspecting = false;
+      this.inspecting = false
     }
   }
 }
@@ -184,26 +184,26 @@ function projectContext(workspace: WorkspaceIdentity): ConversationProjectContex
   return {
     name: basename(workspace.root),
     ...(workspace.git ? { branch: workspace.git.branch } : {}),
-  };
+  }
 }
 
 /** Reject promptly on abort, even if the external approval UI never settles. */
 async function abortable<T>(operation: () => Promise<T>, signal: AbortSignal): Promise<T> {
-  signal.throwIfAborted();
-  let onAbort!: () => void;
+  signal.throwIfAborted()
+  let onAbort!: () => void
   const cancelled = new Promise<never>((_resolve, reject) => {
-    onAbort = () => reject(signal.reason);
-    signal.addEventListener('abort', onAbort, { once: true });
-  });
+    onAbort = () => reject(signal.reason)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
   try {
     return await Promise.race([
       Promise.resolve().then(() => {
-        signal.throwIfAborted();
-        return operation();
+        signal.throwIfAborted()
+        return operation()
       }),
       cancelled,
-    ]);
+    ])
   } finally {
-    signal.removeEventListener('abort', onAbort);
+    signal.removeEventListener('abort', onAbort)
   }
 }

@@ -1,15 +1,15 @@
-import { EventEmitter } from 'node:events';
-import { PassThrough } from 'node:stream';
-import { RpcMessage, CodexThread, CodexModel } from '../../codex/types';
+import { EventEmitter } from 'node:events'
+import { PassThrough } from 'node:stream'
+import { CodexModel, CodexThread, RpcMessage } from '../../codex/types'
 
 export class FakeProcess extends EventEmitter {
-  stdin = new PassThrough();
-  stdout = new PassThrough();
-  stderr = new PassThrough();
-  written: RpcMessage[] = [];
-  blockedMethods = new Set<string>();
-  threads = new Map<string, CodexThread>();
-  kills = 0;
+  stdin = new PassThrough()
+  stdout = new PassThrough()
+  stderr = new PassThrough()
+  written: RpcMessage[] = []
+  blockedMethods = new Set<string>()
+  threads = new Map<string, CodexThread>()
+  kills = 0
   models: CodexModel[] = [
     {
       id: 'test-model',
@@ -23,23 +23,23 @@ export class FakeProcess extends EventEmitter {
         { reasoningEffort: 'medium', description: 'Balanced' },
       ],
     },
-  ];
-  private threadCount = 0;
+  ]
+  private threadCount = 0
 
   constructor() {
-    super();
+    super()
     this.stdin.on('data', (chunk) => {
-      const message = JSON.parse(chunk.toString()) as RpcMessage;
-      this.written.push(message);
+      const message = JSON.parse(chunk.toString()) as RpcMessage
+      this.written.push(message)
       if (message.method && this.blockedMethods.has(message.method)) {
-        return;
+        return
       }
       if (message.method === 'initialize') {
-        this.receive({ id: message.id, result: {} });
+        this.receive({ id: message.id, result: {} })
       } else if (message.method === 'account/read') {
-        this.receive({ id: message.id, result: { account: { type: 'chatgpt' } } });
+        this.receive({ id: message.id, result: { account: { type: 'chatgpt' } } })
       } else if (message.method === 'model/list') {
-        this.receive({ id: message.id, result: { data: this.models, nextCursor: null } });
+        this.receive({ id: message.id, result: { data: this.models, nextCursor: null } })
       } else if (message.method === 'account/rateLimits/read') {
         this.receive({
           id: message.id,
@@ -49,16 +49,16 @@ export class FakeProcess extends EventEmitter {
               primary: { usedPercent: 25, windowDurationMins: 300, resetsAt: 2000000000 },
             },
           },
-        });
+        })
       } else if (message.method === 'thread/start') {
-        const id = ++this.threadCount === 1 ? 'thread' : `thread-${this.threadCount}`;
+        const id = ++this.threadCount === 1 ? 'thread' : `thread-${this.threadCount}`
         const thread = {
           id,
           cwd: (message.params as { cwd: string }).cwd,
           status: { type: 'idle' },
-        };
-        this.threads.set(id, thread);
-        const restricted = (message.params as { sandbox?: string }).sandbox === 'read-only';
+        }
+        this.threads.set(id, thread)
+        const restricted = (message.params as { sandbox?: string }).sandbox === 'read-only'
         this.receive({
           id: message.id,
           result: {
@@ -67,32 +67,32 @@ export class FakeProcess extends EventEmitter {
               ? { approvalPolicy: 'never', sandbox: { type: 'readOnly', networkAccess: false } }
               : {}),
           },
-        });
+        })
       } else if (message.method === 'thread/read' || message.method === 'thread/resume') {
-        const thread = this.threads.get((message.params as { threadId: string }).threadId);
+        const thread = this.threads.get((message.params as { threadId: string }).threadId)
         this.receive(
           thread
             ? { id: message.id, result: { thread } }
-            : { id: message.id, error: { code: -32000, message: 'Session not found' } }
-        );
+            : { id: message.id, error: { code: -32000, message: 'Session not found' } },
+        )
       } else if (message.method === 'turn/start') {
-        this.receive({ id: message.id, result: { turn: { id: 'turn' } } });
+        this.receive({ id: message.id, result: { turn: { id: 'turn' } } })
       } else if (message.method === 'turn/interrupt') {
-        const params = message.params as { threadId: string; turnId: string };
-        this.receive({ id: message.id, result: {} });
+        const params = message.params as { threadId: string; turnId: string }
+        this.receive({ id: message.id, result: {} })
         this.receive({
           method: 'turn/completed',
           params: {
             threadId: params.threadId,
             turn: { id: params.turnId, status: 'interrupted' },
           },
-        });
+        })
       }
-    });
+    })
   }
 
   receive(message: RpcMessage): void {
-    this.stdout.write(`${JSON.stringify(message)}\n`);
+    this.stdout.write(`${JSON.stringify(message)}\n`)
   }
 
   approve(id: string): void {
@@ -105,22 +105,22 @@ export class FakeProcess extends EventEmitter {
         itemId: 'item',
         command: 'npm test',
       },
-    });
+    })
   }
 
   complete(): void {
     this.receive({
       method: 'item/agentMessage/delta',
       params: { threadId: 'thread', turnId: 'turn', itemId: 'answer', delta: 'Done' },
-    });
+    })
     this.receive({
       method: 'turn/completed',
       params: { threadId: 'thread', turn: { id: 'turn', status: 'completed' } },
-    });
+    })
   }
 
   kill(): boolean {
-    this.kills++;
-    return true;
+    this.kills++
+    return true
   }
 }

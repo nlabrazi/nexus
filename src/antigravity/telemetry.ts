@@ -5,13 +5,13 @@ import {
   ResultEvent,
   StepUpdateEvent,
   TokenBreakdown,
-} from './types';
+} from './types'
 
 const count = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 
 const record = (value: unknown): value is Record<string, unknown> =>
-  !!value && typeof value === 'object' && !Array.isArray(value);
+  !!value && typeof value === 'object' && !Array.isArray(value)
 
 export function isTokenUsage(value: unknown): value is ConversationTokenUsage {
   return (
@@ -19,7 +19,7 @@ export function isTokenUsage(value: unknown): value is ConversationTokenUsage {
     isTokenBreakdown(value.total) &&
     isTokenBreakdown(value.last) &&
     (value.modelContextWindow === null || count(value.modelContextWindow))
-  );
+  )
 }
 
 export function isTokenBreakdown(value: unknown): value is TokenBreakdown {
@@ -33,14 +33,14 @@ export function isTokenBreakdown(value: unknown): value is TokenBreakdown {
       'reasoningOutputTokens',
     ].every((key) => count(value[key])) &&
     (value.cacheWriteInputTokens === undefined || count(value.cacheWriteInputTokens))
-  );
+  )
 }
 
 export function isModel(value: unknown): value is AntigravityModel {
   return (
     record(value) &&
     ['id', 'model', 'displayName', 'defaultReasoningEffort'].every(
-      (key) => typeof value[key] === 'string' && (value[key] as string).trim()
+      (key) => typeof value[key] === 'string' && (value[key] as string).trim(),
     ) &&
     typeof value.description === 'string' &&
     typeof value.isDefault === 'boolean' &&
@@ -51,12 +51,12 @@ export function isModel(value: unknown): value is AntigravityModel {
         record(option) &&
         typeof option.reasoningEffort === 'string' &&
         !!option.reasoningEffort.trim() &&
-        typeof option.description === 'string'
+        typeof option.description === 'string',
     ) &&
     value.supportedReasoningEfforts.some(
-      (option) => option.reasoningEffort === value.defaultReasoningEffort
+      (option) => option.reasoningEffort === value.defaultReasoningEffort,
     )
-  );
+  )
 }
 
 export function isInitEvent(value: unknown): value is InitEvent {
@@ -67,7 +67,7 @@ export function isInitEvent(value: unknown): value is InitEvent {
     !!value.conversation_id.trim() &&
     record(value.init) &&
     typeof value.init.cwd === 'string'
-  );
+  )
 }
 
 export function isStepUpdateEvent(value: unknown): value is StepUpdateEvent {
@@ -79,7 +79,7 @@ export function isStepUpdateEvent(value: unknown): value is StepUpdateEvent {
     typeof value.step_update.step_index === 'number' &&
     typeof value.step_update.state === 'string' &&
     typeof value.step_update.step_type === 'string'
-  );
+  )
 }
 
 export function isResultEvent(value: unknown): value is ResultEvent {
@@ -90,40 +90,40 @@ export function isResultEvent(value: unknown): value is ResultEvent {
     typeof value.result.conversation_id === 'string' &&
     typeof value.result.status === 'string' &&
     typeof value.result.response === 'string'
-  );
+  )
 }
 
 export function parseModelsOutput(raw: string): AntigravityModel[] {
-  const models: AntigravityModel[] = [];
-  const lines = raw.split('\n');
+  const models: AntigravityModel[] = []
+  const lines = raw.split('\n')
 
   for (const line of lines) {
     // Strip terminal spinner artifacts (e.g. ⠋ Fetching available models...)
-    const clean = line.replace(/^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏\s]+Fetching available models\.\.\./, '').trim();
+    const clean = line.replace(/^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏\s]+Fetching available models\.\.\./, '').trim()
     if (!clean) {
-      continue;
+      continue
     }
 
-    const match = /^([a-zA-Z0-9._-]+)\s+(.+)$/.exec(clean);
+    const match = /^([a-zA-Z0-9._-]+)\s+(.+)$/.exec(clean)
     if (!match) {
-      continue;
+      continue
     }
 
-    const modelId = match[1].trim();
-    const displayName = match[2].trim();
+    const modelId = match[1].trim()
+    const displayName = match[2].trim()
 
     // Determine default effort and supported efforts
-    let defaultEffort = 'medium';
+    let defaultEffort = 'medium'
     if (modelId.endsWith('-high')) {
-      defaultEffort = 'high';
+      defaultEffort = 'high'
     } else if (modelId.endsWith('-low')) {
-      defaultEffort = 'low';
+      defaultEffort = 'low'
     }
 
-    const isDefault = modelId === 'gemini-3.8-flash-high' || models.length === 0;
+    const isDefault = modelId === 'gemini-3.8-flash-high' || models.length === 0
     const providerLabel = modelId.startsWith('claude')
       ? 'Modèle Anthropic via Antigravity'
-      : 'Modèle Gemini Antigravity';
+      : 'Modèle Gemini Antigravity'
 
     models.push({
       id: modelId,
@@ -138,18 +138,18 @@ export function parseModelsOutput(raw: string): AntigravityModel[] {
         { reasoningEffort: 'medium', description: 'Raisonnement moyen' },
         { reasoningEffort: 'low', description: 'Raisonnement faible' },
       ],
-    });
+    })
   }
 
-  return models;
+  return models
 }
 
 export function convertRawUsage(raw: {
-  input_tokens?: number;
-  output_tokens?: number;
-  thinking_tokens?: number;
-  cache_read_tokens?: number;
-  total_tokens?: number;
+  input_tokens?: number
+  output_tokens?: number
+  thinking_tokens?: number
+  cache_read_tokens?: number
+  total_tokens?: number
 }): TokenBreakdown {
   return {
     totalTokens: raw.total_tokens ?? 0,
@@ -157,5 +157,5 @@ export function convertRawUsage(raw: {
     cachedInputTokens: raw.cache_read_tokens ?? 0,
     outputTokens: raw.output_tokens ?? 0,
     reasoningOutputTokens: raw.thinking_tokens ?? 0,
-  };
+  }
 }

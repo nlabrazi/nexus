@@ -1,99 +1,99 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { createHash } from 'node:crypto';
-import { BrainMessage } from './model';
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { BrainMessage } from './model'
 
 export interface BrainSessionRecord {
-  readonly version: 1;
-  readonly conversationId: string;
-  readonly context: string;
-  readonly messages: readonly BrainMessage[];
-  readonly updatedAt: number;
+  readonly version: 1
+  readonly conversationId: string
+  readonly context: string
+  readonly messages: readonly BrainMessage[]
+  readonly updatedAt: number
 }
 
 export interface BrainSessionPersistence {
   load(
-    conversationId: string
-  ): Promise<BrainSessionRecord | undefined> | BrainSessionRecord | undefined;
-  save(record: BrainSessionRecord): Promise<void> | void;
-  clear(conversationId: string): Promise<void> | void;
+    conversationId: string,
+  ): Promise<BrainSessionRecord | undefined> | BrainSessionRecord | undefined
+  save(record: BrainSessionRecord): Promise<void> | void
+  clear(conversationId: string): Promise<void> | void
 }
 
 export class MemoryBrainSessionPersistence implements BrainSessionPersistence {
-  private readonly store = new Map<string, BrainSessionRecord>();
+  private readonly store = new Map<string, BrainSessionRecord>()
 
   load(conversationId: string): BrainSessionRecord | undefined {
-    return this.store.get(conversationId);
+    return this.store.get(conversationId)
   }
 
   save(record: BrainSessionRecord): void {
-    this.store.set(record.conversationId, structuredClone(record));
+    this.store.set(record.conversationId, structuredClone(record))
   }
 
   clear(conversationId: string): void {
-    this.store.delete(conversationId);
+    this.store.delete(conversationId)
   }
 }
 
-import { KeyValueStorage } from '../runtime/types';
+import { KeyValueStorage } from '../runtime/types'
 
 export class FileBrainSessionPersistence implements BrainSessionPersistence {
-  private readonly memoryFallback = new MemoryBrainSessionPersistence();
+  private readonly memoryFallback = new MemoryBrainSessionPersistence()
 
   constructor(
     private readonly directory: string,
     private readonly maxMessages = 20,
-    private readonly storage?: KeyValueStorage
+    private readonly storage?: KeyValueStorage,
   ) {}
 
   private storageKey(conversationId: string): string {
-    return `nexus.brain.session:${conversationId}`;
+    return `nexus.brain.session:${conversationId}`
   }
 
   private resolveFilePath(conversationId: string): string {
-    const hash = createHash('sha256').update(conversationId).digest('hex').slice(0, 16);
+    const hash = createHash('sha256').update(conversationId).digest('hex').slice(0, 16)
     const safePrefix = conversationId
       .replace(/[^a-zA-Z0-9_-]/g, '_')
       .slice(-32)
-      .replace(/^_+|_+$/g, '');
-    const fileName = `${safePrefix || 'brain'}-${hash}.json`;
-    return join(this.directory, fileName);
+      .replace(/^_+|_+$/g, '')
+    const fileName = `${safePrefix || 'brain'}-${hash}.json`
+    return join(this.directory, fileName)
   }
 
   private isValidRecord(parsed: unknown): parsed is BrainSessionRecord {
     if (!parsed || typeof parsed !== 'object') {
-      return false;
+      return false
     }
-    const candidate = parsed as Record<string, unknown>;
+    const candidate = parsed as Record<string, unknown>
     return (
       candidate.version === 1 &&
       typeof candidate.conversationId === 'string' &&
       typeof candidate.context === 'string' &&
       Array.isArray(candidate.messages)
-    );
+    )
   }
 
   load(conversationId: string): BrainSessionRecord | undefined {
-    const stored = this.storage?.get(this.storageKey(conversationId));
+    const stored = this.storage?.get(this.storageKey(conversationId))
     if (this.isValidRecord(stored)) {
-      return stored;
+      return stored
     }
     try {
-      const filePath = this.resolveFilePath(conversationId);
+      const filePath = this.resolveFilePath(conversationId)
       if (!existsSync(filePath)) {
-        return this.memoryFallback.load(conversationId);
+        return this.memoryFallback.load(conversationId)
       }
-      const raw = readFileSync(filePath, 'utf-8');
-      const parsed = JSON.parse(raw);
+      const raw = readFileSync(filePath, 'utf-8')
+      const parsed = JSON.parse(raw)
       if (this.isValidRecord(parsed)) {
         if (this.storage) {
-          void this.storage.update(this.storageKey(conversationId), parsed);
+          void this.storage.update(this.storageKey(conversationId), parsed)
         }
-        return parsed;
+        return parsed
       }
-      return undefined;
+      return undefined
     } catch {
-      return this.memoryFallback.load(conversationId);
+      return this.memoryFallback.load(conversationId)
     }
   }
 
@@ -103,7 +103,7 @@ export class FileBrainSessionPersistence implements BrainSessionPersistence {
       // If older tool message (not in the last 2 turns), compact bulky observations
       if (msg.role === 'tool' && index < arr.length - 2 && msg.text.length > 500) {
         try {
-          const parsed = JSON.parse(msg.text);
+          const parsed = JSON.parse(msg.text)
           if (typeof parsed.result === 'string' && parsed.result.length > 300) {
             return {
               ...msg,
@@ -112,17 +112,17 @@ export class FileBrainSessionPersistence implements BrainSessionPersistence {
                 question: parsed.question,
                 result: `${parsed.result.slice(0, 300)}... [condensé pour économiser les tokens]`,
               }),
-            };
+            }
           }
         } catch {
           return {
             ...msg,
             text: `${msg.text.slice(0, 300)}... [condensé]`,
-          };
+          }
         }
       }
-      return msg;
-    });
+      return msg
+    })
 
     const cleanRecord: BrainSessionRecord = {
       version: 1,
@@ -130,33 +130,33 @@ export class FileBrainSessionPersistence implements BrainSessionPersistence {
       context: record.context,
       messages: boundedMessages,
       updatedAt: record.updatedAt,
-    };
+    }
 
-    this.memoryFallback.save(cleanRecord);
+    this.memoryFallback.save(cleanRecord)
     if (this.storage) {
-      void this.storage.update(this.storageKey(record.conversationId), cleanRecord);
+      void this.storage.update(this.storageKey(record.conversationId), cleanRecord)
     }
 
     try {
       if (!existsSync(this.directory)) {
-        mkdirSync(this.directory, { recursive: true, mode: 0o700 });
+        mkdirSync(this.directory, { recursive: true, mode: 0o700 })
       }
-      const filePath = this.resolveFilePath(record.conversationId);
-      writeFileSync(filePath, JSON.stringify(cleanRecord, null, 2), 'utf-8');
+      const filePath = this.resolveFilePath(record.conversationId)
+      writeFileSync(filePath, JSON.stringify(cleanRecord, null, 2), 'utf-8')
     } catch {
       // Memory fallback retains the session even if disk fails
     }
   }
 
   clear(conversationId: string): void {
-    this.memoryFallback.clear(conversationId);
+    this.memoryFallback.clear(conversationId)
     if (this.storage) {
-      void this.storage.update(this.storageKey(conversationId), undefined);
+      void this.storage.update(this.storageKey(conversationId), undefined)
     }
     try {
-      const filePath = this.resolveFilePath(conversationId);
+      const filePath = this.resolveFilePath(conversationId)
       if (existsSync(filePath)) {
-        rmSync(filePath, { force: true });
+        rmSync(filePath, { force: true })
       }
     } catch {
       // Ignore filesystem errors during clear

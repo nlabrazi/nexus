@@ -1,31 +1,31 @@
 export interface ProjectDecision {
-  readonly id: string;
-  readonly date: string; // ISO date YYYY-MM-DD
-  readonly title: string;
-  readonly decision: string;
-  readonly context?: string;
-  readonly status: 'accepted' | 'superseded' | 'deprecated';
+  readonly id: string
+  readonly date: string // ISO date YYYY-MM-DD
+  readonly title: string
+  readonly decision: string
+  readonly context?: string
+  readonly status: 'accepted' | 'superseded' | 'deprecated'
 }
 
 export interface DecisionRecordInput {
-  readonly title: string;
-  readonly decision: string;
-  readonly context?: string;
-  readonly status?: 'accepted' | 'superseded' | 'deprecated';
+  readonly title: string
+  readonly decision: string
+  readonly context?: string
+  readonly status?: 'accepted' | 'superseded' | 'deprecated'
 }
 
 export interface ProjectMemorySnapshot {
-  readonly rootPath: string;
-  readonly memoryFilePath: string;
-  readonly exists: boolean;
-  readonly rawContent: string;
-  readonly decisions: readonly ProjectDecision[];
-  readonly preferences?: string;
+  readonly rootPath: string
+  readonly memoryFilePath: string
+  readonly exists: boolean
+  readonly rawContent: string
+  readonly decisions: readonly ProjectDecision[]
+  readonly preferences?: string
 }
 
 export interface AgentContextSnapshot {
-  readonly rootPath: string;
-  readonly decisionsSummary: string;
-  readonly preferences: string;
-  readonly hasContext: boolean;
+  readonly rootPath: string
+  readonly decisionsSummary: string
+  readonly preferences: string
+  readonly hasContext: boolean
 }

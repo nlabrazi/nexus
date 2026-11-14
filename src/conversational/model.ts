@@ -1,8 +1,8 @@
-import { ConversationProjectContext } from './types';
+import { ConversationProjectContext } from './types'
 
 export interface BrainMessage {
-  readonly role: 'user' | 'assistant' | 'tool';
-  readonly text: string;
+  readonly role: 'user' | 'assistant' | 'tool'
+  readonly text: string
 }
 
 export interface BrainDecision {
@@ -13,8 +13,8 @@ export interface BrainDecision {
     | 'get_project_memory'
     | 'record_decision'
     | 'list_projects'
-    | 'switch_project';
-  readonly text: string;
+    | 'switch_project'
+  readonly text: string
 }
 
 export interface BrainModel {
@@ -22,6 +22,6 @@ export interface BrainModel {
     messages: readonly BrainMessage[],
     project: ConversationProjectContext | undefined,
     toolsAllowed: boolean,
-    signal: AbortSignal
-  ): Promise<BrainDecision>;
+    signal: AbortSignal,
+  ): Promise<BrainDecision>
 }

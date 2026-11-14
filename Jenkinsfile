@@ -14,39 +14,42 @@ pipeline {
             }
         }
 
+        stage('Notify Renovate PR') {
+            when {
+                changeRequest target: 'staging'
+            }
+            steps {
+                notifyRenovatePr()
+            }
+        }
+
         stage('Install') {
             steps {
-                sh 'npm ci'
+                npmCi()
             }
         }
 
         stage('Typecheck') {
             steps {
-                sh 'npm run check-types'
+                sh 'npm run typecheck'
             }
         }
 
-        stage('Format') {
+        stage('Check') {
             steps {
-                sh 'npm run format'
-            }
-        }
-
-        stage('Lint') {
-            steps {
-                sh 'npm run lint'
+                sh 'npm run check'
             }
         }
 
         stage('Unit tests') {
             steps {
-                sh 'npm run test:unit'
+                sh 'npm test'
             }
         }
 
-        stage('Package') {
+        stage('Build') {
             steps {
-                sh 'npm run package'
+                sh 'npm run build'
             }
         }
     }

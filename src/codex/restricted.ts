@@ -1,5 +1,5 @@
 /** Extra process configuration for the Brain spike; normal coding sessions keep their defaults. */
-export type RestrictedCodexProfile = 'inspection' | 'conversation';
+export type RestrictedCodexProfile = 'inspection' | 'conversation'
 
 export function restrictedCodexArgs(profile: RestrictedCodexProfile): string[] {
   const disabled = [
@@ -17,9 +17,9 @@ export function restrictedCodexArgs(profile: RestrictedCodexProfile): string[] {
     'code_mode_host',
     'code_mode_only',
     'memories',
-  ];
+  ]
   if (profile === 'conversation') {
-    disabled.push('shell_tool', 'view_image');
+    disabled.push('shell_tool', 'view_image')
   }
   return [
     '-c',
@@ -36,5 +36,5 @@ export function restrictedCodexArgs(profile: RestrictedCodexProfile): string[] {
       ? ['-c', 'project_doc_max_bytes=0', '-c', 'skills.include_instructions=false']
       : []),
     ...disabled.flatMap((feature) => ['--disable', feature]),
-  ];
+  ]
 }

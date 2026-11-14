@@ -1,4 +1,4 @@
-import { DiagnosticError } from '../logging/logger';
+import { DiagnosticError } from '../logging/logger'
 
 export type SpeechErrorCode =
   | 'not_configured'
@@ -11,7 +11,7 @@ export type SpeechErrorCode =
   | 'empty_transcript'
   | 'timeout'
   | 'cancelled'
-  | 'transcription_failed';
+  | 'transcription_failed'
 
 const messages: Record<SpeechErrorCode, string> = {
   not_configured: 'Le service de transcription n’est pas configuré.',
@@ -26,12 +26,12 @@ const messages: Record<SpeechErrorCode, string> = {
   timeout: 'Le délai maximal de transcription a été dépassé. Réessayez avec un vocal plus court.',
   cancelled: 'Transcription annulée.',
   transcription_failed: 'La transcription du message vocal a échoué. Réessayez.',
-};
+}
 
 export class SpeechError extends Error {
   constructor(readonly code: SpeechErrorCode) {
-    super(messages[code]);
-    this.name = 'SpeechError';
+    super(messages[code])
+    this.name = 'SpeechError'
   }
 }
 
@@ -40,7 +40,7 @@ export type SpeechSynthesisErrorCode =
   | 'process_failed'
   | 'invalid_audio'
   | 'timeout'
-  | 'cancelled';
+  | 'cancelled'
 
 const synthesisMessages: Record<SpeechSynthesisErrorCode, string> = {
   invalid_configuration: 'Configure nexus.speech.tts with local Piper paths and a valid speaker ID',
@@ -48,11 +48,11 @@ const synthesisMessages: Record<SpeechSynthesisErrorCode, string> = {
   invalid_audio: 'Speech synthesis produced invalid audio',
   timeout: 'Speech synthesis timed out',
   cancelled: 'Speech synthesis cancelled',
-};
+}
 
 export class SpeechSynthesisError extends DiagnosticError {
   constructor(readonly code: SpeechSynthesisErrorCode) {
-    super(synthesisMessages[code]);
-    this.name = 'SpeechSynthesisError';
+    super(synthesisMessages[code])
+    this.name = 'SpeechSynthesisError'
   }
 }

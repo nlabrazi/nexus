@@ -1,4 +1,4 @@
-import { classifyProcessError, formatTurnTimeoutMessage } from '../runtime/agent-service';
+import { classifyProcessError, formatTurnTimeoutMessage } from '../runtime/agent-service'
 
 export type CodexErrorCode =
   | 'not_installed'
@@ -11,45 +11,45 @@ export type CodexErrorCode =
   | 'interrupted'
   | 'empty_response'
   | 'session_lost'
-  | 'protocol_error';
+  | 'protocol_error'
 
 export class CodexError extends Error {
   constructor(
     readonly code: CodexErrorCode,
     message: string,
-    options?: ErrorOptions
+    options?: ErrorOptions,
   ) {
-    super(message, options);
-    this.name = 'CodexError';
+    super(message, options)
+    this.name = 'CodexError'
   }
 }
 
 export function processError(cause: unknown): CodexError {
-  const { code, message } = classifyProcessError('Codex', 'codex --version', cause);
-  return new CodexError(code, message, { cause });
+  const { code, message } = classifyProcessError('Codex', 'codex --version', cause)
+  return new CodexError(code, message, { cause })
 }
 
 export function turnTimeoutError(confirmed: boolean, elapsedSeconds = 120): CodexError {
   return new CodexError(
     'turn_timeout',
-    formatTurnTimeoutMessage('Codex', confirmed, elapsedSeconds)
-  );
+    formatTurnTimeoutMessage('Codex', confirmed, elapsedSeconds),
+  )
 }
 
 export function rpcError(method: string, code: number, message: string): CodexError {
   // The stdio protocol has no dedicated, stable "thread not found" error code.
   const missingSession =
     /\b(?:thread|session|conversation)\b[^\n]*(?:not found|not loaded|does not exist|unknown)|(?:no rollout found|unknown (?:thread|session|conversation))/i.test(
-      message
-    );
+      message,
+    )
   if (['thread/read', 'thread/resume', 'turn/start'].includes(method) && missingSession) {
     return new CodexError(
       'session_lost',
       'La session Codex est introuvable ou n’est plus chargée. Utilisez /resume <id> pour la reprendre, ou /new pour repartir avec une nouvelle session.',
-      { cause: { method, code, message } }
-    );
+      { cause: { method, code, message } },
+    )
   }
   return new CodexError('rpc_failed', `Codex a refusé la requête ${method} : ${message}`, {
     cause: { method, code, message },
-  });
+  })
 }

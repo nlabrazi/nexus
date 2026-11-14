@@ -1,25 +1,25 @@
-import { logger } from '../logging/logger';
-import { isPcmWave, isOggOpus } from './audio-validation';
-import { SpeechSynthesisError } from './errors';
-import { execFile } from 'node:child_process';
-import { isAbsolute } from 'node:path';
+import { execFile } from 'node:child_process'
+import { isAbsolute } from 'node:path'
+import { logger } from '../logging/logger'
+import { isOggOpus, isPcmWave } from './audio-validation'
+import { SpeechSynthesisError } from './errors'
 
 export interface AcknowledgementConfiguration {
-  pythonPath: string;
-  modelPath: string;
-  scriptPath: string;
-  speakerId: number;
-  timeoutMs?: number;
-  speed?: number;
+  pythonPath: string
+  modelPath: string
+  scriptPath: string
+  speakerId: number
+  timeoutMs?: number
+  speed?: number
 }
 
 /** Synthesizes a short, deliberately generic acknowledgement without interpreting the prompt. */
 export async function synthesizeAcknowledgement(
   signal: AbortSignal,
-  configuration: AcknowledgementConfiguration
+  configuration: AcknowledgementConfiguration,
 ): Promise<Buffer> {
-  signal.throwIfAborted();
-  const { pythonPath, modelPath, scriptPath, speakerId } = configuration;
+  signal.throwIfAborted()
+  const { pythonPath, modelPath, scriptPath, speakerId } = configuration
   if (
     [pythonPath, modelPath, scriptPath].some((path) => !isAbsolute(path) || path.includes('\0')) ||
     !Number.isSafeInteger(speakerId) ||
@@ -33,11 +33,11 @@ export async function synthesizeAcknowledgement(
         configuration.timeoutMs <= 0 ||
         configuration.timeoutMs > 30_000))
   ) {
-    throw new SpeechSynthesisError('invalid_configuration');
+    throw new SpeechSynthesisError('invalid_configuration')
   }
-  const startedAt = Date.now();
-  const timeout = AbortSignal.timeout(configuration.timeoutMs ?? 30_000);
-  const boundedSignal = AbortSignal.any([signal, timeout]);
+  const startedAt = Date.now()
+  const timeout = AbortSignal.timeout(configuration.timeoutMs ?? 30_000)
+  const boundedSignal = AbortSignal.any([signal, timeout])
   try {
     const wave = await runAudioProcess(
       pythonPath,
@@ -52,10 +52,10 @@ export async function synthesizeAcknowledgement(
         String(configuration.speed ?? 1),
       ],
       boundedSignal,
-      Buffer.from('Bien compris. Je prends en charge votre demande.', 'utf8')
-    );
+      Buffer.from('Bien compris. Je prends en charge votre demande.', 'utf8'),
+    )
     try {
-      if (!isPcmWave(wave)) throw new SpeechSynthesisError('invalid_audio');
+      if (!isPcmWave(wave)) throw new SpeechSynthesisError('invalid_audio')
       const ogg = await runAudioProcess(
         'ffmpeg',
         [
@@ -73,27 +73,27 @@ export async function synthesizeAcknowledgement(
           'pipe:1',
         ],
         boundedSignal,
-        wave
-      );
+        wave,
+      )
       if (!isOggOpus(ogg)) {
-        ogg.fill(0);
-        throw new SpeechSynthesisError('invalid_audio');
+        ogg.fill(0)
+        throw new SpeechSynthesisError('invalid_audio')
       }
       logger.info('TTS', 'synthesize', {
         provider: 'piper',
         status: 'success',
         durationMs: Date.now() - startedAt,
-      });
-      return ogg;
+      })
+      return ogg
     } finally {
-      wave.fill(0);
+      wave.fill(0)
     }
   } catch (error) {
     const failure = signal.aborted
       ? new SpeechSynthesisError('cancelled')
       : timeout.aborted
         ? new SpeechSynthesisError('timeout')
-        : error;
+        : error
     logger.warn(
       'TTS',
       'synthesize',
@@ -102,9 +102,9 @@ export async function synthesizeAcknowledgement(
         status: signal.aborted ? 'cancelled' : 'text_fallback',
         durationMs: Date.now() - startedAt,
       },
-      failure
-    );
-    throw failure;
+      failure,
+    )
+    throw failure
   }
 }
 
@@ -112,9 +112,9 @@ function runAudioProcess(
   executable: string,
   args: string[],
   signal: AbortSignal,
-  input?: Buffer
+  input?: Buffer,
 ): Promise<Buffer> {
-  signal.throwIfAborted();
+  signal.throwIfAborted()
   return new Promise((resolve, reject) => {
     const child = execFile(
       executable,
@@ -127,27 +127,27 @@ function runAudioProcess(
         killSignal: 'SIGKILL',
       },
       (error, stdout) => {
-        signal.removeEventListener('abort', abort);
+        signal.removeEventListener('abort', abort)
         if (error || signal.aborted || !stdout.length) {
-          stdout.fill(0);
+          stdout.fill(0)
           reject(
             new SpeechSynthesisError(
-              signal.aborted ? 'cancelled' : error ? 'process_failed' : 'invalid_audio'
-            )
-          );
+              signal.aborted ? 'cancelled' : error ? 'process_failed' : 'invalid_audio',
+            ),
+          )
         } else {
-          resolve(stdout);
+          resolve(stdout)
         }
-      }
-    );
+      },
+    )
     const abort = () => {
-      child.kill('SIGKILL');
-      signal.removeEventListener('abort', abort);
-      reject(new SpeechSynthesisError('cancelled'));
-    };
-    child.stdin?.on('error', () => {});
-    signal.addEventListener('abort', abort, { once: true });
-    if (signal.aborted) abort();
-    else child.stdin?.end(input);
-  });
+      child.kill('SIGKILL')
+      signal.removeEventListener('abort', abort)
+      reject(new SpeechSynthesisError('cancelled'))
+    }
+    child.stdin?.on('error', () => {})
+    signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) abort()
+    else child.stdin?.end(input)
+  })
 }
