@@ -1,31 +1,31 @@
-import { ModelSelection } from './types';
+import { ModelSelection } from './types'
 
 export interface ModelPreferences {
-  load(): ModelSelection | undefined;
-  save(selection: ModelSelection): Promise<void>;
+  load(): ModelSelection | undefined
+  save(selection: ModelSelection): Promise<void>
 }
 
 export class WorkspaceModelPreferences implements ModelPreferences {
   constructor(
     private readonly storage: {
-      get(key: string): unknown;
-      update(key: string, value: unknown): PromiseLike<void>;
+      get(key: string): unknown
+      update(key: string, value: unknown): PromiseLike<void>
     },
-    private readonly key = 'nexus.codex.model'
+    private readonly key = 'nexus.codex.model',
   ) {}
 
   load(): ModelSelection | undefined {
-    const value = this.storage.get(this.key) as Partial<ModelSelection> | undefined;
+    const value = this.storage.get(this.key) as Partial<ModelSelection> | undefined
     return value &&
       typeof value.model === 'string' &&
       value.model.trim() &&
       typeof value.effort === 'string' &&
       value.effort.trim()
       ? { model: value.model, effort: value.effort }
-      : undefined;
+      : undefined
   }
 
   async save(selection: ModelSelection): Promise<void> {
-    await this.storage.update(this.key, { ...selection });
+    await this.storage.update(this.key, { ...selection })
   }
 }

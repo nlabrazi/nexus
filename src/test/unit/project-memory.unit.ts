@@ -1,134 +1,134 @@
-import * as assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { suite, test } from 'node:test';
-import { ProjectMemory } from '../../memory/project-memory';
-import { CodingAgentTools } from '../../conversational/tools';
-import { ConversationalService } from '../../conversational/service';
-import { parseBrainDecision } from '../../conversational/brain-decision';
+import * as assert from 'node:assert/strict'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { suite, test } from 'node:test'
+import { parseBrainDecision } from '../../conversational/brain-decision'
+import { ConversationalService } from '../../conversational/service'
+import { CodingAgentTools } from '../../conversational/tools'
+import { ProjectMemory } from '../../memory/project-memory'
 
 suite('Project Decision Memory', () => {
   test('returns empty snapshot and hasMemory=false when memory.md is absent', () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-memory-test-'));
+    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-memory-test-'))
     try {
-      const memory = new ProjectMemory();
-      assert.equal(memory.hasMemory(tempDir), false);
-      assert.equal(memory.readMemory(tempDir), '');
-      assert.deepEqual(memory.listDecisions(tempDir), []);
+      const memory = new ProjectMemory()
+      assert.equal(memory.hasMemory(tempDir), false)
+      assert.equal(memory.readMemory(tempDir), '')
+      assert.deepEqual(memory.listDecisions(tempDir), [])
 
-      const snapshot = memory.getSnapshot(tempDir);
-      assert.equal(snapshot.rootPath, tempDir);
-      assert.equal(snapshot.exists, false);
-      assert.equal(snapshot.rawContent, '');
-      assert.deepEqual(snapshot.decisions, []);
+      const snapshot = memory.getSnapshot(tempDir)
+      assert.equal(snapshot.rootPath, tempDir)
+      assert.equal(snapshot.exists, false)
+      assert.equal(snapshot.rawContent, '')
+      assert.deepEqual(snapshot.decisions, [])
     } finally {
-      rmSync(tempDir, { recursive: true, force: true });
+      rmSync(tempDir, { recursive: true, force: true })
     }
-  });
+  })
 
   test('records decisions and preserves structured fields across reads', () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-memory-test-'));
+    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-memory-test-'))
     try {
-      const memory = new ProjectMemory();
+      const memory = new ProjectMemory()
       const dec1 = memory.recordDecision(tempDir, {
         title: 'Choix de SQLite',
         decision: 'Utiliser SQLite local pour le stockage des sessions et états.',
         context: 'Besoin d’une solution sans daemon externe pour un démarrage rapide.',
         status: 'accepted',
-      });
+      })
 
-      assert.equal(dec1.title, 'Choix de SQLite');
-      assert.equal(dec1.status, 'accepted');
+      assert.equal(dec1.title, 'Choix de SQLite')
+      assert.equal(dec1.status, 'accepted')
       assert.equal(
         dec1.context,
-        'Besoin d’une solution sans daemon externe pour un démarrage rapide.'
-      );
-      assert.ok(dec1.id.startsWith('dec-'));
-      assert.match(dec1.date, /^\d{4}-\d{2}-\d{2}$/);
-      assert.equal(memory.hasMemory(tempDir), true);
+        'Besoin d’une solution sans daemon externe pour un démarrage rapide.',
+      )
+      assert.ok(dec1.id.startsWith('dec-'))
+      assert.match(dec1.date, /^\d{4}-\d{2}-\d{2}$/)
+      assert.equal(memory.hasMemory(tempDir), true)
 
       // Record a second decision with superseded status
       const dec2 = memory.recordDecision(tempDir, {
         title: 'Format de sérialisation JSON',
         decision: 'Utiliser JSON standard pour les échanges WebSocket.',
         status: 'superseded',
-      });
+      })
 
-      assert.equal(dec2.title, 'Format de sérialisation JSON');
-      assert.equal(dec2.status, 'superseded');
+      assert.equal(dec2.title, 'Format de sérialisation JSON')
+      assert.equal(dec2.status, 'superseded')
 
-      const decisions = memory.listDecisions(tempDir);
-      assert.equal(decisions.length, 2);
-      assert.equal(decisions[0].id, dec1.id);
-      assert.equal(decisions[0].title, 'Choix de SQLite');
-      assert.equal(decisions[0].status, 'accepted');
-      assert.equal(decisions[1].id, dec2.id);
-      assert.equal(decisions[1].title, 'Format de sérialisation JSON');
-      assert.equal(decisions[1].status, 'superseded');
+      const decisions = memory.listDecisions(tempDir)
+      assert.equal(decisions.length, 2)
+      assert.equal(decisions[0].id, dec1.id)
+      assert.equal(decisions[0].title, 'Choix de SQLite')
+      assert.equal(decisions[0].status, 'accepted')
+      assert.equal(decisions[1].id, dec2.id)
+      assert.equal(decisions[1].title, 'Format de sérialisation JSON')
+      assert.equal(decisions[1].status, 'superseded')
 
-      const snapshot = memory.getSnapshot(tempDir);
-      assert.equal(snapshot.exists, true);
-      assert.equal(snapshot.decisions.length, 2);
-      assert.ok(snapshot.rawContent.includes('# Mémoire de Décisions Nexus'));
-      assert.ok(snapshot.rawContent.includes('### ['));
+      const snapshot = memory.getSnapshot(tempDir)
+      assert.equal(snapshot.exists, true)
+      assert.equal(snapshot.decisions.length, 2)
+      assert.ok(snapshot.rawContent.includes('# Mémoire de Décisions Nexus'))
+      assert.ok(snapshot.rawContent.includes('### ['))
     } finally {
-      rmSync(tempDir, { recursive: true, force: true });
+      rmSync(tempDir, { recursive: true, force: true })
     }
-  });
+  })
 
   test('validates required fields on recordDecision', () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-memory-test-'));
+    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-memory-test-'))
     try {
-      const memory = new ProjectMemory();
+      const memory = new ProjectMemory()
       assert.throws(() => {
-        memory.recordDecision(tempDir, { title: '  ', decision: 'Valid decision' });
-      }, /titre/);
+        memory.recordDecision(tempDir, { title: '  ', decision: 'Valid decision' })
+      }, /titre/)
 
       assert.throws(() => {
-        memory.recordDecision(tempDir, { title: 'Valid title', decision: '   ' });
-      }, /corps/);
+        memory.recordDecision(tempDir, { title: 'Valid title', decision: '   ' })
+      }, /corps/)
     } finally {
-      rmSync(tempDir, { recursive: true, force: true });
+      rmSync(tempDir, { recursive: true, force: true })
     }
-  });
+  })
 
   test('clearMemory resets memory.md to initial header', () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-memory-test-'));
+    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-memory-test-'))
     try {
-      const memory = new ProjectMemory();
+      const memory = new ProjectMemory()
       memory.recordDecision(tempDir, {
         title: 'Architecture hexagonale',
         decision: 'Séparer strictement domaine et adapters.',
-      });
+      })
 
-      assert.equal(memory.listDecisions(tempDir).length, 1);
+      assert.equal(memory.listDecisions(tempDir).length, 1)
 
-      memory.clearMemory(tempDir);
-      assert.equal(memory.hasMemory(tempDir), true);
-      assert.equal(memory.listDecisions(tempDir).length, 0);
-      assert.ok(memory.readMemory(tempDir).includes('# Mémoire de Décisions Nexus'));
+      memory.clearMemory(tempDir)
+      assert.equal(memory.hasMemory(tempDir), true)
+      assert.equal(memory.listDecisions(tempDir).length, 0)
+      assert.ok(memory.readMemory(tempDir).includes('# Mémoire de Décisions Nexus'))
     } finally {
-      rmSync(tempDir, { recursive: true, force: true });
+      rmSync(tempDir, { recursive: true, force: true })
     }
-  });
+  })
 
   test('CodingAgentTools exposes project memory query and record methods', async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-memory-test-'));
-    const signal = new AbortController().signal;
+    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-memory-test-'))
+    const signal = new AbortController().signal
     try {
-      const memory = new ProjectMemory();
+      const memory = new ProjectMemory()
       const tools = new CodingAgentTools({
         resolveWorkspace: async () => ({
           root: tempDir,
           git: { directory: join(tempDir, '.git'), branch: 'staging' },
         }),
         projectMemory: memory,
-      });
+      })
 
-      const initialSnapshot = await tools.getProjectMemory(signal);
-      assert.equal(initialSnapshot.exists, false);
-      assert.equal(initialSnapshot.decisions.length, 0);
+      const initialSnapshot = await tools.getProjectMemory(signal)
+      assert.equal(initialSnapshot.exists, false)
+      assert.equal(initialSnapshot.decisions.length, 0)
 
       const recorded = await tools.recordDecision(
         {
@@ -136,46 +136,46 @@ suite('Project Decision Memory', () => {
           decision: 'Migrer vers Tailwind pour le style web.',
           context: 'Amélioration de la vélocité UI.',
         },
-        signal
-      );
+        signal,
+      )
 
-      assert.equal(recorded.title, 'Adoption de Tailwind CSS');
-      assert.equal(recorded.status, 'accepted');
+      assert.equal(recorded.title, 'Adoption de Tailwind CSS')
+      assert.equal(recorded.status, 'accepted')
 
-      const updatedSnapshot = await tools.getProjectMemory(signal);
-      assert.equal(updatedSnapshot.exists, true);
-      assert.equal(updatedSnapshot.decisions.length, 1);
-      assert.equal(updatedSnapshot.decisions[0].id, recorded.id);
+      const updatedSnapshot = await tools.getProjectMemory(signal)
+      assert.equal(updatedSnapshot.exists, true)
+      assert.equal(updatedSnapshot.decisions.length, 1)
+      assert.equal(updatedSnapshot.decisions[0].id, recorded.id)
     } finally {
-      rmSync(tempDir, { recursive: true, force: true });
+      rmSync(tempDir, { recursive: true, force: true })
     }
-  });
+  })
 
   test('ConversationalService handles get_project_memory and record_decision actions', async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-memory-test-'));
-    const signal = new AbortController().signal;
+    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-memory-test-'))
+    const signal = new AbortController().signal
     try {
-      const memory = new ProjectMemory();
+      const memory = new ProjectMemory()
       const tools = new CodingAgentTools({
         resolveWorkspace: async () => ({
           root: tempDir,
           git: { directory: join(tempDir, '.git'), branch: 'staging' },
         }),
         projectMemory: memory,
-      });
+      })
 
-      let step = 0;
+      let step = 0
       const service = new ConversationalService(
         {
           decide: async (messages) => {
             if (step === 0) {
-              step++;
-              return { action: 'get_project_memory', text: '' };
+              step++
+              return { action: 'get_project_memory', text: '' }
             }
             if (step === 1) {
-              step++;
-              const lastTool = messages.at(-1)!;
-              assert.match(lastTool.text, /decisions/);
+              step++
+              const lastTool = messages.at(-1)!
+              assert.match(lastTool.text, /decisions/)
               return {
                 action: 'record_decision',
                 text: JSON.stringify({
@@ -183,18 +183,18 @@ suite('Project Decision Memory', () => {
                   decision: 'Encapsuler l’audio en chunks Opus.',
                   context: 'Latence réduite sur réseau mobile.',
                 }),
-              };
+              }
             }
-            const lastTool = messages.at(-1)!;
-            assert.match(lastTool.text, /WebSocket binaire/);
+            const lastTool = messages.at(-1)!
+            assert.match(lastTool.text, /WebSocket binaire/)
             return {
               action: 'reply',
               text: 'Décision enregistrée avec succès dans la mémoire du projet.',
-            };
+            }
           },
         },
-        tools
-      );
+        tools,
+      )
 
       const reply = await service.respond(
         {
@@ -202,125 +202,125 @@ suite('Project Decision Memory', () => {
           message: 'Enregistre notre décision technique',
           project: { name: 'test-project', branch: 'staging' },
         },
-        signal
-      );
+        signal,
+      )
 
-      assert.match(reply.text, /enregistrée avec succès/);
-      assert.equal(memory.listDecisions(tempDir).length, 1);
-      assert.equal(memory.listDecisions(tempDir)[0].title, 'WebSocket binaire');
+      assert.match(reply.text, /enregistrée avec succès/)
+      assert.equal(memory.listDecisions(tempDir).length, 1)
+      assert.equal(memory.listDecisions(tempDir)[0].title, 'WebSocket binaire')
     } finally {
-      rmSync(tempDir, { recursive: true, force: true });
+      rmSync(tempDir, { recursive: true, force: true })
     }
-  });
+  })
 
   test('manages project preferences and includes them in snapshot and context', () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-preferences-test-'));
+    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-preferences-test-'))
     try {
-      const memory = new ProjectMemory();
-      assert.equal(memory.readPreferences(tempDir), '');
+      const memory = new ProjectMemory()
+      assert.equal(memory.readPreferences(tempDir), '')
 
-      memory.setPreferences(tempDir, '• Langue : Français\n• Style : TypeScript strict');
-      assert.match(memory.readPreferences(tempDir), /TypeScript strict/);
+      memory.setPreferences(tempDir, '• Langue : Français\n• Style : TypeScript strict')
+      assert.match(memory.readPreferences(tempDir), /TypeScript strict/)
 
-      const snapshot = memory.getSnapshot(tempDir);
-      assert.match(snapshot.preferences ?? '', /TypeScript strict/);
+      const snapshot = memory.getSnapshot(tempDir)
+      assert.match(snapshot.preferences ?? '', /TypeScript strict/)
 
-      const context = memory.buildAgentContext(tempDir);
-      assert.equal(context.hasContext, true);
-      assert.match(context.preferences, /Français/);
+      const context = memory.buildAgentContext(tempDir)
+      assert.equal(context.hasContext, true)
+      assert.match(context.preferences, /Français/)
     } finally {
-      rmSync(tempDir, { recursive: true, force: true });
+      rmSync(tempDir, { recursive: true, force: true })
     }
-  });
+  })
 
   test('formatActiveDecisions filters out non-accepted decisions and bounds length', () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-active-dec-test-'));
+    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-active-dec-test-'))
     try {
-      const memory = new ProjectMemory();
+      const memory = new ProjectMemory()
       memory.recordDecision(tempDir, {
         title: 'Décision active',
         decision: 'Utiliser Biome pour le formatage.',
         status: 'accepted',
-      });
+      })
       memory.recordDecision(tempDir, {
         title: 'Décision obsolète',
         decision: 'Utiliser Prettier.',
         status: 'superseded',
-      });
+      })
 
-      const formatted = memory.formatActiveDecisions(tempDir);
-      assert.match(formatted, /Décision active/);
-      assert.match(formatted, /Biome/);
-      assert.doesNotMatch(formatted, /Prettier/);
-      assert.doesNotMatch(formatted, /obsolète/);
+      const formatted = memory.formatActiveDecisions(tempDir)
+      assert.match(formatted, /Décision active/)
+      assert.match(formatted, /Biome/)
+      assert.doesNotMatch(formatted, /Prettier/)
+      assert.doesNotMatch(formatted, /obsolète/)
     } finally {
-      rmSync(tempDir, { recursive: true, force: true });
+      rmSync(tempDir, { recursive: true, force: true })
     }
-  });
+  })
 
   test('augmentPrompt enriches user prompt when context exists and leaves intact otherwise', () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-prompt-aug-test-'));
+    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-prompt-aug-test-'))
     try {
-      const memory = new ProjectMemory();
+      const memory = new ProjectMemory()
 
       // No context: prompt left intact
-      assert.equal(memory.augmentPrompt('Ajoute un bouton', tempDir), 'Ajoute un bouton');
+      assert.equal(memory.augmentPrompt('Ajoute un bouton', tempDir), 'Ajoute un bouton')
 
       // Diagnostic heartbeat: prompt left intact even with context
       memory.recordDecision(tempDir, {
         title: 'Architecture MVC',
         decision: 'Contrôleurs minces et services isolés.',
         status: 'accepted',
-      });
+      })
       assert.equal(
         memory.augmentPrompt('Reply only with: Nexus connected', tempDir),
-        'Reply only with: Nexus connected'
-      );
+        'Reply only with: Nexus connected',
+      )
 
       // Normal task: prompt is augmented
-      const augmented = memory.augmentPrompt('Ajoute un bouton', tempDir);
-      assert.match(augmented, /\[CONTEXTE PROJET & DIRECTIVES NEXUS\]/);
-      assert.match(augmented, /Architecture MVC/);
-      assert.match(augmented, /\[DEMANDE UTILISATEUR\]/);
-      assert.match(augmented, /Ajoute un bouton/);
+      const augmented = memory.augmentPrompt('Ajoute un bouton', tempDir)
+      assert.match(augmented, /\[CONTEXTE PROJET & DIRECTIVES NEXUS\]/)
+      assert.match(augmented, /Architecture MVC/)
+      assert.match(augmented, /\[DEMANDE UTILISATEUR\]/)
+      assert.match(augmented, /Ajoute un bouton/)
 
       // Does not double augment
-      const double = memory.augmentPrompt(augmented, tempDir);
-      assert.equal(double, augmented);
+      const double = memory.augmentPrompt(augmented, tempDir)
+      assert.equal(double, augmented)
     } finally {
-      rmSync(tempDir, { recursive: true, force: true });
+      rmSync(tempDir, { recursive: true, force: true })
     }
-  });
+  })
 
   test('injects free-form architectural notes from setRawMemory into context and augmentPrompt', () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-freeform-mem-test-'));
+    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-freeform-mem-test-'))
     try {
-      const memory = new ProjectMemory();
+      const memory = new ProjectMemory()
       memory.setRawMemory(
         tempDir,
-        'Architecture Nuxt 3 + Daemon Node.js.\nPrivilégier Upstash Redis pour la synchronisation.'
-      );
+        'Architecture Nuxt 3 + Daemon Node.js.\nPrivilégier Upstash Redis pour la synchronisation.',
+      )
 
-      const formatted = memory.formatActiveDecisions(tempDir);
-      assert.match(formatted, /Architecture Nuxt 3/);
-      assert.match(formatted, /Upstash Redis/);
+      const formatted = memory.formatActiveDecisions(tempDir)
+      assert.match(formatted, /Architecture Nuxt 3/)
+      assert.match(formatted, /Upstash Redis/)
 
-      const ctx = memory.buildAgentContext(tempDir);
-      assert.equal(ctx.hasContext, true);
-      assert.match(ctx.decisionsSummary, /Architecture Nuxt 3/);
+      const ctx = memory.buildAgentContext(tempDir)
+      assert.equal(ctx.hasContext, true)
+      assert.match(ctx.decisionsSummary, /Architecture Nuxt 3/)
 
-      const augmented = memory.augmentPrompt('Corrige la route API', tempDir);
-      assert.match(augmented, /Architecture Nuxt 3/);
-      assert.match(augmented, /Corrige la route API/);
+      const augmented = memory.augmentPrompt('Corrige la route API', tempDir)
+      assert.match(augmented, /Architecture Nuxt 3/)
+      assert.match(augmented, /Corrige la route API/)
     } finally {
-      rmSync(tempDir, { recursive: true, force: true });
+      rmSync(tempDir, { recursive: true, force: true })
     }
-  });
+  })
 
   test('unwraps nested JSON record_decision payloads and parses tool decisions with object text', () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-unwrap-dec-test-'));
+    const tempDir = mkdtempSync(join(tmpdir(), 'nexus-unwrap-dec-test-'))
     try {
-      const memory = new ProjectMemory();
+      const memory = new ProjectMemory()
       const recorded = memory.recordDecision(tempDir, {
         title: 'Décision technique',
         decision: JSON.stringify({
@@ -331,26 +331,26 @@ suite('Project Decision Memory', () => {
             context: 'Projet Nexus',
           },
         }),
-      });
+      })
 
-      assert.equal(recorded.title, 'Analyse du projet Nexus');
-      assert.equal(recorded.decision, 'Garder le repo nlabrazi en mémoire');
-      assert.equal(recorded.context, 'Projet Nexus');
+      assert.equal(recorded.title, 'Analyse du projet Nexus')
+      assert.equal(recorded.decision, 'Garder le repo nlabrazi en mémoire')
+      assert.equal(recorded.context, 'Projet Nexus')
 
-      const parsedGetMem = parseBrainDecision('{"action":"get_project_memory","text":""}', true);
-      assert.deepEqual(parsedGetMem, { action: 'get_project_memory', text: '' });
+      const parsedGetMem = parseBrainDecision('{"action":"get_project_memory","text":""}', true)
+      assert.deepEqual(parsedGetMem, { action: 'get_project_memory', text: '' })
 
       const parsedRecordObj = parseBrainDecision(
         '{"action":"record_decision","text":{"title":"Choix Redis","decision":"Utiliser Upstash"}}',
-        true
-      );
-      assert.equal(parsedRecordObj.action, 'record_decision');
+        true,
+      )
+      assert.equal(parsedRecordObj.action, 'record_decision')
       assert.deepEqual(JSON.parse(parsedRecordObj.text), {
         title: 'Choix Redis',
         decision: 'Utiliser Upstash',
-      });
+      })
     } finally {
-      rmSync(tempDir, { recursive: true, force: true });
+      rmSync(tempDir, { recursive: true, force: true })
     }
-  });
-});
+  })
+})

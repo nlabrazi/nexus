@@ -1,78 +1,78 @@
-import { BrainSessionPersistence } from './persistence';
-import { DecisionRecordInput } from '../memory/types';
-import { BrainMessage, BrainModel } from './model';
-import { CodingAgentTools } from './tools';
-import { ConversationInput, ConversationReply, ConversationalAgent } from './types';
+import { DecisionRecordInput } from '../memory/types'
+import { BrainMessage, BrainModel } from './model'
+import { BrainSessionPersistence } from './persistence'
+import { CodingAgentTools } from './tools'
+import { ConversationalAgent, ConversationInput, ConversationReply } from './types'
 
 /** Small, bounded dialogue loop. Tool consent is handled by the application, never by the model. */
 export class ConversationalService implements ConversationalAgent {
-  private readonly conversations = new Map<string, { context: string; messages: BrainMessage[] }>();
-  private running = false;
+  private readonly conversations = new Map<string, { context: string; messages: BrainMessage[] }>()
+  private running = false
 
   constructor(
     private readonly model: BrainModel,
     private readonly tools: CodingAgentTools,
-    private readonly persistence?: BrainSessionPersistence
+    private readonly persistence?: BrainSessionPersistence,
   ) {}
 
   async clearConversation(conversationId: string): Promise<void> {
-    this.conversations.delete(conversationId);
+    this.conversations.delete(conversationId)
     if (this.persistence) {
-      await this.persistence.clear(conversationId);
+      await this.persistence.clear(conversationId)
     }
   }
 
   getConversationMessages(conversationId: string): readonly BrainMessage[] | undefined {
-    return this.conversations.get(conversationId)?.messages;
+    return this.conversations.get(conversationId)?.messages
   }
 
   async respond(input: ConversationInput, signal: AbortSignal): Promise<ConversationReply> {
-    signal.throwIfAborted();
+    signal.throwIfAborted()
     if (!input.conversationId.trim() || !input.message.trim() || input.message.length > 16000) {
-      throw new Error('Le message ou l’identifiant de conversation est invalide.');
+      throw new Error('Le message ou l’identifiant de conversation est invalide.')
     }
-    const trimmedMessage = input.message.trim();
-    const lowerCmd = trimmedMessage.toLowerCase();
+    const trimmedMessage = input.message.trim()
+    const lowerCmd = trimmedMessage.toLowerCase()
     if (lowerCmd === '/reset' || lowerCmd === 'reset' || lowerCmd === '/new') {
-      await this.clearConversation(input.conversationId);
+      await this.clearConversation(input.conversationId)
       return {
         text: '🧠 Conversation Nexus Brain réinitialisée. Nouveau fil de discussion démarré.',
-      };
+      }
     }
     if (this.running) {
-      throw new Error('Une conversation Nexus est déjà en cours.');
+      throw new Error('Une conversation Nexus est déjà en cours.')
     }
-    this.running = true;
+    this.running = true
     try {
       const context = JSON.stringify(
-        input.project ? { name: input.project.name, branch: input.project.branch } : null
-      );
-      let previous = this.conversations.get(input.conversationId);
+        input.project ? { name: input.project.name, branch: input.project.branch } : null,
+      )
+      let previous = this.conversations.get(input.conversationId)
       if (!previous && this.persistence) {
-        const persisted = await this.persistence.load(input.conversationId);
+        const persisted = await this.persistence.load(input.conversationId)
         if (persisted && persisted.context === context) {
-          previous = { context: persisted.context, messages: [...persisted.messages] };
-          this.conversations.set(input.conversationId, previous);
+          previous = { context: persisted.context, messages: [...persisted.messages] }
+          this.conversations.set(input.conversationId, previous)
         }
       }
       const messages: BrainMessage[] = [
         ...(previous?.context === context ? previous.messages : []),
         { role: 'user', text: trimmedMessage },
-      ];
-      let inspected = false;
+      ]
+      let inspected = false
       for (let step = 0; step < 3; step++) {
-        const decision = await this.model.decide(messages, input.project, step < 2, signal);
-        signal.throwIfAborted();
+        const decision = await this.model.decide(messages, input.project, step < 2, signal)
+        signal.throwIfAborted()
         if (decision.action === 'reply') {
           if (!decision.text.trim()) {
-            throw new Error('Nexus a renvoyé une réponse vide.');
+            throw new Error('Nexus a renvoyé une réponse vide.')
           }
-          messages.push({ role: 'assistant', text: decision.text });
-          const boundedMessages = messages.slice(-20);
-          this.conversations.delete(input.conversationId);
-          this.conversations.set(input.conversationId, { context, messages: boundedMessages });
+          messages.push({ role: 'assistant', text: decision.text })
+          const boundedMessages = messages.slice(-20)
+          this.conversations.delete(input.conversationId)
+          this.conversations.set(input.conversationId, { context, messages: boundedMessages })
           if (this.conversations.size > 20) {
-            this.conversations.delete(this.conversations.keys().next().value!);
+            this.conversations.delete(this.conversations.keys().next().value!)
           }
           if (this.persistence) {
             await this.persistence.save({
@@ -81,37 +81,37 @@ export class ConversationalService implements ConversationalAgent {
               context,
               messages: boundedMessages,
               updatedAt: Date.now(),
-            });
+            })
           }
-          return { text: decision.text };
+          return { text: decision.text }
         }
         if (step === 2 || (decision.action === 'inspect_project' && inspected)) {
-          throw new Error('Nexus a atteint la limite d’outils de ce tour. Reformulez la demande.');
+          throw new Error('Nexus a atteint la limite d’outils de ce tour. Reformulez la demande.')
         }
-        let observation: string;
+        let observation: string
         try {
           if (decision.action === 'get_project_status') {
-            observation = JSON.stringify(await this.tools.getProjectStatus(signal));
+            observation = JSON.stringify(await this.tools.getProjectStatus(signal))
           } else if (decision.action === 'list_projects') {
-            observation = JSON.stringify(await this.tools.listProjects(signal));
+            observation = JSON.stringify(await this.tools.listProjects(signal))
           } else if (decision.action === 'switch_project') {
-            observation = JSON.stringify(await this.tools.switchProject(decision.text, signal));
+            observation = JSON.stringify(await this.tools.switchProject(decision.text, signal))
           } else if (decision.action === 'inspect_project') {
-            inspected = true;
-            observation = await this.tools.inspectProject(decision.text, signal);
+            inspected = true
+            observation = await this.tools.inspectProject(decision.text, signal)
           } else if (decision.action === 'get_project_memory') {
-            observation = JSON.stringify(await this.tools.getProjectMemory(signal));
+            observation = JSON.stringify(await this.tools.getProjectMemory(signal))
           } else if (decision.action === 'record_decision') {
-            let parsedInput: DecisionRecordInput;
+            let parsedInput: DecisionRecordInput
             try {
-              const rawObj = JSON.parse(decision.text);
+              const rawObj = JSON.parse(decision.text)
               const obj =
                 rawObj &&
                 typeof rawObj === 'object' &&
                 rawObj.text &&
                 typeof rawObj.text === 'object'
                   ? rawObj.text
-                  : rawObj;
+                  : rawObj
               if (
                 typeof obj === 'object' &&
                 obj !== null &&
@@ -126,25 +126,25 @@ export class ConversationalService implements ConversationalAgent {
                     obj.status === 'superseded' || obj.status === 'deprecated'
                       ? obj.status
                       : 'accepted',
-                };
+                }
               } else {
-                throw new Error('Format invalide');
+                throw new Error('Format invalide')
               }
             } catch {
               parsedInput = {
                 title: 'Décision technique',
                 decision: decision.text,
-              };
+              }
             }
-            observation = JSON.stringify(await this.tools.recordDecision(parsedInput, signal));
+            observation = JSON.stringify(await this.tools.recordDecision(parsedInput, signal))
           } else {
-            throw new Error('Outil Nexus inconnu.');
+            throw new Error('Outil Nexus inconnu.')
           }
         } catch (error) {
-          signal.throwIfAborted();
-          observation = `Échec de ${decision.action} : ${error instanceof Error ? error.message : 'outil indisponible'}`;
+          signal.throwIfAborted()
+          observation = `Échec de ${decision.action} : ${error instanceof Error ? error.message : 'outil indisponible'}`
         }
-        signal.throwIfAborted();
+        signal.throwIfAborted()
         messages.push({
           role: 'tool',
           text: JSON.stringify({
@@ -152,11 +152,11 @@ export class ConversationalService implements ConversationalAgent {
             question: decision.text,
             result: observation.slice(0, 24000),
           }),
-        });
+        })
       }
-      throw new Error('Nexus n’a pas produit de réponse.');
+      throw new Error('Nexus n’a pas produit de réponse.')
     } finally {
-      this.running = false;
+      this.running = false
     }
   }
 }

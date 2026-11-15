@@ -1,14 +1,15 @@
-import { logger } from '../logging/logger';
-import { ChildProcessWithoutNullStreams, execFile, spawn } from 'node:child_process';
-import { workspaceEnvironment } from '../workspace/environment';
-import { AntigravityError, emptyResponseError, processError, turnTimeoutError } from './errors';
+import { ChildProcessWithoutNullStreams, execFile, spawn } from 'node:child_process'
+import { logger } from '../logging/logger'
+import { workspaceEnvironment } from '../workspace/environment'
+import { AntigravityApprovals, isGuardRailTool } from './approvals'
+import { AntigravityError, emptyResponseError, processError, turnTimeoutError } from './errors'
 import {
   convertRawUsage,
   isInitEvent,
   isResultEvent,
   isStepUpdateEvent,
   parseModelsOutput,
-} from './telemetry';
+} from './telemetry'
 import {
   AntigravityApprovalHandler,
   AntigravityClientStatus,
@@ -17,64 +18,63 @@ import {
   ConversationTokenUsage,
   ModelSelection,
   StreamOutputEvent,
-  UserStreamInput,
   TurnTimeoutHandler,
-} from './types';
-import { AntigravityApprovals, isGuardRailTool } from './approvals';
+  UserStreamInput,
+} from './types'
 
 export interface AntigravityClientOptions {
-  binaryPath?: string;
-  executablePath?: string;
-  sandbox?: boolean;
-  dangerouslySkipPermissions?: boolean;
-  model?: string;
-  effort?: string;
-  approvalHandler?: AntigravityApprovalHandler;
-  turnTimeoutHandler?: TurnTimeoutHandler;
-  turnTimeoutMs?: number;
+  binaryPath?: string
+  executablePath?: string
+  sandbox?: boolean
+  dangerouslySkipPermissions?: boolean
+  model?: string
+  effort?: string
+  approvalHandler?: AntigravityApprovalHandler
+  turnTimeoutHandler?: TurnTimeoutHandler
+  turnTimeoutMs?: number
 }
 
 export class AntigravityClient {
-  private process?: ChildProcessWithoutNullStreams;
-  private buffer = '';
-  private currentTurn?: AntigravityClientStatus['turn'];
-  private starting?: Promise<string>;
-  private connectionId = 0;
-  private turnFailure?: (error: Error) => void;
-  private readonly telemetry = new Map<string, ConversationTelemetry>();
-  private conversationId?: string;
-  private readonly binaryPath: string;
-  private readonly approvals: AntigravityApprovals;
-  private readonly recentStderr: string[] = [];
+  private process?: ChildProcessWithoutNullStreams
+  private buffer = ''
+  private currentTurn?: AntigravityClientStatus['turn']
+  private starting?: Promise<string>
+  private connectionId = 0
+  private turnFailure?: (error: Error) => void
+  private readonly telemetry = new Map<string, ConversationTelemetry>()
+  private conversationId?: string
+  private readonly binaryPath: string
+  private readonly approvals: AntigravityApprovals
+  private readonly recentStderr: string[] = []
 
   private pushStderr(line: string): void {
-    this.recentStderr.push(line);
+    this.recentStderr.push(line)
     if (this.recentStderr.length > 50) {
-      this.recentStderr.shift();
+      this.recentStderr.shift()
     }
   }
 
   constructor(
     private readonly options: AntigravityClientOptions = {},
-    approvalHandler?: AntigravityApprovalHandler
+    approvalHandler?: AntigravityApprovalHandler,
   ) {
-    this.binaryPath = options.executablePath ?? options.binaryPath ?? 'agy';
+    this.binaryPath = options.executablePath ?? options.binaryPath ?? 'agy'
     const handler = this.options.dangerouslySkipPermissions
       ? undefined
-      : (approvalHandler ?? options.approvalHandler);
-    this.approvals = new AntigravityApprovals(handler);
+      : (approvalHandler ?? options.approvalHandler)
+    this.approvals = new AntigravityApprovals(handler)
   }
 
   async checkInstalled(): Promise<string> {
     return new Promise((resolve, reject) => {
       execFile(this.binaryPath, ['--version'], (error, stdout) => {
         if (error) {
-          reject(processError(error));
-          return;
+          reject(processError(error))
+          return
         }
-        resolve(stdout.trim());
-      });
-    });
+        resolve(stdout.trim())
+      })
+    })
   }
 
   getStatus(): AntigravityClientStatus {
@@ -82,15 +82,15 @@ export class AntigravityClient {
       processRunning: this.process !== undefined,
       turn: this.currentTurn ? { ...this.currentTurn } : undefined,
       pendingApprovals: this.approvals.getPendingCount(),
-    };
+    }
   }
 
   getConnectionId(): number | undefined {
-    return this.process ? this.connectionId : undefined;
+    return this.process ? this.connectionId : undefined
   }
 
   getConversationTelemetry(conversationId: string): ConversationTelemetry {
-    return structuredClone(this.telemetry.get(conversationId) ?? {});
+    return structuredClone(this.telemetry.get(conversationId) ?? {})
   }
 
   async listModels(): Promise<AntigravityModel[]> {
@@ -105,45 +105,45 @@ export class AntigravityClient {
               new AntigravityError(
                 'protocol_error',
                 `Impossible de récupérer la liste des modèles Antigravity : ${error.message}`,
-                { cause: error }
-              )
-            );
-            return;
+                { cause: error },
+              ),
+            )
+            return
           }
           try {
-            const models = parseModelsOutput(stdout);
+            const models = parseModelsOutput(stdout)
             if (!models.length) {
               reject(
                 new AntigravityError(
                   'protocol_error',
-                  'Antigravity n’a renvoyé aucun modèle disponible.'
-                )
-              );
-              return;
+                  'Antigravity n’a renvoyé aucun modèle disponible.',
+                ),
+              )
+              return
             }
-            resolve(models);
+            resolve(models)
           } catch (parseError) {
             reject(
               new AntigravityError(
                 'protocol_error',
                 'Le catalogue de modèles Antigravity est invalide.',
-                { cause: parseError }
-              )
-            );
+                { cause: parseError },
+              ),
+            )
           }
-        }
-      );
-    });
+        },
+      )
+    })
   }
 
   start(options?: {
-    cwd?: string;
-    conversationId?: string;
-    selection?: ModelSelection;
-    forceNew?: boolean;
+    cwd?: string
+    conversationId?: string
+    selection?: ModelSelection
+    forceNew?: boolean
   }): Promise<string> {
     if (this.starting) {
-      return this.starting;
+      return this.starting
     }
     if (
       this.process &&
@@ -151,27 +151,27 @@ export class AntigravityClient {
       !options?.forceNew &&
       (!options?.conversationId || options.conversationId === this.conversationId)
     ) {
-      return Promise.resolve(this.conversationId);
+      return Promise.resolve(this.conversationId)
     }
     if (this.process) {
-      this.stop();
+      this.stop()
     }
 
-    const starting = this.startProcess(options);
-    this.starting = starting;
+    const starting = this.startProcess(options)
+    this.starting = starting
     const clear = () => {
       if (this.starting === starting) {
-        this.starting = undefined;
+        this.starting = undefined
       }
-    };
-    void starting.then(clear, clear);
-    return starting;
+    }
+    void starting.then(clear, clear)
+    return starting
   }
 
   private async startProcess(options?: {
-    cwd?: string;
-    conversationId?: string;
-    selection?: ModelSelection;
+    cwd?: string
+    conversationId?: string
+    selection?: ModelSelection
   }): Promise<string> {
     const args: string[] = [
       '-p',
@@ -180,304 +180,307 @@ export class AntigravityClient {
       'stream-json',
       '--output-format',
       'stream-json',
-    ];
+    ]
 
     if (options?.cwd) {
-      args.push('--add-dir', options.cwd);
+      args.push('--add-dir', options.cwd)
     }
     if (options?.conversationId) {
-      args.push('--conversation', options.conversationId);
+      args.push('--conversation', options.conversationId)
     }
 
-    const model = options?.selection?.model ?? this.options.model;
+    const model = options?.selection?.model ?? this.options.model
     if (model) {
-      args.push('--model', model);
+      args.push('--model', model)
     }
-    const effort = options?.selection?.effort ?? this.options.effort;
+    const effort = options?.selection?.effort ?? this.options.effort
     if (effort) {
-      args.push('--effort', effort);
+      args.push('--effort', effort)
     }
 
     if (this.options.sandbox !== false) {
-      args.push('--sandbox');
+      args.push('--sandbox')
     }
     // In headless stream-json mode, agy cannot prompt on an interactive TTY and
     // will auto-deny any tools requiring permissions (such as unsandboxed paths).
     // Nexus acts as the supervisor that gates actions via Telegram approvals.
-    args.push('--dangerously-skip-permissions');
+    args.push('--dangerously-skip-permissions')
 
-    const childEnv = workspaceEnvironment();
+    const childEnv = workspaceEnvironment()
     if (childEnv.PATH) {
       childEnv.PATH = childEnv.PATH.split(':')
         .filter((d) => d.trim().length > 0 && (d.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(d)))
-        .join(':');
+        .join(':')
     }
 
-    let child: ChildProcessWithoutNullStreams;
+    let child: ChildProcessWithoutNullStreams
     try {
       child = spawn(this.binaryPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: childEnv,
-      });
+      })
     } catch (error) {
-      throw processError(error);
+      throw processError(error)
     }
 
-    this.process = child;
-    this.connectionId++;
-    this.buffer = '';
+    this.process = child
+    this.connectionId++
+    this.buffer = ''
 
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
 
-    child.on('error', (error) => this.disconnect(child, processError(error)));
+    child.on('error', (error) => this.disconnect(child, processError(error)))
     child.on('exit', (code, signal) => {
-      const recent = this.recentStderr.slice(-5);
-      const extra = recent.length > 0 ? `\nLogs stderr :\n${recent.join('\n')}` : '';
+      const recent = this.recentStderr.slice(-5)
+      const extra = recent.length > 0 ? `\nLogs stderr :\n${recent.join('\n')}` : ''
       const err = this.currentTurn?.interrupting
         ? turnTimeoutError(false)
-        : processError(new Error(`Antigravity exited: code=${code}, signal=${signal}${extra}`));
-      this.disconnect(child, err, false);
-    });
+        : processError(new Error(`Antigravity exited: code=${code}, signal=${signal}${extra}`))
+      this.disconnect(child, err, false)
+    })
     for (const stream of [child.stdin, child.stdout, child.stderr]) {
-      stream.on('error', (error) => this.disconnect(child, processError(error)));
+      stream.on('error', (error) => this.disconnect(child, processError(error)))
     }
     child.stdout.on('end', () => {
-      this.disconnect(child, processError(new Error('Antigravity stdout closed')));
-    });
+      this.disconnect(child, processError(new Error('Antigravity stdout closed')))
+    })
 
     child.stderr.on('data', (chunk: Buffer | string) => {
-      const text = chunk.toString();
+      const text = chunk.toString()
       const lines = text
         .split('\n')
         .map((l: string) => l.trim())
-        .filter((l: string) => Boolean(l));
+        .filter((l: string) => Boolean(l))
       for (const line of lines) {
-        logger.debug('Antigravity', 'stderr_received');
-        this.pushStderr(line);
+        logger.debug('Antigravity', 'stderr_received')
+        this.pushStderr(line)
       }
-    });
+    })
 
-    child.stdout.on('data', (chunk) => this.handleStdout(chunk));
+    child.stdout.on('data', (chunk) => this.handleStdout(chunk))
 
     return await new Promise<string>((resolve, reject) => {
-      let settled = false;
+      let settled = false
       const timeout = setTimeout(() => {
         if (settled) {
-          return;
+          return
         }
-        settled = true;
-        this.eventListeners.delete(onInit);
+        settled = true
+        this.eventListeners.delete(onInit)
         const err = new AntigravityError(
           'stream_timeout',
-          'Délai dépassé lors de l’initialisation d’Antigravity.'
-        );
-        this.disconnect(child, err);
-        reject(err);
-      }, 15_000);
+          'Délai dépassé lors de l’initialisation d’Antigravity.',
+        )
+        this.disconnect(child, err)
+        reject(err)
+      }, 15_000)
 
       const onInit = (event: StreamOutputEvent) => {
         if (settled || this.process !== child) {
-          return;
+          return
         }
         if (isInitEvent(event)) {
-          settled = true;
-          clearTimeout(timeout);
-          this.eventListeners.delete(onInit);
-          this.conversationId = event.conversation_id;
+          settled = true
+          clearTimeout(timeout)
+          this.eventListeners.delete(onInit)
+          this.conversationId = event.conversation_id
 
           const telemetry: ConversationTelemetry = {
             model,
             reasoningEffort: effort,
             sandbox: this.options.sandbox !== false ? 'enabled' : 'disabled',
-          };
-          this.telemetry.set(event.conversation_id, telemetry);
-          resolve(event.conversation_id);
+          }
+          this.telemetry.set(event.conversation_id, telemetry)
+          resolve(event.conversation_id)
         }
-      };
+      }
 
-      this.eventListeners.add(onInit);
-    });
+      this.eventListeners.add(onInit)
+    })
   }
 
   async runTurn(
     conversationId: string,
     prompt: string,
     onFilesChanged?: (paths: readonly string[]) => void,
-    onChunk?: (delta: string) => void
+    onChunk?: (delta: string) => void,
   ): Promise<string> {
     if (!this.process) {
-      throw processError(new Error('Antigravity is not running'));
+      throw processError(new Error('Antigravity is not running'))
     }
     if (this.currentTurn) {
-      throw new Error('Un turn Antigravity est déjà en cours.');
+      throw new Error('Un turn Antigravity est déjà en cours.')
     }
-    const trimmedPrompt = prompt.trim();
+    const trimmedPrompt = prompt.trim()
     if (!trimmedPrompt) {
-      throw new Error('Antigravity prompt cannot be empty');
+      throw new Error('Antigravity prompt cannot be empty')
     }
 
-    const child = this.process;
-    const currentTurn: NonNullable<AntigravityClientStatus['turn']> = { startedAt: Date.now() };
-    this.currentTurn = currentTurn;
-    this.approvals.beginTurn(conversationId);
+    const child = this.process
+    const currentTurn: NonNullable<AntigravityClientStatus['turn']> = { startedAt: Date.now() }
+    this.currentTurn = currentTurn
+    this.approvals.beginTurn(conversationId)
 
-    const stderrStartIdx = this.recentStderr.length;
-    const toolsCalled: Array<{ name: string; state: string; error?: string }> = [];
-    const changedFiles = new Set<string>();
-    let collectedResponse = '';
+    const stderrStartIdx = this.recentStderr.length
+    const toolsCalled: Array<{ name: string; state: string; error?: string }> = []
+    const changedFiles = new Set<string>()
+    let collectedResponse = ''
 
-    logger.info('Antigravity', 'turn', { status: 'started' });
+    logger.info('Antigravity', 'turn', { status: 'started' })
 
     return await new Promise<string>((resolve, reject) => {
-      let settled = false;
-      let timeout: ReturnType<typeof setTimeout>;
-      let interruptTimeout: ReturnType<typeof setTimeout> | undefined;
-      let timeoutPromptController: AbortController | undefined;
-      const turnTimeoutMs = this.options.turnTimeoutMs ?? 120_000;
-      let elapsedSeconds = Math.round(turnTimeoutMs / 1000);
+      let settled = false
+      let timeout: ReturnType<typeof setTimeout>
+      let interruptTimeout: ReturnType<typeof setTimeout> | undefined
+      let timeoutPromptController: AbortController | undefined
+      const turnTimeoutMs = this.options.turnTimeoutMs ?? 120_000
+      let elapsedSeconds = Math.round(turnTimeoutMs / 1000)
 
       const cleanup = () => {
-        timeoutPromptController?.abort();
-        this.eventListeners.delete(onNotification);
+        timeoutPromptController?.abort()
+        this.eventListeners.delete(onNotification)
         if (this.currentTurn === currentTurn) {
-          this.currentTurn = undefined;
+          this.currentTurn = undefined
         }
         if (this.turnFailure === fail) {
-          this.turnFailure = undefined;
+          this.turnFailure = undefined
         }
-        this.approvals.endTurn();
-        clearTimeout(timeout);
-        clearTimeout(interruptTimeout);
-      };
+        this.approvals.endTurn()
+        clearTimeout(timeout)
+        clearTimeout(interruptTimeout)
+      }
 
       const fail = (error: Error) => {
         if (settled) {
-          return;
+          return
         }
-        settled = true;
-        cleanup();
-        reject(error);
-      };
+        settled = true
+        cleanup()
+        reject(error)
+      }
 
-      this.turnFailure = fail;
+      this.turnFailure = fail
 
       const onNotification = (event: StreamOutputEvent) => {
         if (settled || this.process !== child) {
-          return;
+          return
         }
 
-        const rawEvent = event as unknown as Record<string, unknown>;
+        const rawEvent = event as unknown as Record<string, unknown>
         if (rawEvent.approval_request || rawEvent.permission_request) {
-          resetTimeout();
+          resetTimeout()
           void this.approvals.handleApprovalEvent(rawEvent).then((decision) => {
-            resetTimeout();
+            resetTimeout()
             if (decision === 'decline' && !settled) {
               fail(
                 new AntigravityError(
                   'approval_declined',
-                  'L’approbation a été refusée par l’utilisateur.'
-                )
-              );
+                  'L’approbation a été refusée par l’utilisateur.',
+                ),
+              )
               try {
-                child.kill('SIGINT');
+                child.kill('SIGINT')
               } catch {
                 /* ignore */
               }
             }
-          });
+          })
         }
 
         if (isStepUpdateEvent(event)) {
-          const step = event.step_update;
+          const step = event.step_update
           if (step.conversation_id !== conversationId) {
-            return;
+            return
           }
-          resetTimeout();
+          resetTimeout()
 
           if (step.step_type === 'agent_response' && step.text_delta) {
-            collectedResponse += step.text_delta;
-            onChunk?.(step.text_delta);
+            collectedResponse += step.text_delta
+            onChunk?.(step.text_delta)
           }
 
           if (step.step_type === 'tool') {
-            const toolName = step.tool_name ?? 'unknown';
-            const toolState = step.state ?? 'UNKNOWN';
+            const toolName = step.tool_name ?? 'unknown'
+            const toolState = step.state ?? 'UNKNOWN'
             const toolError = step.tool_info?.error
               ? `${step.tool_info.error.type ? `[${step.tool_info.error.type}] ` : ''}${step.tool_info.error.message}`
-              : undefined;
+              : undefined
 
-            logger.debug('Antigravity', 'tool_event');
+            logger.debug('Antigravity', 'tool_event')
 
-            let existingIdx = -1;
+            let existingIdx = -1
             for (let i = toolsCalled.length - 1; i >= 0; i--) {
               if (toolsCalled[i].name === toolName) {
-                existingIdx = i;
-                break;
+                existingIdx = i
+                break
               }
             }
 
             if (existingIdx >= 0 && toolsCalled[existingIdx].state !== 'COMPLETED') {
-              toolsCalled[existingIdx] = { name: toolName, state: toolState, error: toolError };
+              toolsCalled[existingIdx] = { name: toolName, state: toolState, error: toolError }
             } else {
-              toolsCalled.push({ name: toolName, state: toolState, error: toolError });
+              toolsCalled.push({ name: toolName, state: toolState, error: toolError })
             }
 
             if (toolError) {
-              logger.warn('Antigravity', 'tool', { status: 'failed' });
+              logger.warn('Antigravity', 'tool', { status: 'failed' })
             }
 
             if (step.tool_info?.parameters) {
-              const params = step.tool_info.parameters;
+              const params = step.tool_info.parameters
               for (const key of ['TargetFile', 'file_path', 'path']) {
-                const val = params[key];
+                const val = params[key]
                 if (typeof val === 'string' && val.trim()) {
-                  changedFiles.add(val.trim());
+                  changedFiles.add(val.trim())
                 }
               }
             }
 
             if (step.state === 'ACTIVE' && isGuardRailTool(step.tool_name ?? '')) {
-              resetTimeout();
+              resetTimeout()
               void this.approvals
                 .requestToolApproval(
                   conversationId,
                   step.step_index,
                   step.tool_name!,
-                  step.tool_info?.parameters
+                  step.tool_info?.parameters,
                 )
                 .then((decision) => {
-                  resetTimeout();
+                  resetTimeout()
                   if (decision === 'decline' && !settled) {
                     fail(
-                      new AntigravityError('approval_declined', 'Action refusée par l’utilisateur.')
-                    );
+                      new AntigravityError(
+                        'approval_declined',
+                        'Action refusée par l’utilisateur.',
+                      ),
+                    )
                     try {
-                      child.kill('SIGINT');
+                      child.kill('SIGINT')
                     } catch {
                       /* ignore */
                     }
                   }
-                });
+                })
             }
           }
 
           if (step.usage) {
-            this.recordUsage(conversationId, step.usage);
+            this.recordUsage(conversationId, step.usage)
           }
         } else if (isResultEvent(event)) {
-          const res = event.result;
+          const res = event.result
           if (res.conversation_id !== conversationId) {
-            return;
+            return
           }
 
           if (res.usage) {
-            this.recordUsage(conversationId, res.usage);
+            this.recordUsage(conversationId, res.usage)
           }
 
           if (res.status !== 'SUCCESS') {
-            const turnStderr = this.recentStderr.slice(stderrStartIdx);
-            logger.error('Antigravity', 'turn', { status: 'failed' });
+            const turnStderr = this.recentStderr.slice(stderrStartIdx)
+            logger.error('Antigravity', 'turn', { status: 'failed' })
             fail(
               new AntigravityError(
                 'turn_failed',
@@ -488,16 +491,16 @@ export class AntigravityClient {
                   changedFiles: [...changedFiles],
                   recentStderr: turnStderr,
                   pendingApprovals: this.approvals.getPendingCount(),
-                }
-              )
-            );
-            return;
+                },
+              ),
+            )
+            return
           }
 
-          const responseText = (res.response || collectedResponse).trim();
+          const responseText = (res.response || collectedResponse).trim()
           if (!responseText) {
-            const turnStderr = this.recentStderr.slice(stderrStartIdx);
-            logger.warn('Antigravity', 'turn', { status: 'empty_response' });
+            const turnStderr = this.recentStderr.slice(stderrStartIdx)
+            logger.warn('Antigravity', 'turn', { status: 'empty_response' })
             fail(
               emptyResponseError(
                 {
@@ -506,149 +509,147 @@ export class AntigravityClient {
                   recentStderr: turnStderr,
                   pendingApprovals: this.approvals.getPendingCount(),
                 },
-                { dangerouslySkipPermissions: this.options.dangerouslySkipPermissions }
-              )
-            );
-            return;
+                { dangerouslySkipPermissions: this.options.dangerouslySkipPermissions },
+              ),
+            )
+            return
           }
 
           const completeTurn = async () => {
             if (this.approvals.getPendingCount() > 0) {
-              const decisions = await this.approvals.waitForAllPending();
+              const decisions = await this.approvals.waitForAllPending()
               if (settled) {
-                return;
+                return
               }
               if (decisions.some((d) => d === 'decline')) {
-                fail(
-                  new AntigravityError('approval_declined', 'Action refusée par l’utilisateur.')
-                );
+                fail(new AntigravityError('approval_declined', 'Action refusée par l’utilisateur.'))
                 try {
-                  child.kill('SIGINT');
+                  child.kill('SIGINT')
                 } catch {
                   /* ignore */
                 }
-                return;
+                return
               }
             }
 
             if (onFilesChanged && changedFiles.size > 0) {
-              onFilesChanged([...changedFiles]);
+              onFilesChanged([...changedFiles])
             }
 
-            settled = true;
-            cleanup();
-            resolve(responseText);
-          };
+            settled = true
+            cleanup()
+            resolve(responseText)
+          }
 
-          void completeTurn();
+          void completeTurn()
         }
-      };
+      }
 
-      this.eventListeners.add(onNotification);
+      this.eventListeners.add(onNotification)
 
       const triggerInterrupt = () => {
-        currentTurn.interrupting = true;
+        currentTurn.interrupting = true
         if (settled) {
-          return;
+          return
         }
 
         // Try soft kill first (SIGINT)
         try {
-          child.kill('SIGINT');
+          child.kill('SIGINT')
         } catch {
           /* transport already closed */
         }
 
         interruptTimeout = setTimeout(() => {
-          this.disconnect(child, turnTimeoutError(false, elapsedSeconds));
-          fail(turnTimeoutError(false, elapsedSeconds));
-        }, 5000);
-      };
+          this.disconnect(child, turnTimeoutError(false, elapsedSeconds))
+          fail(turnTimeoutError(false, elapsedSeconds))
+        }, 5000)
+      }
 
       const scheduleTimeout = () => {
-        clearTimeout(timeout);
+        clearTimeout(timeout)
         timeout = setTimeout(async () => {
           if (settled) {
-            return;
+            return
           }
           if (this.approvals.getPendingCount() > 0) {
-            scheduleTimeout();
-            return;
+            scheduleTimeout()
+            return
           }
           if (this.options.turnTimeoutHandler) {
-            const controller = new AbortController();
-            timeoutPromptController = controller;
-            let shouldContinue = false;
+            const controller = new AbortController()
+            timeoutPromptController = controller
+            let shouldContinue = false
             try {
               shouldContinue = await this.options.turnTimeoutHandler(
                 { agentName: 'Antigravity', elapsedSeconds },
-                controller.signal
-              );
+                controller.signal,
+              )
             } catch {
-              shouldContinue = false;
+              shouldContinue = false
             } finally {
               if (timeoutPromptController === controller) {
-                timeoutPromptController = undefined;
+                timeoutPromptController = undefined
               }
             }
             if (settled) {
-              return;
+              return
             }
             if (shouldContinue) {
-              elapsedSeconds += Math.round(turnTimeoutMs / 1000);
-              scheduleTimeout();
-              return;
+              elapsedSeconds += Math.round(turnTimeoutMs / 1000)
+              scheduleTimeout()
+              return
             }
           }
-          triggerInterrupt();
-        }, turnTimeoutMs);
-      };
+          triggerInterrupt()
+        }, turnTimeoutMs)
+      }
 
       const resetTimeout = () => {
         if (settled || currentTurn.interrupting || turnTimeoutMs <= 0) {
-          return;
+          return
         }
-        scheduleTimeout();
-      };
+        scheduleTimeout()
+      }
 
       if (turnTimeoutMs > 0) {
-        scheduleTimeout();
+        scheduleTimeout()
       }
 
       // Write prompt to stdin
       const inputMessage: UserStreamInput = {
         event: 'user',
         message: { content: trimmedPrompt },
-      };
+      }
 
       try {
         child.stdin.write(`${JSON.stringify(inputMessage)}\n`, (writeError) => {
           if (writeError) {
-            this.disconnect(child, processError(writeError));
-            fail(processError(writeError));
+            this.disconnect(child, processError(writeError))
+            fail(processError(writeError))
           }
-        });
+        })
       } catch (writeException) {
-        const err = processError(writeException);
-        this.disconnect(child, err);
-        fail(err);
+        const err = processError(writeException)
+        this.disconnect(child, err)
+        fail(err)
       }
-    });
+    })
   }
 
   private recordUsage(
     conversationId: string,
     rawUsage: {
-      input_tokens?: number;
-      output_tokens?: number;
-      thinking_tokens?: number;
-      cache_read_tokens?: number;
-      total_tokens?: number;
-    }
+      input_tokens?: number
+      output_tokens?: number
+      thinking_tokens?: number
+      cache_read_tokens?: number
+      total_tokens?: number
+    },
   ): void {
-    const telemetry = this.telemetry.get(conversationId) ?? {};
-    const breakdown = convertRawUsage(rawUsage);
-    const existing = telemetry.tokenUsage;
+    const telemetry = this.telemetry.get(conversationId) ?? {}
+    const breakdown = convertRawUsage(rawUsage)
+    const existing = telemetry.tokenUsage
 
     const cumulativeTotal = existing
       ? {
@@ -659,69 +660,69 @@ export class AntigravityClient {
           reasoningOutputTokens:
             existing.total.reasoningOutputTokens + breakdown.reasoningOutputTokens,
         }
-      : breakdown;
+      : breakdown
 
     const usage: ConversationTokenUsage = {
       total: cumulativeTotal,
       last: breakdown,
       modelContextWindow: 1_000_000,
-    };
+    }
 
-    telemetry.tokenUsage = usage;
-    telemetry.tokenUsageUpdatedAt = Date.now();
-    this.telemetry.set(conversationId, telemetry);
+    telemetry.tokenUsage = usage
+    telemetry.tokenUsageUpdatedAt = Date.now()
+    this.telemetry.set(conversationId, telemetry)
   }
 
-  private eventListeners = new Set<(event: StreamOutputEvent) => void>();
+  private eventListeners = new Set<(event: StreamOutputEvent) => void>()
 
   private handleStdout(chunk: string): void {
-    this.buffer += chunk;
-    const lines = this.buffer.split('\n');
-    this.buffer = lines.pop() ?? '';
+    this.buffer += chunk
+    const lines = this.buffer.split('\n')
+    this.buffer = lines.pop() ?? ''
 
     for (const line of lines) {
       if (!line.trim()) {
-        continue;
+        continue
       }
       try {
-        const parsed = JSON.parse(line) as StreamOutputEvent;
+        const parsed = JSON.parse(line) as StreamOutputEvent
         for (const listener of this.eventListeners) {
-          listener(parsed);
+          listener(parsed)
         }
       } catch {
         // Non-JSON output from child process (e.g. startup banner, progress info, debug logs)
-        logger.debug('Antigravity', 'non_json_output');
-        this.pushStderr(`[stdout] ${line}`);
+        logger.debug('Antigravity', 'non_json_output')
+        this.pushStderr(`[stdout] ${line}`)
       }
     }
   }
 
   stop(): void {
-    this.approvals.cancelAll();
+    this.approvals.cancelAll()
     if (this.process) {
       this.disconnect(
         this.process,
-        new AntigravityError('stopped', 'Le processus Antigravity a été arrêté.')
-      );
+        new AntigravityError('stopped', 'Le processus Antigravity a été arrêté.'),
+      )
     }
   }
 
   private disconnect(child: ChildProcessWithoutNullStreams, error: Error, kill = true): void {
     if (this.process !== child) {
-      return;
+      return
     }
-    this.approvals.cancelAll();
-    this.process = undefined;
-    this.starting = undefined;
-    this.buffer = '';
-    this.turnFailure?.(error);
-    this.currentTurn = undefined;
-    this.conversationId = undefined;
-    this.eventListeners.clear();
+    this.approvals.cancelAll()
+    this.process = undefined
+    this.starting = undefined
+    this.buffer = ''
+    this.turnFailure?.(error)
+    this.currentTurn = undefined
+    this.conversationId = undefined
+    this.eventListeners.clear()
 
     if (kill) {
       try {
-        child.kill('SIGTERM');
+        child.kill('SIGTERM')
       } catch {
         /* Already exited */
       }

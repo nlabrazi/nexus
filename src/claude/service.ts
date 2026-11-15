@@ -1,20 +1,20 @@
-import { resolve } from 'node:path';
-import { AgentService, ModelMenu, ModelSelection } from '../runtime/agent-service';
-import { KeyValueStorage } from '../runtime/types';
-import { ClaudeCodeClient } from './client';
+import { resolve } from 'node:path'
+import { AgentService, ModelMenu, ModelSelection } from '../runtime/agent-service'
+import { KeyValueStorage } from '../runtime/types'
+import { ClaudeCodeClient } from './client'
 import {
   ClaudeCodeClientOptions,
   ClaudeCodeClientStatus,
   ClaudeCodeModel,
   ClaudeTelemetrySnapshot,
-} from './types';
+} from './types'
 
 export class ClaudeCodeService implements AgentService {
-  private readonly client: ClaudeCodeClient;
-  private readonly storage?: KeyValueStorage;
-  private selectedModel = 'claude-sonnet-4-6';
-  private selectedEffort = 'medium';
-  private readonly sessions = new Map<string, string>();
+  private readonly client: ClaudeCodeClient
+  private readonly storage?: KeyValueStorage
+  private selectedModel = 'claude-sonnet-4-6'
+  private selectedEffort = 'medium'
+  private readonly sessions = new Map<string, string>()
   private telemetry: ClaudeTelemetrySnapshot = {
     inputTokens: 0,
     outputTokens: 0,
@@ -22,38 +22,38 @@ export class ClaudeCodeService implements AgentService {
     totalTokens: 0,
     totalCostUsd: 0,
     turns: 0,
-  };
+  }
 
   constructor(options: ClaudeCodeClientOptions = {}) {
-    this.client = new ClaudeCodeClient(options);
-    this.storage = options.storage;
-    this.loadPersistedState();
+    this.client = new ClaudeCodeClient(options)
+    this.storage = options.storage
+    this.loadPersistedState()
   }
 
   private loadPersistedState(): void {
-    if (!this.storage) return;
+    if (!this.storage) return
     const savedPref = this.storage.get('nexus.claude.model') as
       | { model?: string; effort?: string }
-      | undefined;
+      | undefined
     if (savedPref?.model) {
-      this.selectedModel = savedPref.model;
+      this.selectedModel = savedPref.model
     }
     if (savedPref?.effort) {
-      this.selectedEffort = savedPref.effort;
+      this.selectedEffort = savedPref.effort
     }
     const savedTelemetry = this.storage.get('nexus.claude.telemetry') as
       | ClaudeTelemetrySnapshot
-      | undefined;
+      | undefined
     if (savedTelemetry && typeof savedTelemetry.totalTokens === 'number') {
-      this.telemetry = savedTelemetry;
+      this.telemetry = savedTelemetry
     }
     const savedSessions = this.storage.get('nexus.claude.sessions') as
       | Record<string, string>
-      | undefined;
+      | undefined
     if (savedSessions && typeof savedSessions === 'object') {
       for (const [k, v] of Object.entries(savedSessions)) {
         if (typeof v === 'string') {
-          this.sessions.set(k, v);
+          this.sessions.set(k, v)
         }
       }
     }
@@ -63,11 +63,11 @@ export class ClaudeCodeService implements AgentService {
     prompt: string,
     workspacePath: string,
     onFilesChanged?: (paths: readonly string[]) => void,
-    onChunk?: (delta: string) => void
+    onChunk?: (delta: string) => void,
   ): Promise<string> {
-    this.loadPersistedState();
-    const normPath = resolve(workspacePath);
-    const existingSession = this.sessions.get(normPath);
+    this.loadPersistedState()
+    const normPath = resolve(workspacePath)
+    const existingSession = this.sessions.get(normPath)
 
     return this.client.sendPrompt(prompt, workspacePath, onFilesChanged, onChunk, {
       model: this.selectedModel,
@@ -75,18 +75,18 @@ export class ClaudeCodeService implements AgentService {
       sessionId: existingSession,
       onMetadata: (meta) => {
         if (meta.sessionId) {
-          this.sessions.set(normPath, meta.sessionId);
+          this.sessions.set(normPath, meta.sessionId)
           if (this.storage) {
             void this.storage.update(
               'nexus.claude.sessions',
-              Object.fromEntries(this.sessions.entries())
-            );
+              Object.fromEntries(this.sessions.entries()),
+            )
           }
         }
-        const addIn = meta.inputTokens ?? 0;
-        const addOut = meta.outputTokens ?? 0;
-        const addCached = meta.cachedTokens ?? 0;
-        const addCost = meta.costUsd ?? 0;
+        const addIn = meta.inputTokens ?? 0
+        const addOut = meta.outputTokens ?? 0
+        const addCached = meta.cachedTokens ?? 0
+        const addCost = meta.costUsd ?? 0
         if (addIn > 0 || addOut > 0 || addCached > 0 || addCost > 0) {
           this.telemetry = {
             inputTokens: this.telemetry.inputTokens + addIn,
@@ -96,47 +96,44 @@ export class ClaudeCodeService implements AgentService {
             totalCostUsd: Number((this.telemetry.totalCostUsd + addCost).toFixed(6)),
             turns: this.telemetry.turns + 1,
             updatedAt: Date.now(),
-          };
+          }
           if (this.storage) {
-            void this.storage.update('nexus.claude.telemetry', this.telemetry);
+            void this.storage.update('nexus.claude.telemetry', this.telemetry)
           }
         }
       },
-    });
+    })
   }
 
   public resetSession(workspacePath?: string): void {
     if (workspacePath) {
-      this.sessions.delete(resolve(workspacePath));
+      this.sessions.delete(resolve(workspacePath))
     } else {
-      this.sessions.clear();
+      this.sessions.clear()
     }
     if (this.storage) {
-      void this.storage.update(
-        'nexus.claude.sessions',
-        Object.fromEntries(this.sessions.entries())
-      );
+      void this.storage.update('nexus.claude.sessions', Object.fromEntries(this.sessions.entries()))
     }
   }
 
   public async newSession(workspacePath: string): Promise<string> {
-    this.resetSession(workspacePath);
-    return `claude:${Date.now().toString(36)}`;
+    this.resetSession(workspacePath)
+    return `claude:${Date.now().toString(36)}`
   }
 
   public async resumeSession(workspacePath: string, sessionId: string): Promise<string> {
-    const id = sessionId.trim();
+    const id = sessionId.trim()
     if (!id || /\s/.test(id)) {
-      throw new Error('Indiquez un identifiant de session valide : /resume <id>.');
+      throw new Error('Indiquez un identifiant de session valide : /resume <id>.')
     }
-    this.sessions.set(resolve(workspacePath), id);
+    this.sessions.set(resolve(workspacePath), id)
     if (this.storage) {
       await this.storage.update(
         'nexus.claude.sessions',
-        Object.fromEntries(this.sessions.entries())
-      );
+        Object.fromEntries(this.sessions.entries()),
+      )
     }
-    return id;
+    return id
   }
 
   public async listModels(): Promise<ClaudeCodeModel[]> {
@@ -182,36 +179,36 @@ export class ClaudeCodeService implements AgentService {
           { reasoningEffort: 'medium', description: 'Standard' },
         ],
       },
-    ];
+    ]
   }
 
   public async getModelMenu(
-    _workspacePath?: string
+    _workspacePath?: string,
   ): Promise<ModelMenu & { current: ModelSelection }> {
-    this.loadPersistedState();
-    const models = await this.listModels();
+    this.loadPersistedState()
+    const models = await this.listModels()
     const current = {
       model: this.selectedModel,
       effort: this.selectedEffort,
-    };
+    }
     return {
       models,
       current,
       selected: current,
       context: 'claude-global',
-    };
+    }
   }
 
   public async selectModelChoice(_workspacePath: string, selection: ModelSelection): Promise<void> {
-    await this.selectModel(selection);
+    await this.selectModel(selection)
   }
 
   public getActiveWorkspacePath(): string | undefined {
-    return undefined;
+    return undefined
   }
 
   public getCurrentSessionId(): string | undefined {
-    return this.client.getStatus().sessionId;
+    return this.client.getStatus().sessionId
   }
 
   public async refreshStatus(): Promise<void> {
@@ -219,59 +216,59 @@ export class ClaudeCodeService implements AgentService {
   }
 
   public async selectModel(
-    selection: { model: string; effort?: string } | string
+    selection: { model: string; effort?: string } | string,
   ): Promise<ClaudeCodeModel> {
-    const models = await this.listModels();
-    const requestedModel = typeof selection === 'string' ? selection : selection.model;
-    const requestedEffort = typeof selection === 'string' ? undefined : selection.effort;
+    const models = await this.listModels()
+    const requestedModel = typeof selection === 'string' ? selection : selection.model
+    const requestedEffort = typeof selection === 'string' ? undefined : selection.effort
 
     // Support short aliases sonnet / opus / haiku as well as full IDs
     const aliasMap: Record<string, string> = {
       sonnet: 'claude-sonnet-4-6',
       opus: 'claude-opus-4-6',
       haiku: 'claude-haiku-4-5',
-    };
-    const resolvedId = aliasMap[requestedModel] ?? requestedModel;
-    const found = models.find((m) => m.id === resolvedId || m.model === resolvedId);
+    }
+    const resolvedId = aliasMap[requestedModel] ?? requestedModel
+    const found = models.find((m) => m.id === resolvedId || m.model === resolvedId)
     if (!found) {
-      throw new Error(`Modèle Claude Code inconnu : ${requestedModel}`);
+      throw new Error(`Modèle Claude Code inconnu : ${requestedModel}`)
     }
 
     const validEffort =
       requestedEffort &&
       found.supportedReasoningEfforts.some((e) => e.reasoningEffort === requestedEffort)
         ? requestedEffort
-        : found.defaultReasoningEffort;
+        : found.defaultReasoningEffort
 
-    this.selectedModel = found.model;
-    this.selectedEffort = validEffort;
+    this.selectedModel = found.model
+    this.selectedEffort = validEffort
 
     if (this.storage) {
       await this.storage.update('nexus.claude.model', {
         model: this.selectedModel,
         effort: this.selectedEffort,
-      });
+      })
     }
 
-    return found;
+    return found
   }
 
   public getStatus(): ClaudeCodeClientStatus {
-    this.loadPersistedState();
-    const base = this.client.getStatus();
+    this.loadPersistedState()
+    const base = this.client.getStatus()
     return {
       ...base,
       model: this.selectedModel,
       effort: this.selectedEffort,
       telemetry: this.telemetry,
-    };
+    }
   }
 
   public cancelCurrentWork(): boolean {
-    return this.client.cancel();
+    return this.client.cancel()
   }
 
   public stop(): void {
-    this.client.cancel();
+    this.client.cancel()
   }
 }

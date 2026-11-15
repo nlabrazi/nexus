@@ -3,16 +3,16 @@ import {
   SessionPersistence,
   WorkspaceSessionPersistence,
   WorkspaceStorage,
-} from '../codex/persistence';
+} from '../codex/persistence'
 
-export { SavedSession };
-export type AntigravitySessionPersistence = SessionPersistence;
+export { SavedSession }
+export type AntigravitySessionPersistence = SessionPersistence
 
-const KEY = 'nexus.antigravity.session';
+const KEY = 'nexus.antigravity.session'
 
 /** VS Code workspaceState provides workspace-isolated storage for Antigravity sessions. */
 export class WorkspaceAntigravitySessionPersistence extends WorkspaceSessionPersistence {
   constructor(storage: WorkspaceStorage) {
-    super(storage, KEY);
+    super(storage, KEY)
   }
 }

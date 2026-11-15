@@ -1,10 +1,10 @@
-import { CodexModel, RateLimitSnapshot, ThreadTokenUsage, TokenBreakdown } from './types';
+import { CodexModel, RateLimitSnapshot, ThreadTokenUsage, TokenBreakdown } from './types'
 
 const count = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 const record = (value: unknown): value is Record<string, unknown> =>
-  !!value && typeof value === 'object' && !Array.isArray(value);
-const absent = (value: unknown): boolean => value === null || value === undefined;
+  !!value && typeof value === 'object' && !Array.isArray(value)
+const absent = (value: unknown): boolean => value === null || value === undefined
 
 function breakdown(value: unknown): value is TokenBreakdown {
   return (
@@ -17,7 +17,7 @@ function breakdown(value: unknown): value is TokenBreakdown {
       'reasoningOutputTokens',
     ].every((key) => count(value[key])) &&
     (value.cacheWriteInputTokens === undefined || count(value.cacheWriteInputTokens))
-  );
+  )
 }
 
 export function isTokenUsage(value: unknown): value is ThreadTokenUsage {
@@ -26,14 +26,14 @@ export function isTokenUsage(value: unknown): value is ThreadTokenUsage {
     breakdown(value.total) &&
     breakdown(value.last) &&
     (value.modelContextWindow === null || count(value.modelContextWindow))
-  );
+  )
 }
 
 export function isModel(value: unknown): value is CodexModel {
   return (
     record(value) &&
     ['id', 'model', 'displayName', 'defaultReasoningEffort'].every(
-      (key) => typeof value[key] === 'string' && (value[key] as string).trim()
+      (key) => typeof value[key] === 'string' && (value[key] as string).trim(),
     ) &&
     typeof value.description === 'string' &&
     typeof value.isDefault === 'boolean' &&
@@ -44,22 +44,22 @@ export function isModel(value: unknown): value is CodexModel {
         record(option) &&
         typeof option.reasoningEffort === 'string' &&
         !!option.reasoningEffort.trim() &&
-        typeof option.description === 'string'
+        typeof option.description === 'string',
     ) &&
     value.supportedReasoningEfforts.some(
-      (option) => option.reasoningEffort === value.defaultReasoningEffort
+      (option) => option.reasoningEffort === value.defaultReasoningEffort,
     )
-  );
+  )
 }
 
 export function isRateLimit(value: unknown): value is RateLimitSnapshot {
   return (
     record(value) &&
     ['limitId', 'limitName', 'planType'].every(
-      (key) => absent(value[key]) || typeof value[key] === 'string'
+      (key) => absent(value[key]) || typeof value[key] === 'string',
     ) &&
     ['primary', 'secondary'].every((key) => {
-      const window = value[key];
+      const window = value[key]
       return (
         absent(window) ||
         (record(window) &&
@@ -68,7 +68,7 @@ export function isRateLimit(value: unknown): value is RateLimitSnapshot {
           window.usedPercent >= 0 &&
           (absent(window.windowDurationMins) || count(window.windowDurationMins)) &&
           (absent(window.resetsAt) || (count(window.resetsAt) && window.resetsAt < 8.64e12)))
-      );
+      )
     })
-  );
+  )
 }

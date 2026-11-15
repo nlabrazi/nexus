@@ -1,108 +1,108 @@
-import { isAbsolute, resolve } from 'node:path';
-import { AgentService, resolveAndSelectModel } from '../runtime/agent-service';
-import { assertSameWorkspace, WorkspaceIdentity, WorkspaceValidator } from '../workspace/guard';
-import { AntigravityClient, AntigravityClientOptions } from './client';
-import { AntigravityError } from './errors';
-import { AntigravityModelPreferences } from './model-preferences';
-import { AntigravitySessionPersistence } from './persistence';
+import { isAbsolute, resolve } from 'node:path'
+import { AgentService, resolveAndSelectModel } from '../runtime/agent-service'
+import { assertSameWorkspace, WorkspaceIdentity, WorkspaceValidator } from '../workspace/guard'
+import { AntigravityClient, AntigravityClientOptions } from './client'
+import { AntigravityError } from './errors'
+import { AntigravityModelPreferences } from './model-preferences'
+import { AntigravitySessionPersistence } from './persistence'
 import {
   AntigravityApprovalHandler,
   AntigravityServiceStatus,
   ModelMenu,
   ModelSelection,
-} from './types';
+} from './types'
 
-type SessionAction = 'ensure' | 'new' | 'resume';
+type SessionAction = 'ensure' | 'new' | 'resume'
 
 export class AntigravityService implements AgentService {
-  private readonly client: AntigravityClient;
-  private readonly validateWorkspace?: WorkspaceValidator;
-  private readonly persistence?: AntigravitySessionPersistence;
-  private readonly modelPreferences?: AntigravityModelPreferences;
-  private sessionId?: string;
-  private workspacePath?: string;
-  private workspaceIdentity?: WorkspaceIdentity;
-  private sessionConnection?: number;
-  private turnRunning = false;
-  private workspaceOperation = false;
-  private modelChanging = false;
-  private modelSelection?: ModelSelection;
-  private modelRevision = 0;
-  private generation = 0;
-  private sessionOperation?: { key: string; promise: Promise<string> };
+  private readonly client: AntigravityClient
+  private readonly validateWorkspace?: WorkspaceValidator
+  private readonly persistence?: AntigravitySessionPersistence
+  private readonly modelPreferences?: AntigravityModelPreferences
+  private sessionId?: string
+  private workspacePath?: string
+  private workspaceIdentity?: WorkspaceIdentity
+  private sessionConnection?: number
+  private turnRunning = false
+  private workspaceOperation = false
+  private modelChanging = false
+  private modelSelection?: ModelSelection
+  private modelRevision = 0
+  private generation = 0
+  private sessionOperation?: { key: string; promise: Promise<string> }
 
   constructor(
     approvalHandler: AntigravityApprovalHandler,
     validateWorkspace?: WorkspaceValidator,
     persistence?: AntigravitySessionPersistence,
     modelPreferences?: AntigravityModelPreferences,
-    options?: AntigravityClientOptions
-  );
+    options?: AntigravityClientOptions,
+  )
   constructor(
     validateWorkspace?: WorkspaceValidator,
     persistence?: AntigravitySessionPersistence,
     modelPreferences?: AntigravityModelPreferences,
-    options?: AntigravityClientOptions
-  );
+    options?: AntigravityClientOptions,
+  )
   constructor(
     approvalHandlerOrValidator?: AntigravityApprovalHandler | WorkspaceValidator,
     validateWorkspaceOrPersistence?: WorkspaceValidator | AntigravitySessionPersistence,
     persistenceOrModelPrefs?: AntigravitySessionPersistence | AntigravityModelPreferences,
     modelPreferencesOrOptions?: AntigravityModelPreferences | AntigravityClientOptions,
-    options?: AntigravityClientOptions
+    options?: AntigravityClientOptions,
   ) {
-    this.client = new AntigravityClient(options);
-    let approvalHandler: AntigravityApprovalHandler | undefined;
-    let validateWorkspace: WorkspaceValidator | undefined;
-    let persistence: AntigravitySessionPersistence | undefined;
-    let modelPreferences: AntigravityModelPreferences | undefined;
-    let clientOptions: AntigravityClientOptions | undefined;
+    this.client = new AntigravityClient(options)
+    let approvalHandler: AntigravityApprovalHandler | undefined
+    let validateWorkspace: WorkspaceValidator | undefined
+    let persistence: AntigravitySessionPersistence | undefined
+    let modelPreferences: AntigravityModelPreferences | undefined
+    let clientOptions: AntigravityClientOptions | undefined
 
     if (typeof validateWorkspaceOrPersistence === 'function') {
-      approvalHandler = approvalHandlerOrValidator as AntigravityApprovalHandler;
-      validateWorkspace = validateWorkspaceOrPersistence;
-      persistence = persistenceOrModelPrefs as AntigravitySessionPersistence;
-      modelPreferences = modelPreferencesOrOptions as AntigravityModelPreferences;
-      clientOptions = options;
+      approvalHandler = approvalHandlerOrValidator as AntigravityApprovalHandler
+      validateWorkspace = validateWorkspaceOrPersistence
+      persistence = persistenceOrModelPrefs as AntigravitySessionPersistence
+      modelPreferences = modelPreferencesOrOptions as AntigravityModelPreferences
+      clientOptions = options
     } else if (
       typeof approvalHandlerOrValidator === 'function' &&
       approvalHandlerOrValidator.length === 2
     ) {
-      approvalHandler = approvalHandlerOrValidator as AntigravityApprovalHandler;
-      persistence = validateWorkspaceOrPersistence as AntigravitySessionPersistence;
-      modelPreferences = persistenceOrModelPrefs as AntigravityModelPreferences;
-      clientOptions = modelPreferencesOrOptions as AntigravityClientOptions;
+      approvalHandler = approvalHandlerOrValidator as AntigravityApprovalHandler
+      persistence = validateWorkspaceOrPersistence as AntigravitySessionPersistence
+      modelPreferences = persistenceOrModelPrefs as AntigravityModelPreferences
+      clientOptions = modelPreferencesOrOptions as AntigravityClientOptions
     } else {
-      validateWorkspace = approvalHandlerOrValidator as WorkspaceValidator;
-      persistence = validateWorkspaceOrPersistence as AntigravitySessionPersistence;
-      modelPreferences = persistenceOrModelPrefs as AntigravityModelPreferences;
-      clientOptions = modelPreferencesOrOptions as AntigravityClientOptions;
+      validateWorkspace = approvalHandlerOrValidator as WorkspaceValidator
+      persistence = validateWorkspaceOrPersistence as AntigravitySessionPersistence
+      modelPreferences = persistenceOrModelPrefs as AntigravityModelPreferences
+      clientOptions = modelPreferencesOrOptions as AntigravityClientOptions
     }
 
-    this.validateWorkspace = validateWorkspace;
-    this.persistence = persistence;
-    this.modelPreferences = modelPreferences;
-    const effectiveHandler = clientOptions?.approvalHandler ?? approvalHandler;
-    this.client = new AntigravityClient(clientOptions, effectiveHandler);
-    this.modelSelection = modelPreferences?.load();
-    const saved = persistence?.load();
+    this.validateWorkspace = validateWorkspace
+    this.persistence = persistence
+    this.modelPreferences = modelPreferences
+    const effectiveHandler = clientOptions?.approvalHandler ?? approvalHandler
+    this.client = new AntigravityClient(clientOptions, effectiveHandler)
+    this.modelSelection = modelPreferences?.load()
+    const saved = persistence?.load()
     if (saved) {
-      this.sessionId = saved.id;
-      this.workspacePath = saved.workspace.root;
-      this.workspaceIdentity = saved.workspace;
+      this.sessionId = saved.id
+      this.workspacePath = saved.workspace.root
+      this.workspaceIdentity = saved.workspace
     }
   }
 
   startSession(cwd: string): Promise<string> {
-    return this.changeSession('ensure', cwd);
+    return this.changeSession('ensure', cwd)
   }
 
   newSession(cwd: string): Promise<string> {
-    return this.changeSession('new', cwd);
+    return this.changeSession('new', cwd)
   }
 
   resumeSession(cwd: string, sessionId: string): Promise<string> {
-    return this.changeSession('resume', cwd, sessionId);
+    return this.changeSession('resume', cwd, sessionId)
   }
 
   async refreshStatus(): Promise<void> {
@@ -110,15 +110,15 @@ export class AntigravityService implements AgentService {
   }
 
   getModelMenu(path: string): Promise<ModelMenu> {
-    return this.listModels(path);
+    return this.listModels(path)
   }
 
   selectModelChoice(path: string, selection: ModelSelection, context?: string): Promise<void> {
-    return resolveAndSelectModel(this, path, selection, context);
+    return resolveAndSelectModel(this, path, selection, context)
   }
 
   getActiveWorkspacePath(): string | undefined {
-    return this.workspacePath;
+    return this.workspacePath
   }
 
   async withWorkspaceOperation<T>(operation: () => Promise<T>): Promise<T> {
@@ -129,14 +129,14 @@ export class AntigravityService implements AgentService {
       this.modelChanging
     ) {
       throw new Error(
-        'Une opération Git ou Antigravity est en cours. Attendez sa fin avant de changer de branche.'
-      );
+        'Une opération Git ou Antigravity est en cours. Attendez sa fin avant de changer de branche.',
+      )
     }
-    this.workspaceOperation = true;
+    this.workspaceOperation = true
     try {
-      return await operation();
+      return await operation()
     } finally {
-      this.workspaceOperation = false;
+      this.workspaceOperation = false
     }
   }
 
@@ -147,20 +147,20 @@ export class AntigravityService implements AgentService {
       this.sessionId,
       this.workspaceIdentity,
       this.modelRevision,
-    ]);
+    ])
   }
 
   async listModels(path: string): Promise<ModelMenu> {
-    const context = this.modelContext(path);
-    const generation = this.generation;
-    const models = await this.client.listModels();
-    this.assertCurrent(generation);
+    const context = this.modelContext(path)
+    const generation = this.generation
+    const models = await this.client.listModels()
+    this.assertCurrent(generation)
     if (context !== this.modelContext(path)) {
-      throw new Error('Le contexte a changé. Rouvrez /model.');
+      throw new Error('Le contexte a changé. Rouvrez /model.')
     }
     const telemetry = this.sessionId
       ? this.client.getConversationTelemetry(this.sessionId)
-      : undefined;
+      : undefined
     return {
       models,
       context,
@@ -169,7 +169,7 @@ export class AntigravityService implements AgentService {
         : telemetry?.model
           ? { model: telemetry.model, effort: telemetry.reasoningEffort ?? '' }
           : undefined,
-    };
+    }
   }
 
   async selectModel(path: string, selection: ModelSelection, context: string): Promise<void> {
@@ -180,71 +180,71 @@ export class AntigravityService implements AgentService {
       this.modelChanging
     ) {
       throw new Error(
-        'Une opération Git ou Antigravity est en cours. Attendez sa fin puis rouvrez /model.'
-      );
+        'Une opération Git ou Antigravity est en cours. Attendez sa fin puis rouvrez /model.',
+      )
     }
     if (context !== this.modelContext(path)) {
-      throw new Error('Le contexte a changé. Rouvrez /model.');
+      throw new Error('Le contexte a changé. Rouvrez /model.')
     }
-    this.modelChanging = true;
+    this.modelChanging = true
     try {
-      const menu = await this.listModels(path);
+      const menu = await this.listModels(path)
       if (menu.context !== context) {
-        throw new Error('Le contexte a changé. Rouvrez /model.');
+        throw new Error('Le contexte a changé. Rouvrez /model.')
       }
-      const model = menu.models.find((m) => m.model === selection.model);
+      const model = menu.models.find((m) => m.model === selection.model)
       if (
         !model?.supportedReasoningEfforts.some((opt) => opt.reasoningEffort === selection.effort)
       ) {
-        throw new Error('Ce modèle ou cet effort n’est plus disponible. Rouvrez /model.');
+        throw new Error('Ce modèle ou cet effort n’est plus disponible. Rouvrez /model.')
       }
-      await this.modelPreferences?.save(selection);
-      this.modelSelection = { ...selection };
-      this.modelRevision++;
+      await this.modelPreferences?.save(selection)
+      this.modelSelection = { ...selection }
+      this.modelRevision++
     } finally {
-      this.modelChanging = false;
+      this.modelChanging = false
     }
   }
 
   private async changeSession(
     action: SessionAction,
     cwd: string,
-    sessionId?: string
+    sessionId?: string,
   ): Promise<string> {
     if (this.modelChanging) {
-      throw new Error('Un changement de modèle est en cours. Attendez sa fin.');
+      throw new Error('Un changement de modèle est en cours. Attendez sa fin.')
     }
     if (this.workspaceOperation) {
-      throw new Error('Un changement de branche est en cours. Attendez sa fin.');
+      throw new Error('Un changement de branche est en cours. Attendez sa fin.')
     }
-    const path = this.normalizeWorkspace(cwd);
-    const id = sessionId?.trim();
+    const path = this.normalizeWorkspace(cwd)
+    const id = sessionId?.trim()
     if (action === 'resume' && (!id || /\s/.test(id))) {
-      throw new Error('Indiquez un identifiant de session valide : /resume <id>.');
+      throw new Error('Indiquez un identifiant de session valide : /resume <id>.')
     }
     if (this.turnRunning) {
       throw new Error(
-        'Un turn Antigravity est en cours. Attendez sa fin avant de changer de session.'
-      );
+        'Un turn Antigravity est en cours. Attendez sa fin avant de changer de session.',
+      )
     }
-    const key = JSON.stringify([action, path, id]);
+    const key = JSON.stringify([action, path, id])
     if (this.sessionOperation) {
       if (action !== 'new' && this.sessionOperation.key === key) {
-        return await this.sessionOperation.promise;
+        return await this.sessionOperation.promise
       }
-      throw new Error('Une opération de session Antigravity est déjà en cours.');
+      throw new Error('Une opération de session Antigravity est déjà en cours.')
     }
-    const generation = this.generation;
+    const generation = this.generation
     const operation = {
       key,
       promise: Promise.resolve().then(() => this.selectSession(action, path, generation, id)),
-    };
-    this.sessionOperation = operation;
+    }
+    this.sessionOperation = operation
     try {
-      return await operation.promise;
+      return await operation.promise
     } finally {
       if (this.sessionOperation === operation) {
-        this.sessionOperation = undefined;
+        this.sessionOperation = undefined
       }
     }
   }
@@ -253,27 +253,27 @@ export class AntigravityService implements AgentService {
     action: SessionAction,
     path: string,
     generation: number,
-    id?: string
+    id?: string,
   ): Promise<string> {
-    this.assertCurrent(generation);
-    const workspace = this.validateWorkspace ? await this.validateWorkspace(path) : undefined;
-    this.assertCurrent(generation);
-    path = workspace?.root ?? path;
+    this.assertCurrent(generation)
+    const workspace = this.validateWorkspace ? await this.validateWorkspace(path) : undefined
+    this.assertCurrent(generation)
+    path = workspace?.root ?? path
 
     if (action === 'ensure' && this.sessionId && this.workspacePath !== path) {
       throw new Error(
-        'La session appartient à un autre workspace. Utilisez /new ou /resume <id> explicitement.'
-      );
+        'La session appartient à un autre workspace. Utilisez /new ou /resume <id> explicitement.',
+      )
     }
     if (action === 'ensure' && this.sessionId) {
-      assertSameWorkspace(this.workspaceIdentity, workspace);
+      assertSameWorkspace(this.workspaceIdentity, workspace)
     }
 
-    const targetId = action === 'resume' ? id : action === 'ensure' ? this.sessionId : undefined;
+    const targetId = action === 'resume' ? id : action === 'ensure' ? this.sessionId : undefined
     if (targetId === this.sessionId && this.workspacePath === path && this.isSessionActive()) {
-      this.workspaceIdentity = workspace;
-      await this.persistSelection(generation);
-      return targetId!;
+      this.workspaceIdentity = workspace
+      await this.persistSelection(generation)
+      return targetId!
     }
 
     // Start or restart process if necessary
@@ -282,52 +282,52 @@ export class AntigravityService implements AgentService {
       conversationId: targetId,
       selection: this.modelSelection,
       forceNew: action === 'new',
-    });
-    this.assertCurrent(generation);
+    })
+    this.assertCurrent(generation)
 
-    const connection = this.client.getConnectionId();
+    const connection = this.client.getConnectionId()
     if (connection === undefined) {
-      throw new Error('Le processus Antigravity est indisponible.');
+      throw new Error('Le processus Antigravity est indisponible.')
     }
 
     if (this.validateWorkspace) {
-      assertSameWorkspace(workspace, await this.validateWorkspace(path));
-      this.assertCurrent(generation, connection);
+      assertSameWorkspace(workspace, await this.validateWorkspace(path))
+      this.assertCurrent(generation, connection)
     }
 
-    this.sessionId = conversationId;
-    this.workspacePath = path;
-    this.workspaceIdentity = workspace;
-    this.sessionConnection = connection;
-    await this.persistSelection(generation);
-    return conversationId;
+    this.sessionId = conversationId
+    this.workspacePath = path
+    this.workspaceIdentity = workspace
+    this.sessionConnection = connection
+    await this.persistSelection(generation)
+    return conversationId
   }
 
   private async persistSelection(generation: number): Promise<void> {
     if (!this.persistence || !this.sessionId || !this.workspaceIdentity) {
-      return;
+      return
     }
     try {
       await this.persistence.save({
         version: 1,
         id: this.sessionId,
         workspace: this.workspaceIdentity,
-      });
+      })
     } catch (error) {
-      this.assertCurrent(generation);
+      this.assertCurrent(generation)
       throw new Error(
         'La session est sélectionnée, mais sa sauvegarde a échoué. Aucun nouveau prompt n’a été lancé. Vérifiez le stockage de VS Code puis réessayez.',
-        { cause: error }
-      );
+        { cause: error },
+      )
     }
-    this.assertCurrent(generation, this.sessionConnection);
+    this.assertCurrent(generation, this.sessionConnection)
   }
 
   private normalizeWorkspace(cwd: string): string {
     if (!cwd.trim() || !isAbsolute(cwd)) {
-      throw new Error('Un chemin de workspace absolu est requis.');
+      throw new Error('Un chemin de workspace absolu est requis.')
     }
-    return resolve(cwd);
+    return resolve(cwd)
   }
 
   private assertCurrent(generation: number, connection?: number): void {
@@ -335,7 +335,7 @@ export class AntigravityService implements AgentService {
       this.generation !== generation ||
       (connection !== undefined && this.client.getConnectionId() !== connection)
     ) {
-      throw new Error('Opération Antigravity annulée : le processus a été arrêté ou remplacé.');
+      throw new Error('Opération Antigravity annulée : le processus a été arrêté ou remplacé.')
     }
   }
 
@@ -343,52 +343,52 @@ export class AntigravityService implements AgentService {
     prompt: string,
     cwd = this.workspacePath,
     onFilesChanged?: (paths: readonly string[]) => void,
-    onChunk?: (delta: string) => void
+    onChunk?: (delta: string) => void,
   ): Promise<string> {
     if (!prompt.trim()) {
-      throw new Error('Antigravity prompt cannot be empty');
+      throw new Error('Antigravity prompt cannot be empty')
     }
     if (!cwd) {
-      throw new Error('No active Antigravity session.');
+      throw new Error('No active Antigravity session.')
     }
-    const path = this.normalizeWorkspace(cwd);
+    const path = this.normalizeWorkspace(cwd)
     if (
       this.turnRunning ||
       this.sessionOperation ||
       this.workspaceOperation ||
       this.modelChanging
     ) {
-      throw new Error('An Antigravity turn or session operation is already running.');
+      throw new Error('An Antigravity turn or session operation is already running.')
     }
 
-    this.turnRunning = true;
-    const generation = this.generation;
+    this.turnRunning = true
+    const generation = this.generation
     try {
-      const id = await this.selectSession('ensure', path, generation);
-      this.assertCurrent(generation);
+      const id = await this.selectSession('ensure', path, generation)
+      this.assertCurrent(generation)
       if (this.validateWorkspace) {
-        assertSameWorkspace(this.workspaceIdentity, await this.validateWorkspace(path));
-        this.assertCurrent(generation);
+        assertSameWorkspace(this.workspaceIdentity, await this.validateWorkspace(path))
+        this.assertCurrent(generation)
       }
-      return await this.client.runTurn(id, prompt, onFilesChanged, onChunk);
+      return await this.client.runTurn(id, prompt, onFilesChanged, onChunk)
     } catch (error) {
       if (
         this.generation === generation &&
         error instanceof AntigravityError &&
         error.code === 'session_lost'
       ) {
-        this.sessionConnection = undefined;
+        this.sessionConnection = undefined
       }
-      throw error;
+      throw error
     } finally {
       if (this.generation === generation) {
-        this.turnRunning = false;
+        this.turnRunning = false
       }
     }
   }
 
   getCurrentSessionId(): string | undefined {
-    return this.sessionId;
+    return this.sessionId
   }
 
   isSessionActive(): boolean {
@@ -396,11 +396,11 @@ export class AntigravityService implements AgentService {
       this.sessionId !== undefined &&
       this.sessionConnection !== undefined &&
       this.sessionConnection === this.client.getConnectionId()
-    );
+    )
   }
 
   isTurnRunning(): boolean {
-    return this.turnRunning;
+    return this.turnRunning
   }
 
   getStatus(): AntigravityServiceStatus {
@@ -415,29 +415,29 @@ export class AntigravityService implements AgentService {
       ...(this.workspaceIdentity?.git ? { sessionBranch: this.workspaceIdentity.git.branch } : {}),
       sessionActive: this.isSessionActive(),
       sessionChanging: this.sessionOperation !== undefined,
-    };
+    }
   }
 
   cancelCurrentWork(): boolean {
     if (!this.turnRunning && !this.sessionOperation) {
-      return false;
+      return false
     }
-    this.generation++;
-    this.sessionOperation = undefined;
-    this.client.stop();
-    this.sessionConnection = undefined;
-    this.turnRunning = false;
-    return true;
+    this.generation++
+    this.sessionOperation = undefined
+    this.client.stop()
+    this.sessionConnection = undefined
+    this.turnRunning = false
+    return true
   }
 
   stop(): void {
-    this.generation++;
-    this.sessionOperation = undefined;
-    this.client.stop();
-    this.sessionId = undefined;
-    this.workspacePath = undefined;
-    this.workspaceIdentity = undefined;
-    this.sessionConnection = undefined;
-    this.turnRunning = false;
+    this.generation++
+    this.sessionOperation = undefined
+    this.client.stop()
+    this.sessionId = undefined
+    this.workspacePath = undefined
+    this.workspaceIdentity = undefined
+    this.sessionConnection = undefined
+    this.turnRunning = false
   }
 }

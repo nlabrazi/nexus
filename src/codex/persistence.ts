@@ -1,39 +1,39 @@
-import { isAbsolute } from 'node:path';
-import { WorkspaceIdentity } from '../workspace/guard';
+import { isAbsolute } from 'node:path'
+import { WorkspaceIdentity } from '../workspace/guard'
 
 export interface SavedSession {
-  version: 1;
-  id: string;
-  workspace: WorkspaceIdentity;
+  version: 1
+  id: string
+  workspace: WorkspaceIdentity
 }
 export interface SessionPersistence {
-  load(): SavedSession | undefined;
-  save(session: SavedSession): Promise<void>;
+  load(): SavedSession | undefined
+  save(session: SavedSession): Promise<void>
 }
 export interface WorkspaceStorage {
-  get(key: string): unknown;
-  update(key: string, value: unknown): PromiseLike<void>;
+  get(key: string): unknown
+  update(key: string, value: unknown): PromiseLike<void>
 }
-const DEFAULT_KEY = 'nexus.codex.session';
+const DEFAULT_KEY = 'nexus.codex.session'
 
 /** VS Code workspaceState already provides isolation between workspaces. */
 export class WorkspaceSessionPersistence implements SessionPersistence {
-  private pending: Promise<void> = Promise.resolve();
+  private pending: Promise<void> = Promise.resolve()
   constructor(
     private readonly storage: WorkspaceStorage,
-    private readonly key = DEFAULT_KEY
+    private readonly key = DEFAULT_KEY,
   ) {}
 
   load(): SavedSession | undefined {
-    const value = this.storage.get(this.key) as Partial<SavedSession> | undefined;
+    const value = this.storage.get(this.key) as Partial<SavedSession> | undefined
     if (value?.version !== 1 || typeof value.id !== 'string' || !value.id || /\s/.test(value.id)) {
-      return undefined;
+      return undefined
     }
-    const workspace = value.workspace;
+    const workspace = value.workspace
     if (!workspace || typeof workspace.root !== 'string' || !isAbsolute(workspace.root)) {
-      return undefined;
+      return undefined
     }
-    const git = workspace.git;
+    const git = workspace.git
     if (
       git !== undefined &&
       (!git ||
@@ -42,24 +42,24 @@ export class WorkspaceSessionPersistence implements SessionPersistence {
         typeof git.branch !== 'string' ||
         !git.branch.trim())
     ) {
-      return undefined;
+      return undefined
     }
     return {
       version: 1,
       id: value.id,
       workspace: { root: workspace.root, ...(git ? { git: { ...git } } : {}) },
-    };
+    }
   }
 
   save(session: SavedSession): Promise<void> {
     // A stop/new action must not let an older write overwrite the newer selection.
-    const snapshot = structuredClone(session);
+    const snapshot = structuredClone(session)
     const write = this.pending
       .catch(() => {})
       .then(async () => {
-        await this.storage.update(this.key, snapshot);
-      });
-    this.pending = write;
-    return write;
+        await this.storage.update(this.key, snapshot)
+      })
+    this.pending = write
+    return write
   }
 }

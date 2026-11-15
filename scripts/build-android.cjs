@@ -1,135 +1,135 @@
-const { spawnSync } = require('node:child_process');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
+const { spawnSync } = require('node:child_process')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
 
-const root = path.resolve(__dirname, '..');
-const android = path.join(root, 'web', 'android');
-const tools = path.join(os.homedir(), '.local', 'share', 'nexus', 'android');
-const windows = process.platform === 'win32';
-const env = { ...process.env };
+const root = path.resolve(__dirname, '..')
+const android = path.join(root, 'web', 'android')
+const tools = path.join(os.homedir(), '.local', 'share', 'nexus', 'android')
+const windows = process.platform === 'win32'
+const env = { ...process.env }
 
 function run(command, args, cwd = root) {
-  const result = spawnSync(command, args, { cwd, env, stdio: 'inherit', shell: windows });
-  if (result.error) throw result.error;
+  const result = spawnSync(command, args, { cwd, env, stdio: 'inherit', shell: windows })
+  if (result.error) throw result.error
   if (result.status !== 0)
-    throw new Error(`${command} a échoué (${result.status ?? result.signal}).`);
+    throw new Error(`${command} a échoué (${result.status ?? result.signal}).`)
 }
 
 function bumpSemver(version, kind) {
   const parts = String(version || '1.0.0')
     .split('.')
-    .map((n) => Number.parseInt(n, 10) || 0);
-  const [major = 1, minor = 0, patch = 0] = parts;
-  if (kind === 'major') return `${major + 1}.0.0`;
-  if (kind === 'minor') return `${major}.${minor + 1}.0`;
-  return `${major}.${minor}.${patch + 1}`;
+    .map((n) => Number.parseInt(n, 10) || 0)
+  const [major = 1, minor = 0, patch = 0] = parts
+  if (kind === 'major') return `${major + 1}.0.0`
+  if (kind === 'minor') return `${major}.${minor + 1}.0`
+  return `${major}.${minor}.${patch + 1}`
 }
 
 function syncReleaseVersion() {
-  const args = process.argv.slice(2);
-  const pkgPath = path.join(root, 'package.json');
-  const webPkgPath = path.join(root, 'web', 'package.json');
-  const gradlePath = path.join(android, 'app', 'build.gradle');
-  const appVersionPath = path.join(root, 'web', 'app', 'utils', 'app-version.mjs');
+  const args = process.argv.slice(2)
+  const pkgPath = path.join(root, 'package.json')
+  const webPkgPath = path.join(root, 'web', 'package.json')
+  const gradlePath = path.join(android, 'app', 'build.gradle')
+  const appVersionPath = path.join(root, 'web', 'app', 'utils', 'app-version.mjs')
 
-  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-  const webPkg = JSON.parse(fs.readFileSync(webPkgPath, 'utf8'));
-  let gradleContent = fs.readFileSync(gradlePath, 'utf8');
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
+  const webPkg = JSON.parse(fs.readFileSync(webPkgPath, 'utf8'))
+  let gradleContent = fs.readFileSync(gradlePath, 'utf8')
 
-  const currentGradleCode = Number(gradleContent.match(/versionCode\s+(\d+)/)?.[1] || 3);
+  const currentGradleCode = Number(gradleContent.match(/versionCode\s+(\d+)/)?.[1] || 3)
   const currentGradleName =
-    gradleContent.match(/versionName\s+"([^"]+)"/)?.[1] || pkg.version || '1.3.0';
+    gradleContent.match(/versionName\s+"([^"]+)"/)?.[1] || pkg.version || '1.3.0'
 
-  const explicitVersionIdx = args.indexOf('--version');
-  const bumpIdx = args.indexOf('--bump');
-  const incrementBuild = args.includes('--increment-build');
+  const explicitVersionIdx = args.indexOf('--version')
+  const bumpIdx = args.indexOf('--bump')
+  const incrementBuild = args.includes('--increment-build')
 
-  let nextVersion = pkg.version || currentGradleName;
-  let nextBuildCode = currentGradleCode;
+  let nextVersion = pkg.version || currentGradleName
+  let nextBuildCode = currentGradleCode
 
   if (explicitVersionIdx !== -1 && args[explicitVersionIdx + 1]) {
-    nextVersion = args[explicitVersionIdx + 1].replace(/^v/, '');
-    nextBuildCode = currentGradleCode + 1;
+    nextVersion = args[explicitVersionIdx + 1].replace(/^v/, '')
+    nextBuildCode = currentGradleCode + 1
   } else if (bumpIdx !== -1) {
-    const bumpKind = args[bumpIdx + 1] || 'patch';
-    nextVersion = bumpSemver(nextVersion, bumpKind);
-    nextBuildCode = currentGradleCode + 1;
+    const bumpKind = args[bumpIdx + 1] || 'patch'
+    nextVersion = bumpSemver(nextVersion, bumpKind)
+    nextBuildCode = currentGradleCode + 1
   } else if (incrementBuild || currentGradleName !== nextVersion) {
-    nextBuildCode = currentGradleCode + 1;
+    nextBuildCode = currentGradleCode + 1
   }
 
-  pkg.version = nextVersion;
-  webPkg.version = nextVersion;
-  fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
-  fs.writeFileSync(webPkgPath, `${JSON.stringify(webPkg, null, 2)}\n`);
+  pkg.version = nextVersion
+  webPkg.version = nextVersion
+  fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`)
+  fs.writeFileSync(webPkgPath, `${JSON.stringify(webPkg, null, 2)}\n`)
 
   gradleContent = gradleContent
     .replace(/versionCode\s+\d+/, `versionCode ${nextBuildCode}`)
-    .replace(/versionName\s+"[^"]+"/, `versionName "${nextVersion}"`);
-  fs.writeFileSync(gradlePath, gradleContent);
+    .replace(/versionName\s+"[^"]+"/, `versionName "${nextVersion}"`)
+  fs.writeFileSync(gradlePath, gradleContent)
 
   fs.writeFileSync(
     appVersionPath,
-    `export const APP_VERSION = "${nextVersion}";\nexport const APP_BUILD = ${nextBuildCode};\n`
-  );
+    `export const APP_VERSION = "${nextVersion}";\nexport const APP_BUILD = ${nextBuildCode};\n`,
+  )
 
-  const trayCsPath = path.join(root, 'windows', 'NexusTray.cs');
+  const trayCsPath = path.join(root, 'windows', 'NexusTray.cs')
   if (fs.existsSync(trayCsPath)) {
     const trayCs = fs
       .readFileSync(trayCsPath, 'utf8')
       .replace(/AssemblyVersion\("[^"]+"\)/, `AssemblyVersion("${nextVersion}.0")`)
       .replace(/AssemblyFileVersion\("[^"]+"\)/, `AssemblyFileVersion("${nextVersion}.0")`)
-      .replace(/Nexus Agent v[0-9.]+/, `Nexus Agent v${nextVersion}`);
-    fs.writeFileSync(trayCsPath, trayCs);
+      .replace(/Nexus Agent v[0-9.]+/, `Nexus Agent v${nextVersion}`)
+    fs.writeFileSync(trayCsPath, trayCs)
   }
 
-  const daemonCliPath = path.join(root, 'src', 'daemon', 'cli.ts');
+  const daemonCliPath = path.join(root, 'src', 'daemon', 'cli.ts')
   if (fs.existsSync(daemonCliPath)) {
     const daemonCli = fs
       .readFileSync(daemonCliPath, 'utf8')
-      .replace(/NEXUS SECURE DAEMON v[0-9.]+/, `NEXUS SECURE DAEMON v${nextVersion}`);
-    fs.writeFileSync(daemonCliPath, daemonCli);
+      .replace(/NEXUS SECURE DAEMON v[0-9.]+/, `NEXUS SECURE DAEMON v${nextVersion}`)
+    fs.writeFileSync(daemonCliPath, daemonCli)
   }
 
-  const daemonServerPath = path.join(root, 'src', 'daemon', 'daemon-server.ts');
+  const daemonServerPath = path.join(root, 'src', 'daemon', 'daemon-server.ts')
   if (fs.existsSync(daemonServerPath)) {
     const daemonServer = fs
       .readFileSync(daemonServerPath, 'utf8')
-      .replace(/version: '[0-9.]+'/g, `version: '${nextVersion}'`);
-    fs.writeFileSync(daemonServerPath, daemonServer);
+      .replace(/version: '[0-9.]+'/g, `version: '${nextVersion}'`)
+    fs.writeFileSync(daemonServerPath, daemonServer)
   }
 
-  return { versionName: nextVersion, versionCode: nextBuildCode };
+  return { versionName: nextVersion, versionCode: nextBuildCode }
 }
 
 try {
   // Prefer Nexus's isolated Linux tools; leave the system Java unchanged.
-  const managedJava = path.join(tools, 'jdk-21');
+  const managedJava = path.join(tools, 'jdk-21')
   if (!windows && fs.existsSync(path.join(managedJava, 'bin', 'java'))) {
-    env.JAVA_HOME = managedJava;
+    env.JAVA_HOME = managedJava
   }
   if (env.JAVA_HOME)
-    env.PATH = `${path.join(env.JAVA_HOME, 'bin')}${path.delimiter}${env.PATH || ''}`;
+    env.PATH = `${path.join(env.JAVA_HOME, 'bin')}${path.delimiter}${env.PATH || ''}`
   const java = env.JAVA_HOME
     ? path.join(env.JAVA_HOME, 'bin', windows ? 'java.exe' : 'java')
-    : 'java';
-  const version = spawnSync(java, ['-version'], { env, encoding: 'utf8' });
+    : 'java'
+  const version = spawnSync(java, ['-version'], { env, encoding: 'utf8' })
   const major = Number(
-    `${version.stderr || ''}\n${version.stdout || ''}`.match(/version "(\d+)/)?.[1]
-  );
+    `${version.stderr || ''}\n${version.stdout || ''}`.match(/version "(\d+)/)?.[1],
+  )
   if (version.status !== 0 || major < 21 || major > 23 || !major) {
     throw new Error(
-      'Ce projet nécessite un JDK 21 (Gradle 8.11). Installez-le et renseignez JAVA_HOME.'
-    );
+      'Ce projet nécessite un JDK 21 (Gradle 8.11). Installez-le et renseignez JAVA_HOME.',
+    )
   }
 
-  const properties = path.join(android, 'local.properties');
-  const original = fs.existsSync(properties) ? fs.readFileSync(properties, 'utf8') : null;
+  const properties = path.join(android, 'local.properties')
+  const original = fs.existsSync(properties) ? fs.readFileSync(properties, 'utf8') : null
   const configuredSdk = original
     ?.match(/^sdk\.dir=(.*)$/m)?.[1]
     ?.trim()
-    .replace(/\\([\\: ])/g, '$1');
+    .replace(/\\([\\: ])/g, '$1')
   const sdk = [
     !windows && path.join(tools, 'sdk'),
     env.ANDROID_HOME,
@@ -137,47 +137,47 @@ try {
     configuredSdk,
   ].find(
     (candidate) =>
-      candidate && fs.existsSync(path.join(candidate, 'platforms', 'android-35', 'android.jar'))
-  );
+      candidate && fs.existsSync(path.join(candidate, 'platforms', 'android-35', 'android.jar')),
+  )
   if (!sdk)
     throw new Error(
-      'SDK Android Linux/Windows introuvable : installez la plateforme Android 35 et renseignez ANDROID_HOME.'
-    );
-  env.ANDROID_HOME = sdk;
-  env.ANDROID_SDK_ROOT = sdk;
+      'SDK Android Linux/Windows introuvable : installez la plateforme Android 35 et renseignez ANDROID_HOME.',
+    )
+  env.ANDROID_HOME = sdk
+  env.ANDROID_SDK_ROOT = sdk
 
-  const { versionName, versionCode } = syncReleaseVersion();
+  const { versionName, versionCode } = syncReleaseVersion()
   console.log(
-    `Compilation Android Nexus v${versionName} (build #${versionCode}) avec Java ${major}.`
-  );
-  run(windows ? 'npm.cmd' : 'npm', ['--prefix', 'web', 'run', 'cap:build']);
+    `Compilation Android Nexus v${versionName} (build #${versionCode}) avec Java ${major}.`,
+  )
+  run(windows ? 'npm.cmd' : 'npm', ['--prefix', 'web', 'run', 'cap:build'])
 
   // Use the SDK for this build, then restore the user's Android Studio setting.
-  const sdkLine = `sdk.dir=${sdk.replace(/\\/g, '/').replace(/:/g, '\\:')}`;
+  const sdkLine = `sdk.dir=${sdk.replace(/\\/g, '/').replace(/:/g, '\\:')}`
   const content = original?.match(/^sdk\.dir=.*$/m)
     ? original.replace(/^sdk\.dir=.*$/m, sdkLine)
-    : `${original || ''}\n${sdkLine}\n`;
+    : `${original || ''}\n${sdkLine}\n`
   try {
-    fs.writeFileSync(properties, content);
+    fs.writeFileSync(properties, content)
     run(
       windows ? 'gradlew.bat' : './gradlew',
       ['--no-daemon', '--console=plain', 'clean', 'assembleDebug'],
-      android
-    );
+      android,
+    )
   } finally {
-    if (original === null) fs.rmSync(properties, { force: true });
-    else fs.writeFileSync(properties, original);
+    if (original === null) fs.rmSync(properties, { force: true })
+    else fs.writeFileSync(properties, original)
   }
 
-  const builtApk = path.join(android, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
-  const versionedApk = path.join(root, `nexus-v${versionName}-b${versionCode}.apk`);
-  const latestApk = path.join(root, 'nexus-debug.apk');
-  fs.copyFileSync(builtApk, versionedApk);
-  fs.copyFileSync(builtApk, latestApk);
+  const builtApk = path.join(android, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk')
+  const versionedApk = path.join(root, `nexus-v${versionName}-b${versionCode}.apk`)
+  const latestApk = path.join(root, 'nexus-debug.apk')
+  fs.copyFileSync(builtApk, versionedApk)
+  fs.copyFileSync(builtApk, latestApk)
   console.log(
-    `\nAPK versionné prêt : ${versionedApk}\nAlias rapide : ${latestApk}\nTransférez ce fichier sur votre téléphone pour l’installer.`
-  );
+    `\nAPK versionné prêt : ${versionedApk}\nAlias rapide : ${latestApk}\nTransférez ce fichier sur votre téléphone pour l’installer.`,
+  )
 } catch (error) {
-  console.error(`\nBuild Android : ${error.message}`);
-  process.exitCode = 1;
+  console.error(`\nBuild Android : ${error.message}`)
+  process.exitCode = 1
 }

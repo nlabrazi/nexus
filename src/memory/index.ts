@@ -1,2 +1,2 @@
-export * from './types';
-export * from './project-memory';
+export * from './project-memory'
+export * from './types'
