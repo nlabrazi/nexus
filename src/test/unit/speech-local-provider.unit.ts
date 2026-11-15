@@ -141,7 +141,10 @@ suite('Local speech worker transport', () => {
       const result = provider.transcribe(audio, { signal: new AbortController().signal })
       fake.finish(
         '{"text":"must not succeed"}',
-        Object.assign(new Error('private diagnostic'), { code: exitCode }),
+        Object.assign(new Error('private diagnostic'), {
+          code: exitCode,
+          cmd: configuration.pythonPath,
+        }),
       )
       await assert.rejects(result, (error: Error & { code?: string }) => {
         assert.equal(error.code, expected)
