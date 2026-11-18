@@ -14,3 +14,6 @@ __pycache__/
 *google-services*.json
 
 logs/
+
+# Code coverage
+coverage/
