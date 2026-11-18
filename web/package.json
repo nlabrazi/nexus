@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "test:unit": "node --test test/*.test.mjs",
+    "test:coverage": "node --test --experimental-test-coverage test/*.test.mjs",
     "build": "nuxt build",
     "dev": "nuxt dev",
     "generate": "nuxt generate",
