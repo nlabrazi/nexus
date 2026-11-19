@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { createConnection } from 'node:net'
+import { type AddressInfo, createConnection, createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { suite, test } from 'node:test'
@@ -25,11 +25,26 @@ suite('NexusDaemonServer unified secure daemon', () => {
 
   const jail = new JailGuard({ allowedRoots: [projectDir] })
   const auth = new AuthGuard(['valid-token-123'])
-  const port = 4199
+  let port = 0
 
   let daemon: NexusDaemonServer
 
+  const getAvailablePort = (): Promise<number> =>
+    new Promise((resolve, reject) => {
+      const probe = createServer()
+      probe.unref()
+      probe.once('error', reject)
+      probe.listen(0, '127.0.0.1', () => {
+        const address = probe.address() as AddressInfo
+        probe.close((err) => {
+          if (err) reject(err)
+          else resolve(address.port)
+        })
+      })
+    })
+
   test('starts daemon server', async () => {
+    port = await getAvailablePort()
     const workspaceGuard = new WorkspaceGuard(() => ({
       trusted: true,
       folders: [{ scheme: 'file', path: projectDir }],

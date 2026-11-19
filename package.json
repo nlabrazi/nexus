@@ -40,7 +40,7 @@
     "format": "biome format --write .",
     "test": "npm run test:unit",
     "test:unit": "npm run compile-tests && node --test --test-isolation=none out/test/unit/*.unit.js",
-    "test:coverage": "npm run compile-tests && node --test --experimental-test-coverage --test-isolation=none out/test/unit/*.unit.js"
+    "test:coverage": "npm run compile-tests && node --test --experimental-test-coverage --test-coverage-lines=75 --test-isolation=none out/test/unit/*.unit.js"
   },
   "devDependencies": {
     "@nlabrazi/config-biome": "^0.2.0",
