@@ -1,9 +1,10 @@
 import * as assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createConnection } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { suite, test } from 'node:test'
-import { NexusDaemonServer } from '../../daemon/daemon-server'
+import { getGitDiff, NexusDaemonServer, normalizeFishReferenceId } from '../../daemon/daemon-server'
 import { NexusRuntime } from '../../runtime/nexus-runtime'
 import { AuthGuard } from '../../security/auth'
 import { JailGuard } from '../../security/jail'
@@ -381,6 +382,208 @@ suite('NexusDaemonServer unified secure daemon', () => {
     assert.equal(taskDiffData.taskId, 'task-diff-test')
     assert.ok(typeof taskDiffData.diff === 'string')
     assert.ok(Array.isArray(taskDiffData.filesChanged))
+  })
+
+  test('normalizeFishReferenceId and getGitDiff handle edge inputs cleanly', async () => {
+    assert.equal(normalizeFishReferenceId(''), '')
+    assert.equal(
+      normalizeFishReferenceId('https://fish.audio/m/802e3bc2b27e49c2995d23ef70e6ac89/'),
+      '802e3bc2b27e49c2995d23ef70e6ac89',
+    )
+    assert.equal(
+      normalizeFishReferenceId('https://example.test/models/custom-voice'),
+      'custom-voice',
+    )
+    assert.equal(normalizeFishReferenceId('raw_ref_id'), 'raw_ref_id')
+
+    const diff = await getGitDiff(projectDir, [join(projectDir, 'package.json')])
+    assert.equal(diff, '')
+  })
+
+  test('serves CORS preflight, 404, projects, dashboard, models, sessions, push and approval endpoints', async () => {
+    const authHeaders = {
+      Authorization: 'Bearer valid-token-123',
+      'Content-Type': 'application/json',
+    }
+
+    const optRes = await fetch(`http://127.0.0.1:${port}/api/tasks`, { method: 'OPTIONS' })
+    assert.equal(optRes.status, 204)
+
+    const notFoundRes = await fetch(`http://127.0.0.1:${port}/api/unknown-route`, {
+      headers: authHeaders,
+    })
+    assert.equal(notFoundRes.status, 404)
+
+    const projectsRes = await fetch(`http://127.0.0.1:${port}/api/projects`, {
+      headers: authHeaders,
+    })
+    assert.equal(projectsRes.status, 200)
+    assert.ok(Array.isArray(await projectsRes.json()))
+
+    const activeRes = await fetch(`http://127.0.0.1:${port}/api/projects/active`, {
+      headers: authHeaders,
+    })
+    assert.equal(activeRes.status, 200)
+
+    const dashRes = await fetch(`http://127.0.0.1:${port}/api/dashboard`, { headers: authHeaders })
+    assert.equal(dashRes.status, 200)
+
+    const voiceStatusRes = await fetch(`http://127.0.0.1:${port}/api/voice/status`, {
+      headers: authHeaders,
+    })
+    assert.equal(voiceStatusRes.status, 200)
+
+    const memGetRes = await fetch(
+      `http://127.0.0.1:${port}/api/projects/memory?path=${encodeURIComponent(projectDir)}`,
+      { headers: authHeaders },
+    )
+    assert.equal(memGetRes.status, 200)
+
+    const memDelRes = await fetch(
+      `http://127.0.0.1:${port}/api/projects/memory?path=${encodeURIComponent(projectDir)}`,
+      { method: 'DELETE', headers: authHeaders },
+    )
+    assert.equal(memDelRes.status, 200)
+
+    const modelsRes = await fetch(`http://127.0.0.1:${port}/api/models?backend=brain`, {
+      headers: authHeaders,
+    })
+    assert.equal(modelsRes.status, 200)
+
+    const badModelRes = await fetch(`http://127.0.0.1:${port}/api/models/select`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({ backend: 'brain' }),
+    })
+    assert.equal(badModelRes.status, 400)
+
+    const sessionFiltered = await fetch(
+      `http://127.0.0.1:${port}/api/sessions?project=${encodeURIComponent(projectDir)}`,
+      { headers: authHeaders },
+    )
+    assert.equal(sessionFiltered.status, 200)
+
+    const sessionFound = await fetch(`http://127.0.0.1:${port}/api/sessions/task-diff-test`, {
+      headers: authHeaders,
+    })
+    assert.equal(sessionFound.status, 200)
+
+    const sessionMissing = await fetch(`http://127.0.0.1:${port}/api/sessions/does-not-exist`, {
+      headers: authHeaders,
+    })
+    assert.equal(sessionMissing.status, 404)
+
+    const taskFound = await fetch(`http://127.0.0.1:${port}/api/tasks/task-diff-test`, {
+      headers: authHeaders,
+    })
+    assert.equal(taskFound.status, 200)
+
+    const taskMissing = await fetch(`http://127.0.0.1:${port}/api/tasks/does-not-exist`, {
+      headers: authHeaders,
+    })
+    assert.equal(taskMissing.status, 404)
+
+    const taskDiffMissing = await fetch(`http://127.0.0.1:${port}/api/tasks/does-not-exist/diff`, {
+      headers: authHeaders,
+    })
+    assert.equal(taskDiffMissing.status, 404)
+
+    const pushBad = await fetch(`http://127.0.0.1:${port}/api/push/register`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({}),
+    })
+    assert.equal(pushBad.status, 400)
+
+    const pushOk = await fetch(`http://127.0.0.1:${port}/api/push/register`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({ token: 'fcm-device-token-1234567890' }),
+    })
+    assert.equal(pushOk.status, 200)
+
+    const resetRes = await fetch(`http://127.0.0.1:${port}/api/sessions/reset`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({ backend: 'brain', clearHistory: false }),
+    })
+    assert.equal(resetRes.status, 200)
+
+    const missingApproval = await fetch(
+      `http://127.0.0.1:${port}/api/approvals/unknown-id/decide`,
+      {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ decision: 'accept' }),
+      },
+    )
+    assert.equal(missingApproval.status, 404)
+  })
+
+  test('handles WebSocket upgrade auth, 404 path, connected event and task cancellation broadcast', async () => {
+    const rawUpgrade = (requestPath: string, extraHeaders = ''): Promise<string> =>
+      new Promise((resolve, reject) => {
+        const socket = createConnection({ host: '127.0.0.1', port })
+        let received = ''
+        socket.on('connect', () => {
+          socket.write(
+            `GET ${requestPath} HTTP/1.1\r\n` +
+              `Host: 127.0.0.1:${port}\r\n` +
+              'Upgrade: websocket\r\n' +
+              'Connection: Upgrade\r\n' +
+              'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n' +
+              'Sec-WebSocket-Version: 13\r\n' +
+              extraHeaders +
+              '\r\n',
+          )
+        })
+        socket.on('data', (chunk) => {
+          received += chunk.toString('utf-8')
+          socket.end()
+        })
+        socket.on('close', () => resolve(received))
+        socket.on('error', reject)
+      })
+
+    const unauth = await rawUpgrade('/ws')
+    assert.ok(unauth.includes('401 Unauthorized'))
+
+    const badPath = await rawUpgrade('/ws-other?token=valid-token-123')
+    assert.ok(badPath.includes('404 Not Found'))
+
+    const connectedData = await new Promise<string>((resolve, reject) => {
+      const socket = createConnection({ host: '127.0.0.1', port })
+      let received = ''
+      let cancelSent = false
+      socket.on('connect', () => {
+        socket.write(
+          `GET /ws?token=valid-token-123 HTTP/1.1\r\n` +
+            `Host: 127.0.0.1:${port}\r\n` +
+            'Upgrade: websocket\r\n' +
+            'Connection: Upgrade\r\n' +
+            'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n' +
+            'Sec-WebSocket-Version: 13\r\n\r\n',
+        )
+      })
+      socket.on('data', (chunk) => {
+        received += chunk.toString('utf-8')
+        if (!cancelSent && received.includes('connected')) {
+          cancelSent = true
+          void fetch(`http://127.0.0.1:${port}/api/tasks/task-diff-test/cancel`, {
+            method: 'POST',
+            headers: { Authorization: 'Bearer valid-token-123' },
+          })
+        }
+        if (received.includes('task:cancelled')) {
+          socket.destroy()
+          resolve(received)
+        }
+      })
+      socket.on('error', reject)
+    })
+
+    assert.ok(connectedData.includes('"event":"connected"'))
+    assert.ok(connectedData.includes('"event":"task:cancelled"'))
   })
 
   test('stops daemon server and cleans up', async () => {
